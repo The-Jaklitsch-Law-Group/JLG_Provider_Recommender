@@ -3,6 +3,7 @@ import pandas as pd  # For data handling
 from geopy.geocoders import Nominatim
 from geopy.extra.rate_limiter import RateLimiter
 from geopy.distance import great_circle
+from geopy.exc import GeocoderUnavailable
 
 # Educational comment: Streamlit is a Python library for building interactive web apps easily.
 # To run this app, use the command: streamlit run app.py
@@ -35,15 +36,16 @@ if st.session_state['recommendation']:
 # Educational comment: Read the Excel file with provider data using pandas.
 def load_provider_data():
     df = pd.read_excel('data/Ranked_Contacts.xlsx')
-    # Educational comment: Clean up column names (remove leading/trailing spaces)
+    # Clean up column names (remove leading/trailing spaces)
     df.columns = [col.strip() for col in df.columns]
-    # Educational comment: Combine address columns into a single full address string for geocoding
+    # Ensure zip codes are strings and remove decimals if present
+    df['Address 1 Zip'] = df['Address 1 Zip'].apply(lambda x: str(int(x)) if pd.notnull(x) else '')
+    # Combine address columns into a single full address string for geocoding
     df['Full Address'] = (
         df['Address 1 Line 1'].fillna('') + ', '
-        + df['Address 1 Line 2'].fillna('') + ', '
         + df['Address 1 City'].fillna('') + ', '
         + df['Address 1 State'].fillna('') + ' '
-        + df['Address 1 Zip'].fillna('').astype(str)
+        + df['Address 1 Zip'].fillna('')
     )
     # Remove redundant commas and spaces
     df['Full Address'] = df['Full Address'].str.replace(r',\s*,', ',', regex=True).str.replace(r',\s*$', '', regex=True)
@@ -55,21 +57,33 @@ provider_df = load_provider_data()
 # Educational comment: Geocoding converts addresses to latitude/longitude coordinates.
 # We use Nominatim (OpenStreetMap) via geopy for free geocoding.
 geolocator = Nominatim(user_agent="provider_recommender")
-# RateLimiter helps avoid hitting the geocoding service too quickly (prevents errors)
-geocode = RateLimiter(geolocator.geocode, min_delay_seconds=1)
+# Educational comment: Increase timeout and add retries to handle seslow or unreliable geocoding responses.
+# Use a longer delay to respect Nominatim's rate limits
+geocode = RateLimiter(geolocator.geocode, min_delay_seconds=2, max_retries=3)
 
-# Educational comment: Cache provider geocodes to avoid repeated lookups (faster, less API usage)
+# Educational comment: Pass timeout=10 to each geocode call to allow up to 10 seconds per request.
 @st.cache_data(show_spinner=True)
 def geocode_providers(addresses):
     lats, lons = [], []
     for addr in addresses:
-        location = geocode(addr)
-        if location:
-            lats.append(location.latitude)
-            lons.append(location.longitude)
-        else:
+        try:
+            location = geocode(addr, timeout=10)
+            if location:
+                lats.append(location.latitude)
+                lons.append(location.longitude)
+            else:
+                lats.append(None)
+                lons.append(None)
+        except GeocoderUnavailable as e:
+            # Educational comment: Handle Nominatim server unavailability gracefully.
             lats.append(None)
             lons.append(None)
+            print(f"GeocoderUnavailable for address '{addr}': {e}")
+        except Exception as e:
+            # Educational comment: Handle other geocoding errors gracefully and log them for debugging.
+            lats.append(None)
+            lons.append(None)
+            print(f"Geocoding error for address '{addr}': {e}")
     return lats, lons
 
 # Geocode provider addresses (only once, thanks to caching)
@@ -80,14 +94,19 @@ provider_df['Longitude'] = provider_lons
 # Geocode user address when button is pressed
 user_lat, user_lon = None, None
 if st.session_state['user_address'] and st.button('Geocode My Address'):
-    user_location = geocode(st.session_state['user_address'])
-    if user_location:
-        user_lat, user_lon = user_location.latitude, user_location.longitude
-        st.session_state['user_lat'] = user_lat
-        st.session_state['user_lon'] = user_lon
-        st.success(f"Your location: ({user_lat:.5f}, {user_lon:.5f})")
-    else:
-        st.error("Could not geocode your address. Please check and try again.")
+    try:
+        user_location = geocode(st.session_state['user_address'], timeout=10)
+        if user_location:
+            user_lat, user_lon = user_location.latitude, user_location.longitude
+            st.session_state['user_lat'] = user_lat
+            st.session_state['user_lon'] = user_lon
+            st.success(f"Your location: ({user_lat:.5f}, {user_lon:.5f})")
+        else:
+            st.error("Could not geocode your address. Please check and try again.")
+    except GeocoderUnavailable as e:
+        st.error(f"Geocoding service unavailable: {e}")
+    except Exception as e:
+        st.error(f"Geocoding error: {e}")
 
 # Educational: Show geocoded provider coordinates
 st.subheader('Geocoded Provider Coordinates (first 5)')
