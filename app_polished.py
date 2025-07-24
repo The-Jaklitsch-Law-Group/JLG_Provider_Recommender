@@ -5,6 +5,10 @@ from geopy.geocoders import Nominatim
 from geopy.extra.rate_limiter import RateLimiter
 from geopy.distance import great_circle
 from geopy.exc import GeocoderUnavailable
+import io
+from docx import Document
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
 
 # --- Custom Functions ---
 def recommend_provider(provider_df, alpha=0.5, beta=0.5):
@@ -88,12 +92,12 @@ if 'Preferred' not in provider_df.columns:
     provider_df['Preferred'] = np.random.choice([1, 0], size=len(provider_df), p=[0.3, 0.7])  # 30% preferred
 
 # --- Load API secrets for future API calls ---
-API_KEY = st.secrets.get('api_key', None)
-API_ENDPOINT = st.secrets.get('api_endpoint', None)
+LD_API_KEY = st.secrets.get('lead_docket_api_key', None)
+LD_API_ENDPOINT = st.secrets.get('lead_docket_base_api_endpoint', None)
 
 def call_external_api(payload):
     """Placeholder for making an API call using the stored API key and endpoint."""
-    if not API_KEY or not API_ENDPOINT:
+    if not LD_API_KEY or not LD_API_ENDPOINT:
         st.warning('API key or endpoint not set in secrets. Please update .streamlit/secrets.toml.')
         return None
     # Example usage (requests must be imported if used):
@@ -143,9 +147,9 @@ with tabs[0]:
             specialty = st.selectbox('Provider Specialty (optional)', ['Any'] + specialties) if specialties else 'Any'
             col1, col2 = st.columns(2)
             with col1:
-                alpha = st.slider('Weight for Rank', min_value=0.0, max_value=1.0, value=alpha, step=0.05)
+                alpha = st.slider('How important is provider quality?', min_value=0.0, max_value=1.0, value=alpha, step=0.05, help="Move right to prioritize provider quality (ranking)")
             with col2:
-                beta = st.slider('Weight for Distance', min_value=0.0, max_value=1.0, value=beta, step=0.05)
+                beta = st.slider('How important is provider proximity?', min_value=0.0, max_value=1.0, value=beta, step=0.05, help="Move right to prioritize providers closer to the address")
             if alpha + beta != 1.0:
                 total = alpha + beta
                 alpha = alpha / total
@@ -214,6 +218,61 @@ with tabs[0]:
                             st.markdown(f"<span style='color: green; font-weight: bold;'>✅ Preferred Provider</span>", unsafe_allow_html=True)
                         st.write('Top 5 providers by blended score:')
                         st.dataframe(scored_df[['Full Name', 'Full Address', 'Distance (miles)', 'Rank', 'score', 'Preferred']].sort_values(by='score').head())
+
+                        # --- Export Buttons ---
+                        def get_word_bytes(best):
+                            doc = Document()
+                            doc.add_heading('Recommended Provider', 0)
+                            doc.add_paragraph(f"Name: {best['Full Name']}")
+                            doc.add_paragraph(f"Address: {best['Full Address']}")
+                            doc.add_paragraph(f"Phone: {best['Phone 1']}")
+                            doc.add_paragraph(f"Email: {best['Email 1']}")
+                            doc.add_paragraph(f"Specialty: {best['Specialty']}")
+                            if best.get('Preferred', 0) == 1:
+                                doc.add_paragraph("Preferred Provider")
+                            buffer = io.BytesIO()
+                            doc.save(buffer)
+                            buffer.seek(0)
+                            return buffer
+
+                        def get_pdf_bytes(best):
+                            buffer = io.BytesIO()
+                            c = canvas.Canvas(buffer, pagesize=letter)
+                            c.setFont("Helvetica-Bold", 16)
+                            c.drawString(72, 720, "Recommended Provider")
+                            c.setFont("Helvetica", 12)
+                            y = 700
+                            c.drawString(72, y, f"Name: {best['Full Name']}")
+                            y -= 20
+                            c.drawString(72, y, f"Address: {best['Full Address']}")
+                            y -= 20
+                            c.drawString(72, y, f"Phone: {best['Phone 1']}")
+                            y -= 20
+                            c.drawString(72, y, f"Email: {best['Email 1']}")
+                            y -= 20
+                            c.drawString(72, y, f"Specialty: {best['Specialty']}")
+                            y -= 20
+                            if best.get('Preferred', 0) == 1:
+                                c.drawString(72, y, "Preferred Provider")
+                            c.save()
+                            buffer.seek(0)
+                            return buffer
+
+                        word_bytes = get_word_bytes(best)
+                        st.download_button(
+                            label="Export as Word",
+                            data=word_bytes,
+                            file_name="recommended_provider.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        )
+                        pdf_bytes = get_pdf_bytes(best)
+                        st.download_button(
+                            label="Export as PDF",
+                            data=pdf_bytes,
+                            file_name="recommended_provider.pdf",
+                            mime="application/pdf"
+                        )
+
                         # --- Rationale for Selection ---
                         with st.expander('Why was this provider selected?', expanded=False):
                             rationale = []
