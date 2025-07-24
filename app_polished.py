@@ -21,6 +21,18 @@ def load_provider_data():
 
 provider_df = load_provider_data()
 
+# --- Add temporary placeholders if needed ---
+if 'Specialty' not in provider_df.columns:
+    import numpy as np
+    placeholder_specialties = [
+        'Primary Care', 'Urgent Care', 'Chiropractor', 'Physical Therapy'
+    ]
+    provider_df['Specialty'] = np.random.choice(placeholder_specialties, size=len(provider_df))
+if 'Phone 1' not in provider_df.columns:
+    provider_df['Phone 1'] = '555-555-1234'
+if 'Email 1' not in provider_df.columns:
+    provider_df['Email 1'] = 'provider@example.com'
+
 st.title('Provider Recommender')
 
 # --- Tabs for Results and Overview ---
@@ -36,38 +48,58 @@ with tabs[0]:
     4. If your address is not found, the app will automatically try less specific versions of your address.
     """)
 
-    # --- User Address Input ---
-    st.subheader('Enter Your Address')
-    with st.form(key='address_form'):
-        street = st.text_input('Street Address (e.g., 123 Main St)', value=st.session_state.get('street', ''))
-        city = st.text_input('City', value=st.session_state.get('city', ''))
-        state = st.text_input('State (e.g., NY)', value=st.session_state.get('state', ''))
-        zipcode = st.text_input('Zip Code', value=st.session_state.get('zipcode', ''))
-        col1, col2 = st.columns(2)
-        with col1:
-            alpha = st.slider('Weight for Rank', min_value=0.0, max_value=1.0, value=0.5, step=0.05)
-        with col2:
-            beta = st.slider('Weight for Distance', min_value=0.0, max_value=1.0, value=0.5, step=0.05)
-        # Normalize weights if not exactly 1.0
-        if alpha + beta != 1.0:
-            total = alpha + beta
-            alpha = alpha / total
-            beta = beta / total
-        submit = st.form_submit_button('Find Best Provider')
+    # Only show input form if no results yet
+    show_form = 'show_form' not in st.session_state or st.session_state.get('show_form', True)
+    # Initialize variables to avoid unbound errors
+    street = st.session_state.get('street', '')
+    city = st.session_state.get('city', '')
+    state = st.session_state.get('state', '')
+    zipcode = st.session_state.get('zipcode', '')
+    specialty = st.session_state.get('specialty', 'Any')
+    alpha = st.session_state.get('alpha', 0.5)
+    beta = st.session_state.get('beta', 0.5)
+    if show_form:
+        specialties = sorted(provider_df['Specialty'].dropna().unique()) if 'Specialty' in provider_df.columns else []
+        with st.form(key='address_form'):
+            street = st.text_input('Street Address (e.g., 123 Main St)', value=street)
+            city = st.text_input('City', value=city)
+            state = st.text_input('State (e.g., NY)', value=state)
+            zipcode = st.text_input('Zip Code', value=zipcode)
+            specialty = st.selectbox('Provider Specialty (optional)', ['Any'] + specialties) if specialties else 'Any'
+            col1, col2 = st.columns(2)
+            with col1:
+                alpha = st.slider('Weight for Rank', min_value=0.0, max_value=1.0, value=alpha, step=0.05)
+            with col2:
+                beta = st.slider('Weight for Distance', min_value=0.0, max_value=1.0, value=beta, step=0.05)
+            if alpha + beta != 1.0:
+                total = alpha + beta
+                alpha = alpha / total
+                beta = beta / total
+            submit = st.form_submit_button('Find Best Provider')
 
-    # Save user input in session state
-    st.session_state['street'] = street
-    st.session_state['city'] = city
-    st.session_state['state'] = state
-    st.session_state['zipcode'] = zipcode
-    st.session_state['alpha'] = alpha
-    st.session_state['beta'] = beta
+        st.session_state['street'] = street
+        st.session_state['city'] = city
+        st.session_state['state'] = state
+        st.session_state['zipcode'] = zipcode
+        st.session_state['alpha'] = alpha
+        st.session_state['beta'] = beta
+        st.session_state['specialty'] = specialty
+    else:
+        # Show a button to start a new search
+        if st.button('New Search'):
+            for key in ['user_lat', 'user_lon', 'recommendation', 'show_form']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            # Use st.rerun if available, else st.experimental_rerun for compatibility
+            if hasattr(st, 'rerun'):
+                st.rerun()
+            else:
+                st.experimental_rerun()
 
     # --- Geocoding Setup ---
     geolocator = Nominatim(user_agent="provider_recommender")
     geocode = RateLimiter(geolocator.geocode, min_delay_seconds=2, max_retries=3)
 
-    # --- Geocode Providers (cached) ---
     @st.cache_data(show_spinner=True)
     def geocode_providers(addresses):
         lats, lons = [], []
@@ -94,8 +126,8 @@ with tabs[0]:
     provider_df['Latitude'] = provider_lats
     provider_df['Longitude'] = provider_lons
 
-    # --- User Geocoding and Recommendation ---
-    if submit:
+    if show_form and submit:
+        st.session_state['show_form'] = False
         user_full_address = f"{street}, {city}, {state} {zipcode}".strip(', ')
         user_lat, user_lon = None, None
         try:
@@ -112,7 +144,7 @@ with tabs[0]:
                 user_lat, user_lon = user_location.latitude, user_location.longitude
                 st.session_state['user_lat'] = user_lat
                 st.session_state['user_lon'] = user_lon
-                st.success(f"Your location: ({user_lat:.5f}, {user_lon:.5f})")
+                # st.success(f"Your location: ({user_lat:.5f}, {user_lon:.5f})")
             else:
                 st.error("Could not geocode your address. Please check and try again.")
         except GeocoderUnavailable as e:
@@ -120,7 +152,6 @@ with tabs[0]:
         except Exception as e:
             st.error(f"Geocoding error: {e}")
 
-        # --- Distance Calculation ---
         def calculate_distances(user_lat, user_lon, provider_df):
             user_loc = (user_lat, user_lon)
             distances = []
@@ -133,9 +164,11 @@ with tabs[0]:
             return distances
 
         if user_lat is not None and user_lon is not None:
-            provider_df['Distance (miles)'] = calculate_distances(user_lat, user_lon, provider_df)
+            filtered_df = provider_df.copy()
+            if specialty != 'Any' and 'Specialty' in filtered_df.columns:
+                filtered_df = filtered_df[filtered_df['Specialty'] == specialty]
+            filtered_df['Distance (miles)'] = calculate_distances(user_lat, user_lon, filtered_df)
 
-            # --- Recommendation Logic ---
             def recommend_provider(provider_df, alpha=0.5, beta=0.5):
                 df = provider_df.copy()
                 df = df[df['Distance (miles)'].notnull() & df['Rank'].notnull()]
@@ -148,16 +181,24 @@ with tabs[0]:
                 return best, df
 
             st.subheader('Best Provider Recommendation')
-            best, scored_df = recommend_provider(provider_df, alpha=alpha, beta=beta)
+            best, scored_df = recommend_provider(filtered_df, alpha=alpha, beta=beta)
             if best is not None and isinstance(scored_df, pd.DataFrame):
-                st.session_state['recommendation'] = f"Best provider: {best['Full Name']}\nAddress: {best['Full Address']}\nDistance: {best['Distance (miles)']:.2f} miles\nRank: {best['Rank']}"
-                st.success(st.session_state['recommendation'])
+                st.markdown(f"**Name:** {best['Full Name']}")
+                address_for_url = best['Full Address'].replace(' ', '+')
+                maps_url = f"https://www.google.com/maps/search/?api=1&query={address_for_url}"
+                st.markdown(f"**Address:** [{best['Full Address']}]({maps_url})")
+                if 'Phone 1' in best:
+                    st.markdown(f"**Phone:** {best['Phone 1']} (future support)")
+                if 'Email 1' in best:
+                    st.markdown(f"**Email:** {best['Email 1']} (future support)")
+                if 'Specialty' in best:
+                    st.markdown(f"**Specialty:** {best['Specialty']}")
                 st.write('Top 5 providers by blended score:')
                 st.dataframe(scored_df[['Full Name', 'Full Address', 'Distance (miles)', 'Rank', 'score']].sort_values(by='score').head())
             else:
                 st.warning('No providers with both rank and distance available.')
-    else:
-        st.info('Enter your address and click "Find Best Provider" to see recommendations.')
+    elif not show_form:
+        st.info('Click "New Search" to enter a new address.')
 
 with tabs[1]:
     # --- High-Level Overview of Selection Process ---
@@ -174,4 +215,4 @@ with tabs[1]:
         - Lower scores mean a better balance of proximity and provider quality.
     - **Step 5:** The provider with the lowest blended score is recommended as the best option.
     - You will also see the top 5 providers by blended score for comparison.
-    """) 
+    """)
