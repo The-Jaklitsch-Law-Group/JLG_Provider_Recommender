@@ -9,6 +9,7 @@ import io
 from docx import Document
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
+import re
 
 # --- Custom Functions ---
 def recommend_provider(provider_df, alpha=0.5, beta=0.5):
@@ -128,41 +129,41 @@ with tabs[0]:
     # --- Layout: Form on left, results on right ---
     left_col, right_col = st.columns([.5, .5])
     with left_col:
-        # The form is always present
-        # Initialize variables to avoid unbound errors
-        street = st.session_state.get('street', '')
-        city = st.session_state.get('city', '')
-        state = st.session_state.get('state', '')
-        zipcode = st.session_state.get('zipcode', '')
-        specialty = st.session_state.get('specialty', 'Any')
-        alpha = st.session_state.get('alpha', 0.5)
-        beta = st.session_state.get('beta', 0.5)
-        submit = False
-        specialties = sorted(provider_df['Specialty'].dropna().unique()) if 'Specialty' in provider_df.columns else []
-        with st.form(key='address_form'):
-            street = st.text_input('Street Address (e.g., 123 Main St)', value=street)
-            city = st.text_input('City', value=city)
-            state = st.text_input('State (e.g., NY)', value=state)
-            zipcode = st.text_input('Zip Code', value=zipcode)
-            specialty = st.selectbox('Provider Specialty (optional)', ['Any'] + specialties) if specialties else 'Any'
-            col1, col2 = st.columns(2)
-            with col1:
-                alpha = st.slider('How important is provider quality?', min_value=0.0, max_value=1.0, value=alpha, step=0.05, help="Move right to prioritize provider quality (ranking)")
-            with col2:
-                beta = st.slider('How important is provider proximity?', min_value=0.0, max_value=1.0, value=beta, step=0.05, help="Move right to prioritize providers closer to the address")
-            if alpha + beta != 1.0:
-                total = alpha + beta
-                alpha = alpha / total
-                beta = beta / total
+        # --- Input Form ---
+        with st.form(key='input_form'):
+            street = st.text_input('Street Address', value=st.session_state.get('street', ''))
+            city = st.text_input('City', value=st.session_state.get('city', ''))
+            state = st.text_input('State', value=st.session_state.get('state', ''))
+            zipcode = st.text_input('Zip Code', value=st.session_state.get('zipcode', ''))
+            specialty = st.selectbox('Provider Specialty', ['Any'] + sorted(provider_df['Specialty'].unique()), index=0)
+            # --- More accessible weight control ---
+            blend = st.select_slider(
+                'How should we balance provider quality and proximity?',
+                options=['Only Distance', 'Mostly Distance', 'Balanced', 'Mostly Rank', 'Only Rank'],
+                value=st.session_state.get('blend', 'Balanced'),
+                help='Choose how much to prioritize provider quality (rank) vs. proximity (distance)'
+            )
+            blend_map = {
+                'Only Distance': (0.0, 1.0),
+                'Mostly Distance': (0.25, 0.75),
+                'Balanced': (0.5, 0.5),
+                'Mostly Rank': (0.75, 0.25),
+                'Only Rank': (1.0, 0.0)
+            }
+            alpha, beta = blend_map[blend]
+            st.markdown(f"**Provider quality (rank) weight:** {alpha:.2f}  |  **Proximity (distance) weight:** {beta:.2f}")
             submit = st.form_submit_button('Find Best Provider')
 
-        st.session_state['street'] = street
-        st.session_state['city'] = city
-        st.session_state['state'] = state
-        st.session_state['zipcode'] = zipcode
-        st.session_state['alpha'] = alpha
-        st.session_state['beta'] = beta
-        st.session_state['specialty'] = specialty
+            if submit:
+                # Save input values to session_state
+                st.session_state['street'] = street
+                st.session_state['city'] = city
+                st.session_state['state'] = state
+                st.session_state['zipcode'] = zipcode
+                st.session_state['specialty'] = specialty
+                st.session_state['blend'] = blend
+                st.session_state['alpha'] = alpha
+                # beta is always 1 - alpha
 
     with right_col:
         # --- Geocoding Setup ---
@@ -174,6 +175,12 @@ with tabs[0]:
             provider_df['Longitude'] = provider_lons
 
             # --- Content for Results ---
+            # Always show results if present in session state
+            best = st.session_state.get('last_best')
+            scored_df = st.session_state.get('last_scored_df')
+            params = st.session_state.get('last_params', {})
+            show_results = best is not None and scored_df is not None
+
             if submit:
                 user_full_address = f"{street}, {city}, {state} {zipcode}".strip(', ')
                 user_lat, user_lon = None, None
@@ -205,93 +212,106 @@ with tabs[0]:
                     filtered_df['Distance (miles)'] = calculate_distances(user_lat, user_lon, filtered_df)
 
                     best, scored_df = recommend_provider(filtered_df, alpha=alpha, beta=beta)
-                    st.subheader('Best Provider Recommendation')
-                    if best is not None and isinstance(scored_df, pd.DataFrame):
-                        st.markdown(f"👨‍⚕️ **Name:** {best['Full Name']}")
-                        address_for_url = best['Full Address'].replace(' ', '+')
-                        maps_url = f"https://www.google.com/maps/search/?api=1&query={address_for_url}"
-                        st.markdown(f"🏥 **Address:** [{best['Full Address']}]({maps_url})")
-                        st.markdown(f"📞 **Phone:** {best['Phone 1']}")
-                        st.markdown(f"📧 **Email:** {best['Email 1']}")
-                        st.markdown(f"🏥 **Specialty:** {best['Specialty']}")
-                        if best.get('Preferred', 0) == 1:
-                            st.markdown(f"<span style='color: green; font-weight: bold;'>✅ Preferred Provider</span>", unsafe_allow_html=True)
-                        st.write('Top 5 providers by blended score:')
-                        st.dataframe(scored_df[['Full Name', 'Full Address', 'Distance (miles)', 'Rank', 'score', 'Preferred']].sort_values(by='score').head())
+                    # Store results and params in session state
+                    st.session_state['last_best'] = best
+                    st.session_state['last_scored_df'] = scored_df
+                    st.session_state['last_params'] = {'alpha': alpha, 'beta': beta, 'specialty': specialty}
+                    show_results = best is not None and isinstance(scored_df, pd.DataFrame)
 
-                        # --- Export Buttons ---
-                        def get_word_bytes(best):
-                            doc = Document()
-                            doc.add_heading('Recommended Provider', 0)
-                            doc.add_paragraph(f"Name: {best['Full Name']}")
-                            doc.add_paragraph(f"Address: {best['Full Address']}")
-                            doc.add_paragraph(f"Phone: {best['Phone 1']}")
-                            doc.add_paragraph(f"Email: {best['Email 1']}")
-                            doc.add_paragraph(f"Specialty: {best['Specialty']}")
-                            if best.get('Preferred', 0) == 1:
-                                doc.add_paragraph("Preferred Provider")
-                            buffer = io.BytesIO()
-                            doc.save(buffer)
-                            buffer.seek(0)
-                            return buffer
-
-                        def get_pdf_bytes(best):
-                            buffer = io.BytesIO()
-                            c = canvas.Canvas(buffer, pagesize=letter)
-                            c.setFont("Helvetica-Bold", 16)
-                            c.drawString(72, 720, "Recommended Provider")
-                            c.setFont("Helvetica", 12)
-                            y = 700
-                            c.drawString(72, y, f"Name: {best['Full Name']}")
-                            y -= 20
-                            c.drawString(72, y, f"Address: {best['Full Address']}")
-                            y -= 20
-                            c.drawString(72, y, f"Phone: {best['Phone 1']}")
-                            y -= 20
-                            c.drawString(72, y, f"Email: {best['Email 1']}")
-                            y -= 20
-                            c.drawString(72, y, f"Specialty: {best['Specialty']}")
-                            y -= 20
-                            if best.get('Preferred', 0) == 1:
-                                c.drawString(72, y, "Preferred Provider")
-                            c.save()
-                            buffer.seek(0)
-                            return buffer
-
-                        word_bytes = get_word_bytes(best)
-                        st.download_button(
-                            label="Export as Word",
-                            data=word_bytes,
-                            file_name="recommended_provider.docx",
-                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                        )
-                        pdf_bytes = get_pdf_bytes(best)
-                        st.download_button(
-                            label="Export as PDF",
-                            data=pdf_bytes,
-                            file_name="recommended_provider.pdf",
-                            mime="application/pdf"
-                        )
-
-                        # --- Rationale for Selection ---
-                        with st.expander('Why was this provider selected?', expanded=False):
-                            rationale = []
-                            if best.get('Preferred', 0) == 1:
-                                rationale.append('This provider is a **Preferred Provider** for the law firm, which means they are trusted and have a strong track record with our clients.')
-                            else:
-                                rationale.append('This provider is not marked as preferred, but was selected based on a balance of proximity and ranking.')
-                            rationale.append(f"")
-                            rationale.append(f"* **Distance** from the address is **{best['Distance (miles)']:.2f} miles**.")
-                            rationale.append(f"")
-                            rationale.append(f"* Selected specialty is **{best['Specialty']}**.")
-                            rationale.append(f"")
-                            rationale.append(f"* Provider's rank is **{best['Rank']}** (lower is better).")
-                            rationale.append(f"")
-                            rationale.append(f"The final score is a blend of normalized rank and distance, using your chosen weights: **Rank weight = {alpha:.2f}**, **Distance weight = {beta:.2f}**.")
-                            rationale.append(f"The provider with the lowest blended score was recommended.")
-                            st.markdown('<br>'.join(rationale), unsafe_allow_html=True)
+            # Display results if available
+            if show_results and best is not None and isinstance(scored_df, pd.DataFrame):
+                # Use params from session state if available
+                alpha_disp = params.get('alpha', alpha)
+                beta_disp = 1.0 - alpha_disp
+                st.subheader('Best Provider Recommendation')
+                st.markdown(f"👨‍⚕️ **Name:** {best['Full Name']}")
+                address_for_url = best['Full Address'].replace(' ', '+')
+                maps_url = f"https://www.google.com/maps/search/?api=1&query={address_for_url}"
+                st.markdown(f"🏥 **Address:** [{best['Full Address']}]({maps_url})")
+                st.markdown(f"📞 **Phone:** {best['Phone 1']}")
+                st.markdown(f"📧 **Email:** {best['Email 1']}")
+                st.markdown(f"🏥 **Specialty:** {best['Specialty']}")
+                if best.get('Preferred', 0) == 1:
+                    st.markdown(f"<span style='color: green; font-weight: bold;'>✅ Preferred Provider</span>", unsafe_allow_html=True)
+                st.write('Top 5 providers by blended score:')
+                required_cols = ['Full Name', 'Full Address', 'Distance (miles)', 'Rank', 'score', 'Preferred']
+                if isinstance(scored_df, pd.DataFrame) and all(col in scored_df.columns for col in required_cols):
+                    st.dataframe(scored_df[required_cols].sort_values(by='score').head())
+                # --- Export Buttons ---
+                def sanitize_filename(name):
+                    return re.sub(r'[^A-Za-z0-9_]', '', name.replace(' ', '_'))
+                def get_word_bytes(best):
+                    doc = Document()
+                    doc.add_heading('Recommended Provider', 0)
+                    doc.add_paragraph(f"Name: {best['Full Name']}")
+                    doc.add_paragraph(f"Address: {best['Full Address']}")
+                    doc.add_paragraph(f"Phone: {best['Phone 1']}")
+                    doc.add_paragraph(f"Email: {best['Email 1']}")
+                    doc.add_paragraph(f"Specialty: {best['Specialty']}")
+                    if best.get('Preferred', 0) == 1:
+                        doc.add_paragraph("Preferred Provider")
+                    buffer = io.BytesIO()
+                    doc.save(buffer)
+                    buffer.seek(0)
+                    return buffer
+                def get_pdf_bytes(best):
+                    buffer = io.BytesIO()
+                    c = canvas.Canvas(buffer, pagesize=letter)
+                    c.setFont("Helvetica-Bold", 16)
+                    c.drawString(72, 720, "Recommended Provider")
+                    c.setFont("Helvetica", 12)
+                    y = 700
+                    c.drawString(72, y, f"Name: {best['Full Name']}")
+                    y -= 20
+                    c.drawString(72, y, f"Address: {best['Full Address']}")
+                    y -= 20
+                    c.drawString(72, y, f"Phone: {best['Phone 1']}")
+                    y -= 20
+                    c.drawString(72, y, f"Email: {best['Email 1']}")
+                    y -= 20
+                    c.drawString(72, y, f"Specialty: {best['Specialty']}")
+                    y -= 20
+                    if best.get('Preferred', 0) == 1:
+                        c.drawString(72, y, "Preferred Provider")
+                    c.save()
+                    buffer.seek(0)
+                    return buffer
+                provider_name = sanitize_filename(str(best['Full Name']))
+                provider_specialty = sanitize_filename(str(best['Specialty']))
+                base_filename = f"Provider_{provider_name}_{provider_specialty}"
+                word_bytes = get_word_bytes(best)
+                st.download_button(
+                    label="Export as Word",
+                    data=word_bytes,
+                    file_name=f"{base_filename}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                )
+                pdf_bytes = get_pdf_bytes(best)
+                st.download_button(
+                    label="Export as PDF",
+                    data=pdf_bytes,
+                    file_name=f"{base_filename}.pdf",
+                    mime="application/pdf"
+                )
+                # --- Rationale for Selection ---
+                with st.expander('Why was this provider selected?', expanded=False):
+                    rationale = []
+                    if best.get('Preferred', 0) == 1:
+                        rationale.append('This provider is a **Preferred Provider** for the law firm, which means they are trusted and have a strong track record with our clients.')
                     else:
-                        st.warning('No providers with both rank and distance available.')
+                        rationale.append('This provider is not marked as preferred, but was selected based on a balance of proximity and ranking.')
+                    rationale.append(f"")
+                    rationale.append(f"* **Distance** from the address is **{best['Distance (miles)']:.2f} miles**.")
+                    rationale.append(f"")
+                    rationale.append(f"* Selected specialty is **{best['Specialty']}**.")
+                    rationale.append(f"")
+                    rationale.append(f"* Provider's rank is **{best['Rank']}** (lower is better).")
+                    rationale.append(f"")
+                    rationale.append(f"The final score is a blend of normalized rank and distance, using your chosen weights: **Rank weight = {alpha_disp:.2f}**, **Distance weight = {beta_disp:.2f}**.")
+                    rationale.append(f"The provider with the lowest blended score was recommended.")
+                    st.markdown('<br>'.join(rationale), unsafe_allow_html=True)
+            elif submit:
+                st.warning('No providers with both rank and distance available.')
 
 
 with tabs[1]:
