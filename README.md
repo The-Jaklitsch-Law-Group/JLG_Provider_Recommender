@@ -21,7 +21,7 @@ The Provider Recommender is a web-based tool designed to help personal injury la
 - **Clear, Actionable Recommendations:** The app highlights the top recommended provider, including name, address (with Google Maps link), phone, email, and specialty.
 - **Preferred Provider Priority:** The system always prioritizes the law firm's preferred providers.
 - **Top 5 Comparison:** Users can review the top 5 providers by blended score for transparency.
-- **Export Options:** Download recommendations as Word or PDF documents for easy sharing with clients.
+- **Export Option:** Download recommendations as a Word document for easy sharing with clients.
 - **Accessible UI:** Designed for non-technical users, with clear instructions, tooltips, and a "Start New Search" button.
 
 ---
@@ -33,7 +33,7 @@ The Provider Recommender is a web-based tool designed to help personal injury la
 4. **Distance Calculation:** The system calculates the distance from the client to each provider.
 5. **Scoring:** Each provider receives a blended score based on normalized rank and distance, weighted by user preference. Preferred providers are always prioritized.
 6. **Recommendation:** The provider with the lowest blended score is recommended. The top 5 are also displayed for comparison.
-7. **Export:** Users can export the recommendation as a Word or PDF document.
+7. **Export:** Users can export the recommendation as a Word document.
 
 ### Workflow Diagram
 
@@ -87,7 +87,7 @@ The Provider Recommender is a web-based tool designed to help personal injury la
                 v
 +---------------+---------------+
 | 9. User exports recommendation|
-|    as Word/PDF                |
+|    as Word                    |
 +-------------------------------+
 ```
 
@@ -122,7 +122,7 @@ The Provider Recommender is a web-based tool designed to help personal injury la
 ### Setup & Usage
 1. **Install dependencies:**
    ```bash
-   uv pip install -r requirements.txt
+   pip install -r requirements.txt
    ```
 2. **Run the app:**
    ```bash
