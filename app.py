@@ -9,48 +9,15 @@ import io
 from docx import Document
 import re
 from provider_utils import (
-    recommend_provider,
+    sanitize_filename,
+    load_provider_data,
     geocode_providers,
     calculate_distances,
-    sanitize_filename,
+    recommend_provider,
     get_word_bytes
 )
 
 # --- Helper Functions ---
-def sanitize_filename(name):
-    """Sanitize a string for use as a filename."""
-    return re.sub(r'[^A-Za-z0-9_]', '', name.replace(' ', '_'))
-
-def get_word_bytes(best):
-    """Generate a Word document as bytes for the recommended provider."""
-    doc = Document()
-    doc.add_heading('Recommended Provider', 0)
-    doc.add_paragraph(f"Name: {best['Full Name']}")
-    doc.add_paragraph(f"Address: {best['Full Address']}")
-    doc.add_paragraph(f"Phone: {best['Phone 1']}")
-    doc.add_paragraph(f"Email: {best['Email 1']}")
-    doc.add_paragraph(f"Specialty: {best['Specialty']}")
-    if best.get('Preferred', 0) == 1:
-        doc.add_paragraph("Preferred Provider")
-    buffer = io.BytesIO()
-    doc.save(buffer)
-    buffer.seek(0)
-    return buffer
-
-# --- Data Loading ---
-def load_provider_data():
-    """Load and preprocess provider data from Excel."""
-    df = pd.read_excel('data/Ranked_Contacts.xlsx')
-    df.columns = [col.strip() for col in df.columns]
-    df['Address 1 Zip'] = df['Address 1 Zip'].apply(lambda x: str(int(x)) if pd.notnull(x) else '')
-    df['Full Address'] = (
-        df['Address 1 Line 1'].fillna('') + ', '
-        + df['Address 1 City'].fillna('') + ', '
-        + df['Address 1 State'].fillna('') + ' '
-        + df['Address 1 Zip'].fillna('')
-    )
-    df['Full Address'] = df['Full Address'].str.replace(r',\s*,', ',', regex=True).str.replace(r',\s*$', '', regex=True)
-    return df
 
 provider_df = load_provider_data()
 
@@ -75,21 +42,21 @@ if 'Email 1' not in provider_df.columns:
 if 'Preferred' not in provider_df.columns:
     provider_df['Preferred'] = np.random.choice([1, 0], size=len(provider_df), p=[0.3, 0.7])  # 30% preferred
 
-# --- Load API secrets for future API calls ---
-LD_API_KEY = st.secrets.get('lead_docket_api_key', None)
-LD_API_ENDPOINT = st.secrets.get('lead_docket_base_api_endpoint', None)
+# # --- Load API secrets for future API calls ---
+# LD_API_KEY = st.secrets.get('lead_docket_api_key', None)
+# LD_API_ENDPOINT = st.secrets.get('lead_docket_base_api_endpoint', None)
 
-def call_external_api(payload):
-    """Placeholder for making an API call using the stored API key and endpoint."""
-    if not LD_API_KEY or not LD_API_ENDPOINT:
-        st.warning('API key or endpoint not set in secrets. Please update .streamlit/secrets.toml.')
-        return None
-    # Example usage (requests must be imported if used):
-    # import requests
-    # headers = {"Authorization": f"Bearer {API_KEY}"}
-    # response = requests.post(API_ENDPOINT, json=payload, headers=headers)
-    # return response.json()
-    return None  # Placeholder
+# def call_external_api(payload):
+#     """Placeholder for making an API call using the stored API key and endpoint."""
+#     if not LD_API_KEY or not LD_API_ENDPOINT:
+#         st.warning('API key or endpoint not set in secrets. Please update .streamlit/secrets.toml.')
+#         return None
+#     # Example usage (requests must be imported if used):
+#     # import requests
+#     # headers = {"Authorization": f"Bearer {API_KEY}"}
+#     # response = requests.post(API_ENDPOINT, json=payload, headers=headers)
+#     # return response.json()
+#     return None  # Placeholder
 
 # --- Streamlit Page Config ---
 st.set_page_config(page_title="Provider Recommender", page_icon=":hospital:", layout="wide")

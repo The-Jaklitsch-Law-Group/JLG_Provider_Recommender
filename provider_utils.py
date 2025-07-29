@@ -7,6 +7,22 @@ from docx import Document
 import re
 
 
+# --- Data Loading ---
+def load_provider_data():
+    """Load and preprocess provider data from Excel."""
+    df = pd.read_excel('data/Ranked_Contacts.xlsx')
+    df.columns = [col.strip() for col in df.columns]
+    df['Address 1 Zip'] = df['Address 1 Zip'].apply(lambda x: str(int(x)) if pd.notnull(x) else '')
+    df['Full Address'] = (
+        df['Address 1 Line 1'].fillna('') + ', '
+        + df['Address 1 City'].fillna('') + ', '
+        + df['Address 1 State'].fillna('') + ' '
+        + df['Address 1 Zip'].fillna('')
+    )
+    df['Full Address'] = df['Full Address'].str.replace(r',\s*,', ',', regex=True).str.replace(r',\s*$', '', regex=True)
+    return df
+
+
 def sanitize_filename(name):
     """Sanitize a string for use as a filename."""
     return re.sub(r'[^A-Za-z0-9_]', '', name.replace(' ', '_'))
