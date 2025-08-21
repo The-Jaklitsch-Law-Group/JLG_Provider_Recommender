@@ -5,11 +5,9 @@ import io
 from docx import Document
 import re
 from pathlib import Path
-from functools import lru_cache
 
 
 # --- Data Loading ---
-@lru_cache(maxsize=1)
 def load_provider_data(filepath: str) -> pd.DataFrame:
     """Load and preprocess provider data from Excel, CSV, Feather, or Parquet."""
 
@@ -30,6 +28,7 @@ def load_provider_data(filepath: str) -> pd.DataFrame:
         raise ValueError(f"Unsupported file type: {suffix}")
 
     df.columns = [col.strip() for col in df.columns]
+    df = df.drop(columns='Preference', errors='ignore')
     df['Zip'] = df['Zip'].apply(lambda x: str(x) if pd.notnull(x) else '')
     df['Referral Count'] = pd.to_numeric(df.get('Referral Count'), errors='coerce')
     df['Full Address'] = (
