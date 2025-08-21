@@ -184,7 +184,7 @@ with tabs[0]:
 
         if user_lat is not None and user_lon is not None:
             filtered_df = provider_df[provider_df["Referral Count"] > 1].copy()
-            filtered_df["Distance (miles)"] = calculate_distances(
+            filtered_df["Distance (Miles)"] = calculate_distances(
                 user_lat, user_lon, filtered_df
             )
             best, scored_df = recommend_provider(
@@ -233,19 +233,17 @@ with tabs[0]:
         mandatory_cols = [
             "Full Name",
             "Full Address",
-            "Distance (miles)",
+            "Distance (Miles)",
             "Referral Count",
-            "score",
+            "Score",
         ]
-        display_cols = mandatory_cols + (
-            ["Preferred"] if "Preferred" in scored_df.columns else []
-        )
+        display_cols = mandatory_cols
         if isinstance(scored_df, pd.DataFrame) and all(
             col in scored_df.columns for col in mandatory_cols
         ):
             df = st.dataframe(
                 scored_df[display_cols]
-                .sort_values(by="score", ignore_index=True)
+                .sort_values(by="Score", ignore_index=True)
                 .head()
             )
 
@@ -254,7 +252,7 @@ with tabs[0]:
         base_filename = f"Provider_{provider_name}"
         word_bytes = get_word_bytes(best)
         st.download_button(
-            label="Export as Word",
+            label="Export as Word Document",
             data=word_bytes,
             file_name=f"{base_filename}.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -273,7 +271,7 @@ with tabs[0]:
                 )
                 rationale.append("")
             rationale.append(
-                f"* **Distance** from the address is **{best['Distance (miles)']:.2f} miles**."
+                f"* **Distance** from the address is **{best["Distance (Miles)"]:.2f} miles**."
             )
             rationale.append("")
             rationale.append(

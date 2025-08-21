@@ -75,7 +75,7 @@ def get_word_bytes(best):
 def recommend_provider(provider_df, distance_weight=0.5, referral_weight=0.5):
     """Return the best provider and scored DataFrame, prioritizing preferred providers, then lowest blended score."""
     df = provider_df.copy(deep=True)
-    df = df[df["Distance (miles)"].notnull() & df["Referral Count"].notnull()]
+    df = df[df["Distance (Miles)"].notnull() & df["Referral Count"].notnull()]
     df = df[df["Referral Count"] > 1]
     if df.empty:
         return None, None
@@ -87,19 +87,19 @@ def recommend_provider(provider_df, distance_weight=0.5, referral_weight=0.5):
 
     # Safe normalization (avoid division by zero)
     referral_range = df["Referral Count"].max() - df["Referral Count"].min()
-    dist_range = df["Distance (miles)"].max() - df["Distance (miles)"].min()
+    dist_range = df["Distance (Miles)"].max() - df["Distance (Miles)"].min()
     df["norm_rank"] = (
         (df["Referral Count"] - df["Referral Count"].min()) / referral_range
         if referral_range != 0
         else 0
     )
     df["norm_dist"] = (
-        (df["Distance (miles)"] - df["Distance (miles)"].min()) / dist_range
+        (df["Distance (Miles)"] - df["Distance (Miles)"].min()) / dist_range
         if dist_range != 0
         else 0
     )
-    df["score"] = distance_weight * df["norm_dist"] + referral_weight * df["norm_rank"]
-    best = df.sort_values(by="score").iloc[0]
+    df["Score"] = distance_weight * df["norm_dist"] + referral_weight * df["norm_rank"]
+    best = df.sort_values(by="Score").iloc[0]
     return best, df
 
 
