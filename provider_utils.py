@@ -16,43 +16,50 @@ def load_provider_data(filepath: str) -> pd.DataFrame:
         raise FileNotFoundError(f"File {filepath} does not exist")
 
     suffix = path.suffix.lower()
-    if suffix == '.xlsx':
+    if suffix == ".xlsx":
         df = pd.read_excel(path)
-    elif suffix == '.csv':
+    elif suffix == ".csv":
         df = pd.read_csv(path)
-    elif suffix == '.feather':
+    elif suffix == ".feather":
         df = pd.read_feather(path)
-    elif suffix == '.parquet':
+    elif suffix == ".parquet":
         df = pd.read_parquet(path)
     else:
         raise ValueError(f"Unsupported file type: {suffix}")
 
     df.columns = [col.strip() for col in df.columns]
-    df = df.drop(columns='Preference', errors='ignore')
-    df['Zip'] = df['Zip'].apply(lambda x: str(x) if pd.notnull(x) else '')
-    df['Referral Count'] = pd.to_numeric(df.get('Referral Count'), errors='coerce')
-    df['Full Address'] = (
-        df['Street'].fillna('') + ', '
-        + df['City'].fillna('') + ', '
-        + df['State'].fillna('') + ' '
-        + df['Zip'].fillna('')
+    df = df.drop(columns="Preference", errors="ignore")
+    df["Zip"] = df["Zip"].apply(lambda x: str(x) if pd.notnull(x) else "")
+    df["Referral Count"] = pd.to_numeric(df.get("Referral Count"), errors="coerce")
+    df["Full Address"] = (
+        df["Street"].fillna("")
+        + ", "
+        + df["City"].fillna("")
+        + ", "
+        + df["State"].fillna("")
+        + " "
+        + df["Zip"].fillna("")
     )
-    df['Full Address'] = df['Full Address'].str.replace(r',\s*,', ',', regex=True).str.replace(r',\s*$', '', regex=True)
+    df["Full Address"] = (
+        df["Full Address"]
+        .str.replace(r",\s*,", ",", regex=True)
+        .str.replace(r",\s*$", "", regex=True)
+    )
     return df
 
 
 def sanitize_filename(name):
     """Sanitize a string for use as a filename."""
-    return re.sub(r'[^A-Za-z0-9_]', '', name.replace(' ', '_'))
+    return re.sub(r"[^A-Za-z0-9_]", "", name.replace(" ", "_"))
 
 
 def get_word_bytes(best):
     """Generate a Word document as bytes for the recommended provider."""
     doc = Document()
-    doc.add_heading('Recommended Provider', 0)
+    doc.add_heading("Recommended Provider", 0)
     doc.add_paragraph(f"Name: {best['Full Name']}")
     doc.add_paragraph(f"Address: {best['Full Address']}")
-    phone = best.get('Phone Number') or best.get('Phone 1')
+    phone = best.get("Phone Number") or best.get("Phone 1")
     if phone:
         doc.add_paragraph(f"Phone: {phone}")
     # doc.add_paragraph(f"Email: {best['Email 1']}")
@@ -68,8 +75,8 @@ def get_word_bytes(best):
 def recommend_provider(provider_df, distance_weight=0.5, referral_weight=0.5):
     """Return the best provider and scored DataFrame, prioritizing preferred providers, then lowest blended score."""
     df = provider_df.copy(deep=True)
-    df = df[df['Distance (miles)'].notnull() & df['Referral Count'].notnull()]
-    df = df[df['Referral Count'] > 1]
+    df = df[df["Distance (miles)"].notnull() & df["Referral Count"].notnull()]
+    df = df[df["Referral Count"] > 1]
     if df.empty:
         return None, None
 
@@ -79,20 +86,20 @@ def recommend_provider(provider_df, distance_weight=0.5, referral_weight=0.5):
     #     df = preferred_df
 
     # Safe normalization (avoid division by zero)
-    referral_range = df['Referral Count'].max() - df['Referral Count'].min()
-    dist_range = df['Distance (miles)'].max() - df['Distance (miles)'].min()
-    df['norm_rank'] = (
-        (df['Referral Count'] - df['Referral Count'].min()) / referral_range
+    referral_range = df["Referral Count"].max() - df["Referral Count"].min()
+    dist_range = df["Distance (miles)"].max() - df["Distance (miles)"].min()
+    df["norm_rank"] = (
+        (df["Referral Count"] - df["Referral Count"].min()) / referral_range
         if referral_range != 0
         else 0
     )
-    df['norm_dist'] = (
-        (df['Distance (miles)'] - df['Distance (miles)'].min()) / dist_range
+    df["norm_dist"] = (
+        (df["Distance (miles)"] - df["Distance (miles)"].min()) / dist_range
         if dist_range != 0
         else 0
     )
-    df['score'] = distance_weight * df['norm_dist'] + referral_weight * df['norm_rank']
-    best = df.sort_values(by='score').iloc[0]
+    df["score"] = distance_weight * df["norm_dist"] + referral_weight * df["norm_rank"]
+    best = df.sort_values(by="score").iloc[0]
     return best, df
 
 
@@ -126,15 +133,18 @@ def geocode_providers(addresses, _geocode):
 def calculate_distances(user_lat, user_lon, provider_df):
     """Calculate distances in miles from user to each provider using vectorized operations."""
 
-    lat_rad = np.radians(provider_df['Latitude'].to_numpy(dtype=float))
-    lon_rad = np.radians(provider_df['Longitude'].to_numpy(dtype=float))
+    lat_rad = np.radians(provider_df["Latitude"].to_numpy(dtype=float))
+    lon_rad = np.radians(provider_df["Longitude"].to_numpy(dtype=float))
     user_lat_rad = np.radians(user_lat)
     user_lon_rad = np.radians(user_lon)
 
     valid = ~np.isnan(lat_rad) & ~np.isnan(lon_rad)
     dlat = lat_rad[valid] - user_lat_rad
     dlon = lon_rad[valid] - user_lon_rad
-    a = np.sin(dlat / 2) ** 2 + np.cos(user_lat_rad) * np.cos(lat_rad[valid]) * np.sin(dlon / 2) ** 2
+    a = (
+        np.sin(dlat / 2) ** 2
+        + np.cos(user_lat_rad) * np.cos(lat_rad[valid]) * np.sin(dlon / 2) ** 2
+    )
     c = 2 * np.arcsin(np.sqrt(a))
     distances = np.full(len(provider_df), np.nan)
     distances[valid] = 3958.8 * c  # Earth radius in miles
