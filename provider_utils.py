@@ -31,6 +31,7 @@ def load_provider_data(filepath: str) -> pd.DataFrame:
 
     df.columns = [col.strip() for col in df.columns]
     df['Zip'] = df['Zip'].apply(lambda x: str(x) if pd.notnull(x) else '')
+    df['Referral Count'] = pd.to_numeric(df.get('Referral Count'), errors='coerce')
     df['Full Address'] = (
         df['Street'].fillna('') + ', '
         + df['City'].fillna('') + ', '
@@ -52,7 +53,9 @@ def get_word_bytes(best):
     doc.add_heading('Recommended Provider', 0)
     doc.add_paragraph(f"Name: {best['Full Name']}")
     doc.add_paragraph(f"Address: {best['Full Address']}")
-    # doc.add_paragraph(f"Phone: {best['Phone 1']}")
+    phone = best.get('Phone Number') or best.get('Phone 1')
+    if phone:
+        doc.add_paragraph(f"Phone: {phone}")
     # doc.add_paragraph(f"Email: {best['Email 1']}")
     # doc.add_paragraph(f"Specialty: {best['Specialty']}")
     # if best.get('Preferred', 0) == 1:
@@ -67,6 +70,7 @@ def recommend_provider(provider_df, distance_weight=0.5, referral_weight=0.5):
     """Return the best provider and scored DataFrame, prioritizing preferred providers, then lowest blended score."""
     df = provider_df.copy()
     df = df[df['Distance (miles)'].notnull() & df['Referral Count'].notnull()]
+    df = df[df['Referral Count'] > 1]
     if df.empty:
         return None, None
 
