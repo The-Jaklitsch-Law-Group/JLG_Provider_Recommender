@@ -4,7 +4,6 @@ import numpy as np
 import os
 from geopy.geocoders import Nominatim
 from geopy.extra.rate_limiter import RateLimiter
-from geopy.distance import great_circle
 import io
 from docx import Document
 import re
@@ -187,7 +186,11 @@ with tabs[0]:
         if user_lat is not None and user_lon is not None:
             filtered_df = provider_df.copy()
             filtered_df['Distance (miles)'] = calculate_distances(user_lat, user_lon, filtered_df)
-            best, scored_df = recommend_provider(filtered_df, alpha=alpha, beta=beta)
+            best, scored_df = recommend_provider(
+                filtered_df,
+                distance_weight=alpha,
+                referral_weight=beta,
+            )
 
             # Store results and params in session state
             st.session_state['last_best'] = best
@@ -200,7 +203,7 @@ with tabs[0]:
     if show_results and best is not None and isinstance(scored_df, pd.DataFrame):
         # Use params from session state if available
         alpha_disp = params.get('alpha', alpha)
-        beta_disp = 1.0 - alpha_disp
+        beta_disp = params.get('beta', beta)
 
         # --- Highlighted Recommended Provider ---
         st.markdown(f"<h3 style='color: #2E86C1;'>🏆 Recommended Provider</h3>", unsafe_allow_html=True)
@@ -239,7 +242,9 @@ with tabs[0]:
             rationale.append(f"")
             rationale.append(f"* Provider's rank is **{best['Referral Count']}** (lower is better).")
             rationale.append(f"")
-            rationale.append(f"The final score is a blend of normalized rank and distance, using your chosen weights: **Rank weight = {alpha_disp:.2f}**, **Distance weight = {beta_disp:.2f}**.")
+            rationale.append(
+                f"The final score is a blend of normalized distance and referral rank, using your chosen weights: **Distance weight = {alpha_disp:.2f}**, **Referral weight = {beta_disp:.2f}**."
+            )
             rationale.append(f"The provider with the lowest blended score was recommended.")
             st.markdown('<br>'.join(rationale), unsafe_allow_html=True)
     elif submit:
@@ -357,7 +362,7 @@ with tabs[0]:
     #     if show_results and best is not None and isinstance(scored_df, pd.DataFrame):
     #         # Use params from session state if available
     #         alpha_disp = params.get('alpha', alpha)
-    #         beta_disp = 1.0 - alpha_disp
+    #         beta_disp = params.get('beta', beta)
     #         # --- Highlighted Recommended Provider ---
     #         st.markdown(f"<h3 style='color: #2E86C1;'>🏆 Recommended Provider</h3>", unsafe_allow_html=True)
     #         st.markdown(f"<h4 style='color: #117A65;'>{best['Full Name']}</h4>", unsafe_allow_html=True)
@@ -399,7 +404,9 @@ with tabs[0]:
     #             # rationale.append(f"")
     #             rationale.append(f"* Provider's rank is **{best['Referral Count']}** (lower is better).")
     #             rationale.append(f"")
-    #             rationale.append(f"The final score is a blend of normalized rank and distance, using your chosen weights: **Rank weight = {alpha_disp:.2f}**, **Distance weight = {beta_disp:.2f}**.")
+    #             rationale.append(
+    #                 f"The final score is a blend of normalized distance and referral rank, using your chosen weights: **Distance weight = {alpha_disp:.2f}**, **Referral weight = {beta_disp:.2f}**."
+    #             )
     #             rationale.append(f"The provider with the lowest blended score was recommended.")
     #             st.markdown('<br>'.join(rationale), unsafe_allow_html=True)
     #     elif submit:
