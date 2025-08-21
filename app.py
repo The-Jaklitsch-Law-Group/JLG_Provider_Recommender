@@ -10,8 +10,7 @@ from docx import Document
 import re
 from provider_utils import (
     sanitize_filename,
-    load_provider_data_excel,
-    load_provider_data_feather,
+    load_provider_data,
     geocode_providers,
     calculate_distances,
     recommend_provider,
@@ -20,7 +19,7 @@ from provider_utils import (
 
 # --- Helper Functions ---
 
-provider_df = load_provider_data_feather()
+provider_df = load_provider_data(filepath = 'data/cleaned_outbound_referrals.parquet')
 
 # --- Set random seed for reproducibility ---
 np.random.seed(42)  # Ensures consistent placeholder data and recommendations across runs
@@ -220,7 +219,7 @@ with tabs[0]:
         st.write('Top 5 providers by blended score:')
         required_cols = ['Full Name', 'Full Address', 'Distance (miles)', 'Referral Count', 'score', 'Preferred']
         if isinstance(scored_df, pd.DataFrame) and all(col in scored_df.columns for col in required_cols):
-            st.dataframe(scored_df[required_cols].sort_values(by='score').head())
+            st.dataframe(scored_df[required_cols].sort_values(by='score', ignore_index = True).head())
         # --- Export Button ---
         provider_name = sanitize_filename(str(best['Full Name']))
         # provider_specialty = sanitize_filename(str(best['Specialty']))

@@ -8,30 +8,20 @@ import re
 
 
 # --- Data Loading ---
-def load_provider_data_excel(filepath = 'data/Ranked_Contacts.xlsx'):
-    """Load and preprocess provider data from Excel."""
-    df = pd.read_excel(filepath)
-    df.columns = [col.strip() for col in df.columns]
-    df['Zip'] = df['Zip'].apply(lambda x: str(int(x)) if pd.notnull(x) else '')
-    df['Full Address'] = (
-        df['Street'].fillna('') + ', '
-        + df['City'].fillna('') + ', '
-        + df['State'].fillna('') + ' '
-        + df['Zip'].fillna('')
-    )
-    df['Full Address'] = df['Full Address'].str.replace(r',\s*,', ',', regex=True).str.replace(r',\s*$', '', regex=True)
-    return df
+def load_provider_data(filepath):
+    """Load and preprocess provider data from Excel, CSV, Feather, or Parquet"""
 
-
-def load_provider_data_feather(filepath = "./data/cleaned_outbound_referrals.feather"):
-    """Load and preprocess provider data from Excel."""
-    
-    if '.feather' not in filepath:
-        raise Exception('File is not saved as a Feather file type.')
+    if '.xlsx' in filepath:
+        df = pd.read_excel(filepath)
+    elif '.csv' in filepath:
+        df = pd.read_csv(filepath)
+    elif '.feather' in filepath:
+        df = pd.read_feather(filepath)
+    elif '.parquet' in filepath:
+        df = pd.read_parquet(filepath)
     else:
-        pass
+        print(f"Unable to read {filepath} - check file type.")
 
-    df = pd.read_feather(filepath)
     df.columns = [col.strip() for col in df.columns]
     df['Zip'] = df['Zip'].apply(lambda x: str(x) if pd.notnull(x) else '')
     df['Full Address'] = (
