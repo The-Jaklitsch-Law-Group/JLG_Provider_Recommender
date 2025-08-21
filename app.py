@@ -212,10 +212,11 @@ with tabs[0]:
             st.markdown(f"📞 <b>Phone:</b> {best['Phone Number']}", unsafe_allow_html=True)
         
         st.write('**Top 5 providers by blended score:**')
-        required_cols = ['Full Name', 'Full Address', 'Distance (miles)', 'Referral Count', 'score', 'Preferred']
-        if isinstance(scored_df, pd.DataFrame) and all(col in scored_df.columns for col in required_cols):
+        mandatory_cols = ['Full Name', 'Full Address', 'Distance (miles)', 'Referral Count', 'score']
+        display_cols = mandatory_cols + (['Preferred'] if 'Preferred' in scored_df.columns else [])
+        if isinstance(scored_df, pd.DataFrame) and all(col in scored_df.columns for col in mandatory_cols):
             df = st.dataframe(
-                scored_df[required_cols]
+                scored_df[display_cols]
                 .sort_values(by='score', ignore_index=True)
                 .head()
             )
