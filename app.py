@@ -1,19 +1,15 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import os
 from geopy.geocoders import Nominatim
 from geopy.extra.rate_limiter import RateLimiter
-import io
-from docx import Document
-import re
 from provider_utils import (
     sanitize_filename,
     load_provider_data,
     geocode_providers,
     calculate_distances,
     recommend_provider,
-    get_word_bytes
+    get_word_bytes,
 )
 
 # --- Helper Functions ---
@@ -152,7 +148,7 @@ with tabs[0]:
 
     # --- Geocoding Setup ---
     geolocator = Nominatim(user_agent="provider_recommender")
-    geocode = RateLimiter(geolocator.geocode, min_delay_seconds=2, max_retries=3)
+    geocode = RateLimiter(geolocator.geocode, min_delay_seconds=1, max_retries=3)
 
     # --- Content for Results ---
     # Always show results if present in session state
@@ -184,7 +180,7 @@ with tabs[0]:
             st.error(f"Geocoding error: {e}")
 
         if user_lat is not None and user_lon is not None:
-            filtered_df = provider_df.copy()
+            filtered_df = provider_df[provider_df['Referral Count'] > 1].copy()
             filtered_df['Distance (miles)'] = calculate_distances(user_lat, user_lon, filtered_df)
             best, scored_df = recommend_provider(
                 filtered_df,
@@ -211,13 +207,17 @@ with tabs[0]:
         address_for_url = best['Full Address'].replace(' ', '+')
         maps_url = f"https://www.google.com/maps/search/?api=1&query={address_for_url}"
         st.markdown(f"🏥 <b>Address:</b> <a href='{maps_url}' target='_blank'>{best['Full Address']}</a>", unsafe_allow_html=True)
-        # st.markdown(f"📞 <b>Phone:</b> {best['Phone 1']}", unsafe_allow_html=True)
-        # st.markdown(f"📧 <b>Email:</b> {best['Email 1']}", unsafe_allow_html=True)
+        if 'Phone Number' in best:
+            st.markdown(f"📞 <b>Phone:</b> {best['Phone Number']}", unsafe_allow_html=True)
         
         st.write('**Top 5 providers by blended score:**')
         required_cols = ['Full Name', 'Full Address', 'Distance (miles)', 'Referral Count', 'score', 'Preferred']
         if isinstance(scored_df, pd.DataFrame) and all(col in scored_df.columns for col in required_cols):
-            df = st.dataframe(scored_df[required_cols].sort_values(by='score', ignore_index = True).head())
+            df = st.dataframe(
+                scored_df[required_cols]
+                .sort_values(by='score', ignore_index=True)
+                .head()
+            )
 
         # --- Export Button ---
         provider_name = sanitize_filename(str(best['Full Name']))
@@ -240,15 +240,17 @@ with tabs[0]:
             rationale.append(f"")
             rationale.append(f"* **Distance** from the address is **{best['Distance (miles)']:.2f} miles**.")
             rationale.append(f"")
-            rationale.append(f"* Provider's rank is **{best['Referral Count']}** (lower is better).")
+            rationale.append(
+                f"* This provider has **{best['Referral Count']}** recent referrals from our office (lower is better for load balancing)."
+            )
             rationale.append(f"")
             rationale.append(
-                f"The final score is a blend of normalized distance and referral rank, using your chosen weights: **Distance weight = {alpha_disp:.2f}**, **Referral weight = {beta_disp:.2f}**."
+                f"The final score is a blend of normalized distance and referral count, using your chosen weights: **Distance weight = {alpha_disp:.2f}**, **Referral weight = {beta_disp:.2f}**."
             )
             rationale.append(f"The provider with the lowest blended score was recommended.")
             st.markdown('<br>'.join(rationale), unsafe_allow_html=True)
     elif submit:
-        st.warning('No providers with both rank and distance available. Please check your address or try a different specialty.')
+        st.warning('No providers met the distance and referral count requirements. Please check the address or try again.')
 
 
 # with tabs[0]:
