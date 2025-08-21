@@ -62,14 +62,16 @@ def recommend_provider(provider_df, alpha=0.5, beta=0.5):
     df = df[df['Distance (miles)'].notnull() & df['Referral Count'].notnull()]
     if df.empty:
         return None, None
+
     # Prioritize preferred providers: filter to preferred if any exist
     preferred_df = df[df['Preferred'] == 1]
     if not preferred_df.empty:
         df = preferred_df
+
     # Safe normalization (avoid division by zero)
-    rank_range = df['Referral Count'].max() - df['Referral Count'].min()
+    referral_range = df['Referral Count'].max() - df['Referral Count'].min()
     dist_range = df['Distance (miles)'].max() - df['Distance (miles)'].min()
-    df['norm_rank'] = (df['Referral Count'] - df['Referral Count'].min()) / rank_range if rank_range != 0 else 0
+    df['norm_rank'] = (df['Referral Count'] - df['Referral Count'].min()) / referral_range if referral_range != 0 else 0
     df['norm_dist'] = (df['Distance (miles)'] - df['Distance (miles)'].min()) / dist_range if dist_range != 0 else 0
     df['score'] = alpha * df['norm_rank'] + beta * df['norm_dist']
     best = df.sort_values(by='score').iloc[0]
