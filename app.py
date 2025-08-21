@@ -10,7 +10,8 @@ from docx import Document
 import re
 from provider_utils import (
     sanitize_filename,
-    load_provider_data,
+    load_provider_data_excel,
+    load_provider_data_feather,
     geocode_providers,
     calculate_distances,
     recommend_provider,
@@ -19,26 +20,26 @@ from provider_utils import (
 
 # --- Helper Functions ---
 
-provider_df = load_provider_data()
+provider_df = load_provider_data_feather()
 
 # --- Set random seed for reproducibility ---
 np.random.seed(42)  # Ensures consistent placeholder data and recommendations across runs
 # --- Add temporary placeholders if needed ---
 # (Random assignments below will now be consistent due to the fixed seed)
-if 'Specialty' not in provider_df.columns:
-    placeholder_specialties = [
-        'Primary Care', 'Urgent Care', 'Chiropractor', 'Physical Therapy'
-    ]
-    provider_df['Specialty'] = np.random.choice(placeholder_specialties, size=len(provider_df))
-if 'Practice Area' not in provider_df.columns:
-    placeholder_practice_areas = [
-        'Personal Injury', 'Workers Compensation', 'Medical Malpractice', 'Family Law'
-    ]
-    provider_df['Practice Area'] = np.random.choice(placeholder_practice_areas, size=len(provider_df))
-if 'Phone 1' not in provider_df.columns:
-    provider_df['Phone 1'] = '555-555-1234'
-if 'Email 1' not in provider_df.columns:
-    provider_df['Email 1'] = 'provider@example.com'
+# if 'Specialty' not in provider_df.columns:
+#     placeholder_specialties = [
+#         'Primary Care', 'Urgent Care', 'Chiropractor', 'Physical Therapy'
+#     ]
+#     provider_df['Specialty'] = np.random.choice(placeholder_specialties, size=len(provider_df))
+# if 'Practice Area' not in provider_df.columns:
+#     placeholder_practice_areas = [
+#         'Personal Injury', 'Workers Compensation', 'Medical Malpractice', 'Family Law'
+#     ]
+#     provider_df['Practice Area'] = np.random.choice(placeholder_practice_areas, size=len(provider_df))
+# if 'Phone 1' not in provider_df.columns:
+#     provider_df['Phone 1'] = '555-555-1234'
+# if 'Email 1' not in provider_df.columns:
+#     provider_df['Email 1'] = 'provider@example.com'
 if 'Preferred' not in provider_df.columns:
     provider_df['Preferred'] = np.random.choice([1, 0], size=len(provider_df), p=[0.3, 0.7])  # 30% preferred
 
@@ -68,8 +69,8 @@ st.markdown("<h1>Provider Recommender for New Clients</h1>", unsafe_allow_html=T
 tabs = st.tabs(["Find Provider", "How Selection Works"])
 
 # --- Sidebar Logo and Title ---
-st.sidebar.image('jlg_logo.svg', width=100)
-st.sidebar.markdown("<h2 style='font-weight: bold; margin-bottom: 0.5em;'>Jaklitsch Law Group</h2>", unsafe_allow_html=True)
+st.sidebar.image('JaklitschLaw_NewLogo_withDogsRed.jpg', width=100)
+st.sidebar.markdown("<h2 style='font-weight: bold; margin-bottom: 0.5em;'>Medical Provider Recommender</h2>", unsafe_allow_html=True)
 # --- Instructions in Sidebar ---
 st.sidebar.markdown("""
 # Instructions:
@@ -81,6 +82,11 @@ st.sidebar.markdown("""
 6. The final result is contact information to direct the client to the best provider.
 """, unsafe_allow_html=True)
 
+
+
+
+
+
 with tabs[0]:
     # --- Layout: Form on left, results on right ---
     left_col, right_col = st.columns([.5, .5])
@@ -89,7 +95,7 @@ with tabs[0]:
         if st.button("Start New Search"):
             # Clear all session state keys related to form and results
             for key in [
-                'street', 'city', 'state', 'zipcode', 'specialty', 'blend', 'alpha',
+                'street', 'city', 'state', 'zipcode', 'blend', 'alpha',
                 'last_best', 'last_scored_df', 'last_params', 'user_lat', 'user_lon',
                 'input_form'
             ]:
@@ -104,8 +110,8 @@ with tabs[0]:
             city = st.text_input('City', value=st.session_state.get('city', ''), help="e.g., Baltimore")
             state = st.text_input('State', value=st.session_state.get('state', ''), help="e.g., MD")
             zipcode = st.text_input('Zip Code', value=st.session_state.get('zipcode', ''), help="5-digit ZIP")
-            specialty = st.selectbox('Provider Specialty (optional)', ['Any'] + sorted(provider_df['Specialty'].unique()), index=0, help="Choose a specialty if you want to filter providers")
-            practice_area = st.selectbox('Practice Area (optional)', ['Any'] + sorted(provider_df['Practice Area'].unique()), index=0, help="Choose a practice area if you want to filter providers")
+            # specialty = st.selectbox('Provider Specialty (optional)', ['Any'] + sorted(provider_df['Specialty'].unique()), index=0, help="Choose a specialty if you want to filter providers")
+            # practice_area = st.selectbox('Practice Area (optional)', ['Any'] + sorted(provider_df['Practice Area'].unique()), index=0, help="Choose a practice area if you want to filter providers")
             # --- More accessible weight control ---
             blend = st.select_slider(
                 'How should we balance provider quality and proximity?',
@@ -130,8 +136,8 @@ with tabs[0]:
                 st.session_state['city'] = city
                 st.session_state['state'] = state
                 st.session_state['zipcode'] = zipcode
-                st.session_state['specialty'] = specialty
-                st.session_state['practice_area'] = practice_area
+                # st.session_state['specialty'] = specialty
+                # st.session_state['practice_area'] = practice_area
                 st.session_state['blend'] = blend
                 st.session_state['alpha'] = alpha
                 # beta is always 1 - alpha
@@ -140,10 +146,10 @@ with tabs[0]:
         # --- Geocoding Setup ---
         geolocator = Nominatim(user_agent="provider_recommender")
         geocode = RateLimiter(geolocator.geocode, min_delay_seconds=2, max_retries=3)
-        with st.spinner('Geocoding providers and calculating recommendations...'):
-            provider_lats, provider_lons = geocode_providers(tuple(provider_df['Full Address']), geocode)
-            provider_df['Latitude'] = provider_lats
-            provider_df['Longitude'] = provider_lons
+        # with st.spinner('Geocoding providers and calculating recommendations...'):
+        #     provider_lats, provider_lons = geocode_providers(tuple(provider_df['Full Address']), geocode)
+        #     provider_df['Latitude'] = provider_lats
+        #     provider_df['Longitude'] = provider_lons
         # --- Content for Results ---
         # Always show results if present in session state
         best = st.session_state.get('last_best')
@@ -175,17 +181,17 @@ with tabs[0]:
 
             if user_lat is not None and user_lon is not None:
                 filtered_df = provider_df.copy()
-                if specialty != 'Any' and 'Specialty' in filtered_df.columns:
-                    filtered_df = filtered_df[filtered_df['Specialty'] == specialty]
-                if practice_area != 'Any' and 'Practice Area' in filtered_df.columns:
-                    filtered_df = filtered_df[filtered_df['Practice Area'] == practice_area]
+                # if specialty != 'Any' and 'Specialty' in filtered_df.columns:
+                #     filtered_df = filtered_df[filtered_df['Specialty'] == specialty]
+                # if practice_area != 'Any' and 'Practice Area' in filtered_df.columns:
+                #     filtered_df = filtered_df[filtered_df['Practice Area'] == practice_area]
                 filtered_df['Distance (miles)'] = calculate_distances(user_lat, user_lon, filtered_df)
 
                 best, scored_df = recommend_provider(filtered_df, alpha=alpha, beta=beta)
                 # Store results and params in session state
                 st.session_state['last_best'] = best
                 st.session_state['last_scored_df'] = scored_df
-                st.session_state['last_params'] = {'alpha': alpha, 'beta': beta, 'specialty': specialty, 'practice_area': practice_area}
+                st.session_state['last_params'] = {'alpha': alpha, 'beta': beta,}# 'specialty': specialty, 'practice_area': practice_area}
                 show_results = best is not None and isinstance(scored_df, pd.DataFrame)
 
         # --- Display results if available ---
@@ -199,19 +205,20 @@ with tabs[0]:
             address_for_url = best['Full Address'].replace(' ', '+')
             maps_url = f"https://www.google.com/maps/search/?api=1&query={address_for_url}"
             st.markdown(f"🏥 <b>Address:</b> <a href='{maps_url}' target='_blank'>{best['Full Address']}</a>", unsafe_allow_html=True)
-            st.markdown(f"📞 <b>Phone:</b> {best['Phone 1']}", unsafe_allow_html=True)
-            st.markdown(f"📧 <b>Email:</b> {best['Email 1']}", unsafe_allow_html=True)
-            st.markdown(f"🏥 <b>Specialty:</b> {best['Specialty']}", unsafe_allow_html=True)
+            # st.markdown(f"📞 <b>Phone:</b> {best['Phone 1']}", unsafe_allow_html=True)
+            # st.markdown(f"📧 <b>Email:</b> {best['Email 1']}", unsafe_allow_html=True)
+            # st.markdown(f"🏥 <b>Specialty:</b> {best['Specialty']}", unsafe_allow_html=True)
             if best.get('Preferred', 0) == 1:
                 st.markdown(f"<span style='color: green; font-weight: bold;'>✅ Preferred Provider</span>", unsafe_allow_html=True)
             st.write('Top 5 providers by blended score:')
-            required_cols = ['Full Name', 'Full Address', 'Distance (miles)', 'Rank', 'score', 'Preferred']
+            required_cols = ['Full Name', 'Full Address', 'Distance (miles)', 'Referral Count', 'score', 'Preferred']
             if isinstance(scored_df, pd.DataFrame) and all(col in scored_df.columns for col in required_cols):
                 st.dataframe(scored_df[required_cols].sort_values(by='score').head())
             # --- Export Button ---
             provider_name = sanitize_filename(str(best['Full Name']))
-            provider_specialty = sanitize_filename(str(best['Specialty']))
-            base_filename = f"Provider_{provider_name}_{provider_specialty}"
+            # provider_specialty = sanitize_filename(str(best['Specialty']))
+            # base_filename = f"Provider_{provider_name}_{provider_specialty}"
+            base_filename = f"Provider_{provider_name}"
             word_bytes = get_word_bytes(best)
             st.download_button(
                 label="Export as Word",
@@ -229,9 +236,9 @@ with tabs[0]:
                 rationale.append(f"")
                 rationale.append(f"* **Distance** from the address is **{best['Distance (miles)']:.2f} miles**.")
                 rationale.append(f"")
-                rationale.append(f"* Selected specialty is **{best['Specialty']}**.")
-                rationale.append(f"")
-                rationale.append(f"* Provider's rank is **{best['Rank']}** (lower is better).")
+                # rationale.append(f"* Selected specialty is **{best['Specialty']}**.")
+                # rationale.append(f"")
+                rationale.append(f"* Provider's rank is **{best['Referral Count']}** (lower is better).")
                 rationale.append(f"")
                 rationale.append(f"The final score is a blend of normalized rank and distance, using your chosen weights: **Rank weight = {alpha_disp:.2f}**, **Distance weight = {beta_disp:.2f}**.")
                 rationale.append(f"The provider with the lowest blended score was recommended.")

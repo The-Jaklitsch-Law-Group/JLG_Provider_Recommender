@@ -8,16 +8,37 @@ import re
 
 
 # --- Data Loading ---
-def load_provider_data():
+def load_provider_data_excel(filepath = 'data/Ranked_Contacts.xlsx'):
     """Load and preprocess provider data from Excel."""
-    df = pd.read_excel('data/Ranked_Contacts.xlsx')
+    df = pd.read_excel(filepath)
     df.columns = [col.strip() for col in df.columns]
-    df['Address 1 Zip'] = df['Address 1 Zip'].apply(lambda x: str(int(x)) if pd.notnull(x) else '')
+    df['Zip'] = df['Zip'].apply(lambda x: str(int(x)) if pd.notnull(x) else '')
     df['Full Address'] = (
-        df['Address 1 Line 1'].fillna('') + ', '
-        + df['Address 1 City'].fillna('') + ', '
-        + df['Address 1 State'].fillna('') + ' '
-        + df['Address 1 Zip'].fillna('')
+        df['Street'].fillna('') + ', '
+        + df['City'].fillna('') + ', '
+        + df['State'].fillna('') + ' '
+        + df['Zip'].fillna('')
+    )
+    df['Full Address'] = df['Full Address'].str.replace(r',\s*,', ',', regex=True).str.replace(r',\s*$', '', regex=True)
+    return df
+
+
+def load_provider_data_feather(filepath = "./data/cleaned_outbound_referrals.feather"):
+    """Load and preprocess provider data from Excel."""
+    
+    if '.feather' not in filepath:
+        raise Exception('File is not saved as a Feather file type.')
+    else:
+        pass
+
+    df = pd.read_feather(filepath)
+    df.columns = [col.strip() for col in df.columns]
+    df['Zip'] = df['Zip'].apply(lambda x: str(x) if pd.notnull(x) else '')
+    df['Full Address'] = (
+        df['Street'].fillna('') + ', '
+        + df['City'].fillna('') + ', '
+        + df['State'].fillna('') + ' '
+        + df['Zip'].fillna('')
     )
     df['Full Address'] = df['Full Address'].str.replace(r',\s*,', ',', regex=True).str.replace(r',\s*$', '', regex=True)
     return df
@@ -34,11 +55,11 @@ def get_word_bytes(best):
     doc.add_heading('Recommended Provider', 0)
     doc.add_paragraph(f"Name: {best['Full Name']}")
     doc.add_paragraph(f"Address: {best['Full Address']}")
-    doc.add_paragraph(f"Phone: {best['Phone 1']}")
-    doc.add_paragraph(f"Email: {best['Email 1']}")
-    doc.add_paragraph(f"Specialty: {best['Specialty']}")
-    if best.get('Preferred', 0) == 1:
-        doc.add_paragraph("Preferred Provider")
+    # doc.add_paragraph(f"Phone: {best['Phone 1']}")
+    # doc.add_paragraph(f"Email: {best['Email 1']}")
+    # doc.add_paragraph(f"Specialty: {best['Specialty']}")
+    # if best.get('Preferred', 0) == 1:
+    #     doc.add_paragraph("Preferred Provider")
     buffer = io.BytesIO()
     doc.save(buffer)
     buffer.seek(0)
@@ -48,7 +69,7 @@ def get_word_bytes(best):
 def recommend_provider(provider_df, alpha=0.5, beta=0.5):
     """Return the best provider and scored DataFrame, prioritizing preferred providers, then lowest blended score."""
     df = provider_df.copy()
-    df = df[df['Distance (miles)'].notnull() & df['Rank'].notnull()]
+    df = df[df['Distance (miles)'].notnull() & df['Referral Count'].notnull()]
     if df.empty:
         return None, None
     # Prioritize preferred providers: filter to preferred if any exist
@@ -56,9 +77,9 @@ def recommend_provider(provider_df, alpha=0.5, beta=0.5):
     if not preferred_df.empty:
         df = preferred_df
     # Safe normalization (avoid division by zero)
-    rank_range = df['Rank'].max() - df['Rank'].min()
+    rank_range = df['Referral Count'].max() - df['Referral Count'].min()
     dist_range = df['Distance (miles)'].max() - df['Distance (miles)'].min()
-    df['norm_rank'] = (df['Rank'] - df['Rank'].min()) / rank_range if rank_range != 0 else 0
+    df['norm_rank'] = (df['Referral Count'] - df['Referral Count'].min()) / rank_range if rank_range != 0 else 0
     df['norm_dist'] = (df['Distance (miles)'] - df['Distance (miles)'].min()) / dist_range if dist_range != 0 else 0
     df['score'] = alpha * df['norm_rank'] + beta * df['norm_dist']
     best = df.sort_values(by='score').iloc[0]
