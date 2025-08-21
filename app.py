@@ -65,22 +65,35 @@ st.set_page_config(page_title="Provider Recommender", page_icon=":hospital:", la
 # --- Company Logo and Title at Top ---
 st.markdown("<h1>Provider Recommender for New Clients</h1>", unsafe_allow_html=True)
 
+with st.expander(label = '**INSTRUCTIONS** (*Click here to collapse.*)', expanded=True, icon = "🧑‍🏫"):
+    st.write("""
+            1. Click the ***Start New Search*** button to begin.
+            2. Enter the client's address and preferences.
+            3. Choose how to balance provider quality and proximity.
+            4. Click ***Find Best Provider*** to get a recommendation. The app prioritizes the law firm's preferred providers, then considers proximity and ranking.
+            5. The final result is contact information to direct the client to the best provider.
+            """
+            )
+    # st.markdown('<br>'.join(instructions), unsafe_allow_html=True)
+
+
 # --- Tabs for Main Content ---
 tabs = st.tabs(["Find Provider", "How Selection Works"])
+
 
 # --- Sidebar Logo and Title ---
 st.sidebar.image('JaklitschLaw_NewLogo_withDogsRed.jpg', width=100)
 st.sidebar.markdown("<h2 style='font-weight: bold; margin-bottom: 0.5em;'>Medical Provider Recommender</h2>", unsafe_allow_html=True)
-# --- Instructions in Sidebar ---
-st.sidebar.markdown("""
-# Instructions:
-1. Click the **Start New Search** button to begin.<br>
-2. Enter the client's address and preferences.<br>
-3. Select a provider specialty if needed.<br>
-4. Choose how to balance provider quality and proximity.<br>
-5. Click <b>Find Best Provider</b> to get a recommendation. The app prioritizes the law firm's preferred providers, then considers proximity and ranking.<br>
-6. The final result is contact information to direct the client to the best provider.
-""", unsafe_allow_html=True)
+# # --- Instructions in Sidebar ---
+# st.sidebar.markdown("""
+# # Instructions:
+# 1. Click the **Start New Search** button to begin.<br>
+# 2. Enter the client's address and preferences.<br>
+# 3. Select a provider specialty if needed.<br>
+# 4. Choose how to balance provider quality and proximity.<br>
+# 5. Click <b>Find Best Provider</b> to get a recommendation. The app prioritizes the law firm's preferred providers, then considers proximity and ranking.<br>
+# 6. The final result is contact information to direct the client to the best provider.
+# """, unsafe_allow_html=True)
 
 
 
