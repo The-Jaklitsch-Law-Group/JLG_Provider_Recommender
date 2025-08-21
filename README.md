@@ -22,7 +22,8 @@ The Provider Recommender is a web-based tool designed to help personal injury la
 - **Preferred Provider Priority:** The system always prioritizes the law firm's preferred providers.
 - **Top 5 Comparison:** Users can review the top 5 providers by blended score for transparency.
 - **Export Option:** Download recommendations as a Word document for easy sharing with clients.
-- **Accessible UI:** Designed for non-technical users, with clear instructions, tooltips, and a "Start New Search" button.
+- **Accessible UI:** Designed for non-technical users, with clear instructions, an address validation warning, and a slider that shows the selected weighting value.
+- **Performance Optimizations:** Distance calculations use NumPy vectorization and caching to deliver results quickly.
 
 ---
 
@@ -126,13 +127,13 @@ The Provider Recommender is a web-based tool designed to help personal injury la
    ```
 2. **Run the app:**
    ```bash
-   streamlit run app_polished.py
+   streamlit run app.py
    ```
 3. **Access the app:**
    Open the provided local URL in your browser.
 
 ### Data & Customization
-- **Provider Data:** Loaded from `data/Ranked_Contacts.xlsx`. Update this file as your provider list changes.
+- **Provider Data:** Loaded from `data/cleaned_outbound_referrals.parquet`. Update this file as your provider list changes.
 - **Branding:** Place your logo (`jlg_logo.svg`) in the project root. Adjust firm name and colors in the app script as needed.
 - **Fonts & Styles:** Further customize the look and feel via CSS injected in the Streamlit script.
 - **API Integrations:** Add credentials to `.streamlit/secrets.toml` for secure API access.
