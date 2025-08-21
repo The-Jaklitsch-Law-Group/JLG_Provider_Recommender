@@ -216,10 +216,10 @@ with tabs[0]:
         # st.markdown(f"🏥 <b>Specialty:</b> {best['Specialty']}", unsafe_allow_html=True)
         if best.get('Preferred', 0) == 1:
             st.markdown(f"<span style='color: green; font-weight: bold;'>✅ Preferred Provider</span>", unsafe_allow_html=True)
-        st.write('Top 5 providers by blended score:')
+        st.write('**Top 5 providers by blended score:**')
         required_cols = ['Full Name', 'Full Address', 'Distance (miles)', 'Referral Count', 'score', 'Preferred']
         if isinstance(scored_df, pd.DataFrame) and all(col in scored_df.columns for col in required_cols):
-            st.dataframe(scored_df[required_cols].sort_values(by='score', ignore_index = True).head())
+            df = st.dataframe(scored_df[required_cols].sort_values(by='score', ignore_index = True).head())
         # --- Export Button ---
         provider_name = sanitize_filename(str(best['Full Name']))
         # provider_specialty = sanitize_filename(str(best['Specialty']))
