@@ -67,16 +67,16 @@ def get_word_bytes(best):
 
 def recommend_provider(provider_df, distance_weight=0.5, referral_weight=0.5):
     """Return the best provider and scored DataFrame, prioritizing preferred providers, then lowest blended score."""
-    df = provider_df.copy()
+    df = provider_df.copy(deep=True)
     df = df[df['Distance (miles)'].notnull() & df['Referral Count'].notnull()]
     df = df[df['Referral Count'] > 1]
     if df.empty:
         return None, None
 
-    # Prioritize preferred providers: filter to preferred if any exist
-    preferred_df = df[df['Preferred'] == 1]
-    if not preferred_df.empty:
-        df = preferred_df
+    # # Prioritize preferred providers: filter to preferred if any exist
+    # preferred_df = df[df['Preferred'] == 1]
+    # if not preferred_df.empty:
+    #     df = preferred_df
 
     # Safe normalization (avoid division by zero)
     referral_range = df['Referral Count'].max() - df['Referral Count'].min()

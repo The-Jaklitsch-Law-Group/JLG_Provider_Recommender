@@ -34,8 +34,8 @@ np.random.seed(42)  # Ensures consistent placeholder data and recommendations ac
 #     provider_df['Phone 1'] = '555-555-1234'
 # if 'Email 1' not in provider_df.columns:
 #     provider_df['Email 1'] = 'provider@example.com'
-if 'Preferred' not in provider_df.columns:
-    provider_df['Preferred'] = np.random.choice([1, 0], size=len(provider_df), p=[0.3, 0.7])  # 30% preferred
+# if 'Preferred' not in provider_df.columns:
+#     provider_df['Preferred'] = np.random.choice([1, 0], size=len(provider_df), p=[0.3, 0.7])  # 30% preferred
 
 # # --- Load API secrets for future API calls ---
 # LD_API_KEY = st.secrets.get('lead_docket_api_key', None)
@@ -119,8 +119,9 @@ with st.sidebar:
         blend = st.select_slider(
             'How should we balance provider quality and proximity?',
             options=['Only Distance', 'Mostly Distance', 'Balanced', 'Mostly Referral Count', 'Only Referral Count'],
-            value=st.session_state.get('blend', 'Balanced'),
-            help='Choose how much to prioritize proximity (distance) vs. referral count.'
+            value=st.session_state.get('blend', 'Mostly Distance'),
+            help='Choose how much to prioritize proximity (distance) vs. referral count.',
+
         )
         blend_map = {
             'Only Distance': (1.0, 0.0),
