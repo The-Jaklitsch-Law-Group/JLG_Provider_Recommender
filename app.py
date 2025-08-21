@@ -261,21 +261,12 @@ with tabs[0]:
         # --- Rationale for Selection ---
         with st.expander("Why was this provider selected?", expanded=False):
             rationale = []
-            if best.get("Preferred", 0) == 1:
-                rationale.append(
-                    "This provider is a **Preferred Provider** for the law firm, which means they are trusted and have a strong track record with our clients."
-                )
-            else:
-                rationale.append(
-                    "This provider is not marked as preferred, but was selected based on a balance of proximity and ranking."
-                )
-                rationale.append("")
             rationale.append(
                 f"* **Distance** from the address is **{best["Distance (Miles)"]:.2f} miles**."
             )
             rationale.append("")
             rationale.append(
-                f"* This provider has **{best['Referral Count']}** recent referrals from our office (lower is better for load balancing)."
+                f"* This provider has **{best['Referral Count']}** recent referrals from our office (fewer are better for load balancing)."
             )
             rationale.append("")
             rationale.append(
