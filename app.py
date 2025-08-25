@@ -1,4 +1,5 @@
 import streamlit as st
+import datetime as dt
 import pandas as pd
 import numpy as np
 from geopy.geocoders import Nominatim
@@ -25,7 +26,9 @@ st.set_page_config(
 )
 
 # --- Company Logo and Title at Top ---
-st.markdown("<h1>Provider Recommender for New Clients</h1>", unsafe_allow_html=True)
+st.image("JaklitschLaw_NewLogo_withDogsRed.jpg", width=100)
+st.markdown("<h1>Medical Provider Recommender for New Clients</h1>", unsafe_allow_html=True)
+
 
 with st.expander(
     label="**INSTRUCTIONS** (*Click here to collapse.*)", expanded=True, icon="🧑‍🏫"
@@ -49,9 +52,8 @@ tabs = st.tabs(["Find Provider", "How Selection Works"])
 
 
 # --- Sidebar Logo and Title ---
-st.sidebar.image("JaklitschLaw_NewLogo_withDogsRed.jpg", width=100)
 st.sidebar.markdown(
-    "<h2 style='font-weight: bold; margin-bottom: 0.5em;'>Medical Provider Recommender</h2>",
+    "<h2 style='font-weight: bold; margin-bottom: 0.5em;'>Search Parameters</h2>",
     unsafe_allow_html=True,
 )
 # # --- Instructions in Sidebar ---
@@ -65,27 +67,27 @@ st.sidebar.markdown(
 # 6. The final result is contact information to direct the client to the best provider.
 # """, unsafe_allow_html=True)
 
-# --- Start New Search Button ---
-if st.button("Start New Search"):
-    # Clear all session state keys related to form and results
-    for key in [
-        "street",
-        "city",
-        "state",
-        "zipcode",
-        "blend",
-        "alpha",
-        "last_best",
-        "last_scored_df",
-        "last_params",
-        "user_lat",
-        "user_lon",
-        "input_form",
-    ]:
-        if key in st.session_state:
-            del st.session_state[key]
-    # Rerun to reset form and results
-    st.rerun()
+# # --- Start New Search Button ---
+# if st.button("Start New Search"):
+#     # Clear all session state keys related to form and results
+#     for key in [
+#         "street",
+#         "city",
+#         "state",
+#         "zipcode",
+#         "blend",
+#         "alpha",
+#         "last_best",
+#         "last_scored_df",
+#         "last_params",
+#         "user_lat",
+#         "user_lon",
+#         "input_form",
+#     ]:
+#         if key in st.session_state:
+#             del st.session_state[key]
+#     # Rerun to reset form and results
+#     st.rerun()
 
 # --- User Input Form ---
 # This form collects the client's address and preferences.
@@ -93,7 +95,7 @@ if st.button("Start New Search"):
 with st.sidebar:
     with st.form(key="input_form", clear_on_submit=True):
 
-        st.markdown("⚠️ Please enter the FULL street address for accuracy!")
+        # st.markdown("⚠️ Please enter the FULL street address for accuracy!")
 
         street = st.text_input(
             "Street Address",
@@ -112,7 +114,7 @@ with st.sidebar:
 
         # --- More accessible weight control ---
         blend = st.select_slider(
-            "How should we balance provider quality and proximity?",
+            "Prioritize Distance or Priority?",
             options=[
                 "Only Distance",
                 "Mostly Distance",
@@ -134,6 +136,23 @@ with st.sidebar:
         st.markdown(
             f"**Proximity (distance) weight:** {alpha:.2f}  |  **Referral Count weight:** {beta:.2f}"
         )
+        
+        # --- Referral Count Filter ---
+        min_referrals = st.number_input(
+            "Minimum Inbound Referral Count",
+            min_value=0,
+            value=st.session_state.get("min_referrals", 1),
+            help="Only show providers with at least this many referrals. Lower values show more providers, higher values show only established providers.",
+        )
+        
+        # --- Time Period Filter
+        time_period = st.date_input(
+            "Time Period for Referral Count",
+            value = [dt.date.today() - dt.timedelta(days=365),dt.date.today()],
+            max_value = "today",
+            help="Only show providers with referrals within this time period. Leave blank to include all time periods.",
+        )
+
         submit = st.form_submit_button("Find Best Provider")
 
     if submit:
@@ -145,6 +164,7 @@ with st.sidebar:
 
         st.session_state["blend"] = blend
         st.session_state["alpha"] = alpha
+        st.session_state["min_referrals"] = min_referrals
         # beta is always 1 - alpha
 
 with tabs[0]:
@@ -183,7 +203,7 @@ with tabs[0]:
             st.error(f"Geocoding error: {e}")
 
         if user_lat is not None and user_lon is not None:
-            filtered_df = provider_df[provider_df["Referral Count"] > 1].copy()
+            filtered_df = provider_df[provider_df["Referral Count"] >= min_referrals].copy()
             filtered_df["Distance (Miles)"] = calculate_distances(
                 user_lat, user_lon, filtered_df
             )
@@ -199,6 +219,7 @@ with tabs[0]:
             st.session_state["last_params"] = {
                 "alpha": alpha,
                 "beta": beta,
+                "min_referrals": min_referrals,
             }
 
             show_results = best is not None and isinstance(scored_df, pd.DataFrame)
@@ -269,6 +290,11 @@ with tabs[0]:
                 f"* This provider has **{best['Referral Count']}** recent referrals from our office (fewer are better for load balancing)."
             )
             rationale.append("")
+            min_referrals_disp = params.get("min_referrals", min_referrals)
+            rationale.append(
+                f"* Only providers with **{min_referrals_disp} or more referrals** were considered in this search."
+            )
+            rationale.append("")
             rationale.append(
                 f"The final score is a blend of normalized distance and referral count, using your chosen weights: **Distance weight = {alpha_disp:.2f}**, **Referral weight = {beta_disp:.2f}**."
             )
@@ -278,5 +304,5 @@ with tabs[0]:
             st.markdown("<br>".join(rationale), unsafe_allow_html=True)
     elif submit:
         st.warning(
-            "No providers met the distance and referral count requirements. Please check the address or try again."
+            f"No providers met the requirements (minimum {min_referrals} referrals). Please check the address, lower the minimum referral count, or try again."
         )
