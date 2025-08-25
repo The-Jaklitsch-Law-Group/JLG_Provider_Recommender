@@ -236,7 +236,8 @@ with tabs[0]:
             unsafe_allow_html=True,
         )
         st.markdown(
-            f"<h4 style='color: #117A65;'>{best['Full Name']}</h4>",
+            # f"<h4 style='color: #117A65;'>{best['Full Name']}</h4>",
+            f"<h4>{best['Full Name']}</h4>",
             unsafe_allow_html=True,
         )
         address_for_url = best["Full Address"].replace(" ", "+")
@@ -250,7 +251,7 @@ with tabs[0]:
                 f"📞 <b>Phone:</b> {best['Phone Number']}", unsafe_allow_html=True
             )
 
-        st.write("**Top 5 providers by blended score:**")
+        st.write("***Top 5 providers by blended score:***")
         mandatory_cols = [
             "Full Name",
             "Full Address",
