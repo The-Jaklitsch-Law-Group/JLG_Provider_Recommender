@@ -150,7 +150,7 @@ with st.sidebar:
         time_period = st.date_input(
             "Time Period for Referral Count",
             value = [dt.date.today() - dt.timedelta(days=365),dt.date.today()],
-            max_value = "today",
+            max_value = dt.date.today() + dt.timedelta(days=1),
             help="Only show providers with referrals within this time period. Leave blank to include all time periods.",
         )
 
