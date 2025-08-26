@@ -145,14 +145,14 @@ with st.sidebar:
             help="Only show providers with at least this many referrals. Lower values show more providers, higher values show only established providers.",
         )
         
-        # # --- Time Period Filter
-        # # Currently inactive pending updates to workflow.
-        # time_period = st.date_input(
-        #     "Time Period for Referral Count",
-        #     value = [dt.date.today() - dt.timedelta(days=365),dt.date.today()],
-        #     max_value = "today",
-        #     help="Only show providers with referrals within this time period. Leave blank to include all time periods.",
-        # )
+        # --- Time Period Filter
+        # Currently inactive pending updates to workflow.
+        time_period = st.date_input(
+            "Time Period for Referral Count",
+            value = [dt.date.today() - dt.timedelta(days=365),dt.date.today()],
+            max_value = "today",
+            help="Only show providers with referrals within this time period. Leave blank to include all time periods.",
+        )
 
         submit = st.form_submit_button("Find Best Provider")
 
