@@ -9,7 +9,7 @@ from geopy.extra.rate_limiter import RateLimiter
 from geopy.geocoders import Nominatim
 
 
-EXCEL_PATH = "data/Ranked_Contacts.xlsx"
+EXCEL_PATH = "../data/Ranked_Contacts.xlsx"
 df = pd.read_excel(EXCEL_PATH)
 
 if "Full Address" not in df.columns:
