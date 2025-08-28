@@ -56,16 +56,6 @@ st.sidebar.markdown(
     "<h2 style='font-weight: bold; margin-bottom: 0.5em;'>Search Parameters</h2>",
     unsafe_allow_html=True,
 )
-# # --- Instructions in Sidebar ---
-# st.sidebar.markdown("""
-# # Instructions:
-# 1. Click the **Start New Search** button to begin.<br>
-# 2. Enter the client's address and preferences.<br>
-# 3. Select a provider specialty if needed.<br>
-# 4. Choose how to balance provider quality and proximity.<br>
-# 5. Click <b>Find Best Provider</b> to get a recommendation. The app prioritizes the law firm's preferred providers, then considers proximity and ranking.<br>
-# 6. The final result is contact information to direct the client to the best provider.
-# """, unsafe_allow_html=True)
 
 # # --- Start New Search Button ---
 # if st.button("Start New Search"):
@@ -172,7 +162,7 @@ with tabs[0]:
 
     # --- Geocoding Setup ---
     geolocator = Nominatim(user_agent="provider_recommender")
-    geocode = RateLimiter(geolocator.geocode, min_delay_seconds=1, max_retries=3)
+    geocode = RateLimiter(geolocator.geocode, min_delay_seconds=2, max_retries=3)
 
     # --- Content for Results ---
     # Always show results if present in session state

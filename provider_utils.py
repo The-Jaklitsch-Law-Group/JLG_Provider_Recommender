@@ -30,7 +30,7 @@ def load_provider_data(filepath: str) -> pd.DataFrame:
     df.columns = [col.strip() for col in df.columns]
     df = df.drop(columns="Preference", errors="ignore")
     df["Zip"] = df["Zip"].apply(lambda x: str(x) if pd.notnull(x) else "")
-    df["Referral Count"] = pd.to_numeric(df.get("Referral Count"), errors="coerce")
+    df["Referral Count"] = pd.to_numeric(df["Referral Count"], errors="coerce")
     df["Full Address"] = (
         df["Street"].fillna("")
         + ", "
@@ -106,7 +106,7 @@ def recommend_provider(provider_df, distance_weight=0.5, referral_weight=0.5):
 _geocode_cache = {}
 
 
-def geocode_providers(addresses, _geocode):
+def geocode_address(addresses, _geocode):
     """Geocode a list of addresses, returning lists of latitudes and longitudes."""
 
     def _cached_geocode(addr):
