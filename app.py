@@ -17,12 +17,13 @@ from provider_utils import (
 provider_df = load_provider_data(filepath="data/cleaned_outbound_referrals.parquet")
 
 # --- Set random seed for reproducibility ---
-np.random.seed(
-    42
-)  # Ensures consistent placeholder data and recommendations across runs
+np.random.seed(42)  # Ensures consistent placeholder data and recommendations across runs
+
 # --- Streamlit Page Config ---
 st.set_page_config(
-    page_title="Provider Recommender", page_icon=":hospital:", layout="wide"
+    page_title="Provider Recommender",
+    page_icon=":hospital:",
+    layout="wide"
 )
 
 # --- Company Logo and Title at Top ---
@@ -37,19 +38,15 @@ with st.expander(
         """
             1. Enter the client's address in the sidebar to the left.
             2. Choose how to balance provider proximity and referral count.
-            3. Click ***Find Best Provider*** to get a recommendation.
+            3. Specify the minimum number of outbound referrals (minimum 1)
+            4. Set the time period for calculating the outbound referral counts (e.g, last 30 days)
+            5. Click ***Find Best Provider*** to get a recommendation.
                 * By default, the app prioritizes the closests providers,
                   then prefers providers with fewer recent referrals.
-            4. The final result is contact information to direct the client
+            6. The final result is contact information to direct the client
                to the best provider.
             """
     )
-    # st.markdown('<br>'.join(instructions), unsafe_allow_html=True)
-
-
-# --- Tabs for Main Content ---
-tabs = st.tabs(["Find Provider", "How Selection Works"])
-
 
 # --- Sidebar Logo and Title ---
 st.sidebar.markdown(
@@ -84,8 +81,6 @@ st.sidebar.markdown(
 
 with st.sidebar:
     with st.form(key="input_form", clear_on_submit=True):
-
-        # st.markdown("⚠️ Please enter the FULL street address for accuracy!")
 
         street = st.text_input(
             "Street Address",
@@ -157,6 +152,11 @@ with st.sidebar:
         st.session_state["alpha"] = alpha
         st.session_state["min_referrals"] = min_referrals
         # beta is always 1 - alpha
+
+
+# --- Tabs for Main Content ---
+tabs = st.tabs(["Find Provider", "How Selection Works"])
+
 
 with tabs[0]:
 
@@ -242,7 +242,7 @@ with tabs[0]:
                 f"📞 <b>Phone:</b> {best['Phone Number']}", unsafe_allow_html=True
             )
 
-        st.write("***Top 5 providers by blended score:***")
+        st.write(f"*Providers sorted by: **{blend}***")
         mandatory_cols = [
             "Full Name",
             "Full Address",
@@ -254,10 +254,13 @@ with tabs[0]:
         if isinstance(scored_df, pd.DataFrame) and all(
             col in scored_df.columns for col in mandatory_cols
         ):
+            
+            
             df = st.dataframe(
                 scored_df[display_cols]
-                .sort_values(by="Score", ignore_index=True)
-                .head()
+                .sort_values(by="Score", ignore_index=True),
+                hide_index=True
+                # .head()
             )
 
         # --- Export Button ---
