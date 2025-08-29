@@ -84,7 +84,7 @@ with st.sidebar:
 
         # --- More accessible weight control ---
         blend = st.select_slider(
-            "Prioritize Distance or Priority?",
+            "Prioritize Distance or Referral Count?",
             options=[
                 "Only Distance",
                 "Mostly Distance",
