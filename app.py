@@ -10,11 +10,18 @@ from provider_utils import (
     calculate_distances,
     recommend_provider,
     get_word_bytes,
+    cached_geocode_address,
 )
 
 # --- Helper Functions ---
 
-provider_df = load_provider_data(filepath="data/cleaned_outbound_referrals.parquet")
+
+# Attempt to load provider data with caching in provider_utils; show error but continue with empty DataFrame
+try:
+    provider_df = load_provider_data(filepath="data/cleaned_outbound_referrals.parquet")
+except Exception as e:
+    st.error(f"Failed to load provider data: {e}")
+    provider_df = pd.DataFrame()
 
 # --- Set random seed for reproducibility ---
 np.random.seed(42)  # Ensures consistent placeholder data and recommendations across runs
@@ -53,28 +60,6 @@ st.sidebar.markdown(
     "<h2 style='font-weight: bold; margin-bottom: 0.5em;'>Search Parameters</h2>",
     unsafe_allow_html=True,
 )
-
-# # --- Start New Search Button ---
-# if st.button("Start New Search"):
-#     # Clear all session state keys related to form and results
-#     for key in [
-#         "street",
-#         "city",
-#         "state",
-#         "zipcode",
-#         "blend",
-#         "alpha",
-#         "last_best",
-#         "last_scored_df",
-#         "last_params",
-#         "user_lat",
-#         "user_lon",
-#         "input_form",
-#     ]:
-#         if key in st.session_state:
-#             del st.session_state[key]
-#     # Rerun to reset form and results
-#     st.rerun()
 
 # --- User Input Form ---
 # This form collects the client's address and preferences.
@@ -175,15 +160,15 @@ with tabs[0]:
         user_full_address = f"{street}, {city}, {state} {zipcode}".strip(", ")
         user_lat, user_lon = None, None
         try:
-            user_location = geocode(user_full_address, timeout=10)
+            user_location = cached_geocode_address(user_full_address)
             if not user_location and street:
                 street_simple = street.split(",")[0].split(" Apt")[0].split(" Suite")[0]
-                user_location = geocode(street_simple, timeout=10)
+                user_location = cached_geocode_address(street_simple)
             if not user_location:
                 if city and state:
-                    user_location = geocode(f"{city}, {state}", timeout=10)
+                    user_location = cached_geocode_address(f"{city}, {state}")
                 elif zipcode:
-                    user_location = geocode(zipcode, timeout=10)
+                    user_location = cached_geocode_address(zipcode)
             if user_location:
                 user_lat, user_lon = user_location.latitude, user_location.longitude
                 st.session_state["user_lat"] = user_lat
@@ -202,6 +187,7 @@ with tabs[0]:
                 filtered_df,
                 distance_weight=alpha,
                 referral_weight=beta,
+                min_referrals=min_referrals,
             )
 
             # Store results and params in session state
@@ -278,7 +264,7 @@ with tabs[0]:
         with st.expander("Why was this provider selected?", expanded=False):
             rationale = []
             rationale.append(
-                f"* **Distance** from the address is **{best["Distance (Miles)"]:.2f} miles**."
+                f"* **Distance** from the address is **{best['Distance (Miles)']:.2f} miles**."
             )
             rationale.append("")
             rationale.append(

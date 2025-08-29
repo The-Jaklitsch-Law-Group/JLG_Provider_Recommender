@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from geopy.exc import GeocoderUnavailable
+import streamlit as st
 import io
 from docx import Document
 import re
@@ -8,6 +9,7 @@ from pathlib import Path
 
 
 # --- Data Loading ---
+@st.cache_data(ttl=3600)
 def load_provider_data(filepath: str) -> pd.DataFrame:
     """Load and preprocess provider data from Excel, CSV, Feather, or Parquet."""
 
@@ -69,14 +71,23 @@ def get_word_bytes(best):
     buffer = io.BytesIO()
     doc.save(buffer)
     buffer.seek(0)
-    return buffer
+    # Return raw bytes which can be passed directly to Streamlit's download APIs
+    return buffer.getvalue()
 
 
-def recommend_provider(provider_df, distance_weight=0.5, referral_weight=0.5):
-    """Return the best provider and scored DataFrame, prioritizing preferred providers, then lowest blended score."""
+def recommend_provider(provider_df, distance_weight=0.5, referral_weight=0.5, min_referrals=None):
+    """Return the best provider and scored DataFrame.
+
+    Parameters
+    - provider_df: DataFrame with at least 'Distance (Miles)' and 'Referral Count'
+    - distance_weight, referral_weight: blend weights (should sum to 1 but not required)
+    - min_referrals: optional int to filter providers with Referral Count >= min_referrals
+    """
     df = provider_df.copy(deep=True)
     df = df[df["Distance (Miles)"].notnull() & df["Referral Count"].notnull()]
-    df = df[df["Referral Count"] > 1]
+    if min_referrals is not None:
+        df = df[df["Referral Count"] >= min_referrals]
+
     if df.empty:
         return None, None
 
@@ -128,6 +139,25 @@ def geocode_address(addresses, _geocode):
     results = pd.Series(addresses).map(_cached_geocode)
     lats, lons = zip(*results)
     return list(lats), list(lons)
+
+
+@st.cache_data(ttl=60 * 60 * 24)
+def cached_geocode_address(q: str):
+    """Cached single-address geocode using Nominatim+RateLimiter.
+
+    Returns a geopy Location or None. TTL 24 hours to reuse results.
+    """
+    try:
+        from geopy.geocoders import Nominatim
+        from geopy.extra.rate_limiter import RateLimiter
+
+        geolocator_local = Nominatim(user_agent="provider_recommender")
+        geocode_local = RateLimiter(geolocator_local.geocode, min_delay_seconds=2, max_retries=3)
+        return geocode_local(q, timeout=10)
+    except GeocoderUnavailable:
+        return None
+    except Exception:
+        return None
 
 
 def calculate_distances(user_lat, user_lon, provider_df):
