@@ -110,8 +110,26 @@ def recommend_provider(provider_df, distance_weight=0.5, referral_weight=0.5, mi
         else 0
     )
     df["Score"] = distance_weight * df["norm_dist"] + referral_weight * df["norm_rank"]
-    best = df.sort_values(by="Score").iloc[0]
-    return best, df
+
+    # Tie-break behavior:
+    # - If distance is prioritized (distance_weight > referral_weight), sort ties by
+    #   Distance (ascending) then Referral Count (ascending).
+    # - Otherwise, sort ties by Referral Count (ascending) then Distance (ascending).
+    # This ensures deterministic ordering when multiple providers share the same score.
+    if distance_weight > referral_weight:
+        sort_keys = ["Score", "Distance (Miles)", "Referral Count"]
+    else:
+        sort_keys = ["Score", "Referral Count", "Distance (Miles)"]
+
+    # Add a stable final tie-break key so ordering is deterministic across runs/users.
+    # Prefer alphabetical provider name if available.
+    candidate_keys = sort_keys + ["Full Name"]
+    sort_keys_final = [k for k in candidate_keys if k in df.columns]
+    ascending = [True] * len(sort_keys_final)
+
+    df_sorted = df.sort_values(by=sort_keys_final, ascending=ascending).reset_index(drop=True)
+    best = df_sorted.iloc[0]
+    return best, df_sorted
 
 
 _geocode_cache = {}
