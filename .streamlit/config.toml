@@ -25,7 +25,7 @@ serverAddress = "0.0.0.0"
 magicEnabled = false
 
 # Disable installation tracer for faster startup
-installTracer = false
+# installTracer = false
 
 # Enable fast re-run for better user experience
 fastReruns = true
@@ -47,8 +47,8 @@ font = "sans serif"                # Clean, professional font
 
 [client]
 # Optimize for cloud deployment
-caching = true
-displayEnabled = true
+# caching = true
+# displayEnabled = true
 
 # Toolbar configuration for professional appearance
 toolbarMode = "minimal"
@@ -58,10 +58,10 @@ toolbarMode = "minimal"
 developmentMode = false
 
 # Disable developer options in production
-showErrorDetails = false
+# showErrorDetails = false
 
 # Performance optimizations
 maxCachedMessageAge = 2
 
 # Data frame display settings
-dataFrameSerialization = "legacy"
+# dataFrameSerialization = "legacy"
