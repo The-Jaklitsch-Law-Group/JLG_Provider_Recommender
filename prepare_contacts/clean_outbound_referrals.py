@@ -55,6 +55,31 @@ def main():
     if 'Dr/Facility Referred To Person Id' in df_out.columns:
         df_out = df_out[df_out['Dr/Facility Referred To Person Id'].notna()]
 
+    # Ensure date columns are properly formatted
+    date_cols = ['Create Date', 'Date of Intake', 'Sign Up Date']
+    for col in date_cols:
+        if col in df_out.columns:
+            df_out[col] = pd.to_datetime(df_out[col], errors='coerce')
+
+    # For time-based filtering, we need to preserve individual referral records with dates
+    # Create a detailed dataset with referral dates
+    detailed_referrals = df_out.copy()
+    
+    # Add a referral date column (use Create Date as primary, with fallbacks)
+    detailed_referrals['Referral Date'] = detailed_referrals['Create Date'].fillna(
+        detailed_referrals['Date of Intake']
+    ).fillna(detailed_referrals['Sign Up Date'])
+    
+    # Keep only records with valid referral dates and provider info
+    detailed_referrals = detailed_referrals[
+        detailed_referrals['Referral Date'].notna() & 
+        detailed_referrals['Dr/Facility Referred To Person Id'].notna()
+    ]
+    
+    # Select columns needed for time-based analysis
+    detailed_cols = full_address + ['Referral Date']
+    detailed_referrals = detailed_referrals[detailed_cols].copy()
+
     df_out_gb = (
         df_out.groupby(full_address, as_index=False, sort=False)['Project ID']
         .count()
@@ -76,6 +101,12 @@ def main():
     }
 
     df_out_gb = df_out_gb.rename(columns=new_col_names)
+    
+    # Also save the detailed referrals data for time-based filtering
+    detailed_referrals = detailed_referrals.rename(columns=new_col_names)
+    detailed_dst = repo_root / "data" / "detailed_referrals.parquet"
+    detailed_referrals.to_parquet(detailed_dst, index=False)
+    print(f"Detailed referrals saved to: {detailed_dst}")
 
     # Ensure Zip is string
     if 'Zip' in df_out_gb.columns:

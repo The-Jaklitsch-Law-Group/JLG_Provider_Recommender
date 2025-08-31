@@ -17,6 +17,11 @@ The Provider Recommender is a web-based tool designed to help personal injury la
 
 ## Key Features & Results
 - **Guided, User-Friendly Workflow:** Enter a client address, select a specialty (optional), and choose the balance between provider quality and proximity.
+- **Time-Based Filtering:** Calculate referral counts for specific time periods to support seasonal analysis and recent activity monitoring.
+- **Advanced Input Validation:** Real-time address validation with helpful suggestions and error prevention.
+- **Enhanced Error Handling:** User-friendly error messages for geocoding and data issues with specific guidance.
+- **Comprehensive Algorithm Explanation:** Interactive tab explaining the scoring methodology and selection criteria.
+- **Data Quality Dashboard:** Built-in monitoring for provider data completeness, geographic coverage, and system health.
 - **Branded, Professional Interface:** Firm logo and name are prominently displayed for trust and consistency.
 - **Clear, Actionable Recommendations:** The app highlights the top recommended provider, including name, address (with Google Maps link), phone, email, and specialty.
 - **Preferred Provider Priority:** The system always prioritizes the law firm's preferred providers.
@@ -24,6 +29,7 @@ The Provider Recommender is a web-based tool designed to help personal injury la
 - **Export Option:** Download recommendations as a Word document for easy sharing with clients.
 - **Accessible UI:** Designed for non-technical users, with clear instructions, an address validation warning, and a slider that shows the selected weighting value.
 - **Performance Optimizations:** Distance calculations use NumPy vectorization and caching to deliver results quickly.
+- **Comprehensive Testing Suite:** Unit and integration tests ensure reliability and catch regressions.
 
 ---
 
@@ -125,15 +131,28 @@ The Provider Recommender is a web-based tool designed to help personal injury la
    ```bash
    pip install -r requirements.txt
    ```
-2. **Run the app:**
+2. **Run the main app:**
    ```bash
    streamlit run app.py
    ```
-3. **Access the app:**
+3. **Run the data quality dashboard:**
+   ```bash
+   streamlit run data_dashboard.py
+   ```
+4. **Run tests:**
+   ```bash
+   python run_tests.py
+   # Or for quick validation:
+   python run_tests.py --quick
+   ```
+5. **Access the app:**
    Open the provided local URL in your browser.
 
 ### Data & Customization
 - **Provider Data:** Loaded from `data/cleaned_outbound_referrals.parquet`. Update this file as your provider list changes.
+- **Time-Based Data:** Detailed referral records in `data/detailed_referrals.parquet` enable time-period filtering.
+- **Data Quality:** Monitor data completeness and quality using the built-in dashboard or standalone `data_dashboard.py`.
+- **Testing:** Run `python run_tests.py` to validate core functionality and data processing logic.
 - **Branding:** Place your logo (`jlg_logo.svg`) in the project root. Adjust firm name and colors in the app script as needed.
 - **Fonts & Styles:** Further customize the look and feel via CSS injected in the Streamlit script.
 - **API Integrations:** Add credentials to `.streamlit/secrets.toml` for secure API access.
@@ -141,8 +160,11 @@ The Provider Recommender is a web-based tool designed to help personal injury la
 
 ### Best Practices & Suggestions
 - **Documentation:** Maintain up-to-date docstrings and inline comments for maintainability.
-- **Testing:** Add unit and integration tests for core logic (e.g., scoring, geocoding, data loading).
+- **Testing:** Use the comprehensive test suite (`run_tests.py`) to validate changes and catch regressions.
+- **Data Quality:** Regularly monitor the data quality dashboard to ensure accurate recommendations.
+- **Input Validation:** The app includes robust address validation - review error messages for data quality insights.
 - **Security:** Use Streamlit secrets for API keys and sensitive data. Consider user authentication for sensitive workflows.
 - **Accessibility:** Regularly review UI for clarity and usability, especially for non-technical users.
+- **Performance:** Monitor the time-based filtering performance with large datasets and adjust caching as needed.
 
 ---

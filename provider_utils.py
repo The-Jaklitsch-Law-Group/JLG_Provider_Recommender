@@ -50,9 +50,303 @@ def load_provider_data(filepath: str) -> pd.DataFrame:
     return df
 
 
+@st.cache_data(ttl=3600)
+def load_detailed_referrals(filepath: str) -> pd.DataFrame:
+    """Load detailed referral data with dates for time-based filtering."""
+    
+    path = Path(filepath)
+    if not path.exists():
+        # If detailed data doesn't exist, return empty DataFrame
+        return pd.DataFrame()
+    
+    try:
+        df = pd.read_parquet(path)
+        df['Referral Date'] = pd.to_datetime(df['Referral Date'], errors='coerce')
+        return df
+    except Exception as e:
+        st.warning(f"Could not load detailed referral data: {e}")
+        return pd.DataFrame()
+
+
+def calculate_time_based_referral_counts(detailed_df: pd.DataFrame, start_date, end_date) -> pd.DataFrame:
+    """Calculate referral counts for providers within a specific time period."""
+    
+    if detailed_df.empty:
+        return pd.DataFrame()
+    
+    # Filter by date range
+    if start_date and end_date:
+        mask = (detailed_df['Referral Date'] >= pd.to_datetime(start_date)) & \
+               (detailed_df['Referral Date'] <= pd.to_datetime(end_date))
+        filtered_df = detailed_df[mask]
+    else:
+        filtered_df = detailed_df
+    
+    if filtered_df.empty:
+        return pd.DataFrame()
+    
+    # Group by provider and count referrals
+    provider_cols = ['Person ID', 'Full Name', 'Street', 'City', 'State', 'Zip', 
+                    'Latitude', 'Longitude', 'Phone Number']
+    
+    # Only include columns that exist in the DataFrame
+    available_cols = [col for col in provider_cols if col in filtered_df.columns]
+    
+    if not available_cols:
+        return pd.DataFrame()
+    
+    time_based_counts = (
+        filtered_df.groupby(available_cols, as_index=False)
+        .size()
+        .rename(columns={'size': 'Referral Count'})
+        .sort_values(by='Referral Count', ascending=False)
+    )
+    
+    # Add Full Address if not present
+    if 'Full Address' not in time_based_counts.columns and all(col in time_based_counts.columns for col in ['Street', 'City', 'State', 'Zip']):
+        time_based_counts["Full Address"] = (
+            time_based_counts["Street"].fillna("")
+            + ", "
+            + time_based_counts["City"].fillna("")
+            + ", "
+            + time_based_counts["State"].fillna("")
+            + " "
+            + time_based_counts["Zip"].fillna("")
+        )
+        time_based_counts["Full Address"] = (
+            time_based_counts["Full Address"]
+            .str.replace(r",\s*,", ",", regex=True)
+            .str.replace(r",\s*$", "", regex=True)
+        )
+    
+    return time_based_counts
+
+
 def sanitize_filename(name):
     """Sanitize a string for use as a filename."""
     return re.sub(r"[^A-Za-z0-9_]", "", name.replace(" ", "_"))
+
+
+def validate_address_input(street: str, city: str, state: str, zipcode: str) -> tuple[bool, str]:
+    """Validate address input and return validation status and message."""
+    
+    errors = []
+    warnings = []
+    
+    # Basic required field validation
+    if not street.strip():
+        errors.append("Street address is required")
+    
+    if not city.strip():
+        warnings.append("City is recommended for better geocoding accuracy")
+    
+    if not state.strip():
+        warnings.append("State is recommended for better geocoding accuracy")
+    
+    # Validate state format (if provided)
+    if state.strip():
+        state_clean = state.strip().upper()
+        # Common US state abbreviations
+        valid_states = {
+            'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
+            'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+            'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+            'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+            'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'
+        }
+        if len(state_clean) == 2 and state_clean not in valid_states:
+            warnings.append(f"'{state}' may not be a valid US state abbreviation")
+        elif len(state_clean) > 2:
+            warnings.append("Consider using 2-letter state abbreviation (e.g., 'MD' instead of 'Maryland')")
+    
+    # Validate ZIP code format (if provided)
+    if zipcode.strip():
+        zip_clean = zipcode.strip()
+        if not (zip_clean.isdigit() and len(zip_clean) == 5):
+            if not (len(zip_clean) == 10 and zip_clean[5] == '-' and 
+                   zip_clean[:5].isdigit() and zip_clean[6:].isdigit()):
+                warnings.append("ZIP code should be 5 digits (e.g., '20746') or ZIP+4 format (e.g., '20746-1234')")
+    
+    # Check for suspicious patterns
+    if street.strip().lower() in ['test', 'example', '123 test st', '123 main st']:
+        warnings.append("Address appears to be a test value - please enter a real address")
+    
+    # Compile messages
+    message_parts = []
+    if errors:
+        message_parts.append("❌ **Errors**: " + "; ".join(errors))
+    if warnings:
+        message_parts.append("⚠️ **Suggestions**: " + "; ".join(warnings))
+    
+    is_valid = len(errors) == 0
+    message = "\n\n".join(message_parts) if message_parts else ""
+    
+    return is_valid, message
+
+
+def handle_geocoding_error(address: str, error: Exception) -> str:
+    """Provide user-friendly error messages for geocoding failures."""
+    
+    error_type = type(error).__name__
+    
+    if "timeout" in str(error).lower():
+        return f"⏱️ **Geocoding Timeout**: The address lookup service is taking too long. Please try again in a moment."
+    
+    elif "unavailable" in str(error).lower() or "service" in str(error).lower():
+        return f"🔌 **Service Unavailable**: The geocoding service is temporarily unavailable. Please try again later."
+    
+    elif "rate" in str(error).lower() or "limit" in str(error).lower():
+        return f"🚦 **Rate Limited**: Too many requests to the geocoding service. Please wait a moment and try again."
+    
+    elif "network" in str(error).lower() or "connection" in str(error).lower():
+        return f"🌐 **Network Error**: Cannot connect to the geocoding service. Please check your internet connection."
+    
+    else:
+        return f"❌ **Geocoding Error**: Unable to find location for '{address}'. Please check the address and try again. (Error: {error_type})"
+
+
+def safe_numeric_conversion(value, default=0):
+    """Safely convert a value to numeric, returning default if conversion fails."""
+    try:
+        if pd.isna(value):
+            return default
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
+
+def validate_and_clean_coordinates(df: pd.DataFrame) -> pd.DataFrame:
+    """Validate and clean latitude/longitude coordinates in provider data."""
+    
+    if df.empty:
+        return df
+    
+    df = df.copy()
+    
+    # Convert coordinates to numeric, handling errors gracefully
+    if 'Latitude' in df.columns:
+        df['Latitude'] = df['Latitude'].apply(lambda x: safe_numeric_conversion(x, None))
+    
+    if 'Longitude' in df.columns:
+        df['Longitude'] = df['Longitude'].apply(lambda x: safe_numeric_conversion(x, None))
+    
+    # Validate coordinate ranges
+    if 'Latitude' in df.columns and 'Longitude' in df.columns:
+        # Flag invalid coordinates (outside reasonable bounds for US)
+        invalid_lat = (df['Latitude'] < 20) | (df['Latitude'] > 70) | df['Latitude'].isna()
+        invalid_lon = (df['Longitude'] < -180) | (df['Longitude'] > -60) | df['Longitude'].isna()
+        
+        invalid_coords = invalid_lat | invalid_lon
+        
+        if invalid_coords.any():
+            # Log providers with invalid coordinates but don't remove them
+            invalid_count = invalid_coords.sum()
+            st.warning(f"⚠️ {invalid_count} providers have invalid or missing coordinates and will not appear in distance calculations.")
+    
+    return df
+
+
+def validate_provider_data(df: pd.DataFrame) -> tuple[bool, str]:
+    """Validate provider data quality and return status with message."""
+    
+    if df.empty:
+        return False, "❌ **Error**: No provider data available. Please check data files."
+    
+    issues = []
+    info = []
+    
+    # Check required columns
+    required_cols = ['Full Name', 'Referral Count', 'Latitude', 'Longitude']
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        issues.append(f"Missing required columns: {', '.join(missing_cols)}")
+    
+    # Check data quality
+    if 'Referral Count' in df.columns:
+        invalid_counts = df['Referral Count'].isna().sum()
+        if invalid_counts > 0:
+            issues.append(f"{invalid_counts} providers have invalid referral counts")
+        
+        zero_referrals = (df['Referral Count'] == 0).sum()
+        if zero_referrals > 0:
+            info.append(f"{zero_referrals} providers have zero referrals")
+    
+    if 'Latitude' in df.columns and 'Longitude' in df.columns:
+        missing_coords = (df['Latitude'].isna() | df['Longitude'].isna()).sum()
+        if missing_coords > 0:
+            issues.append(f"{missing_coords} providers missing geographic coordinates")
+    
+    # Summary info
+    total_providers = len(df)
+    info.append(f"Total providers in database: {total_providers}")
+    
+    if 'Referral Count' in df.columns:
+        avg_referrals = df['Referral Count'].mean()
+        max_referrals = df['Referral Count'].max()
+        info.append(f"Average referrals per provider: {avg_referrals:.1f}")
+        info.append(f"Most referred provider has: {max_referrals} referrals")
+    
+    # Compile message
+    message_parts = []
+    if issues:
+        message_parts.append("⚠️ **Data Quality Issues**: " + "; ".join(issues))
+    if info:
+        message_parts.append("ℹ️ **Data Summary**: " + "; ".join(info))
+    
+    is_valid = len(issues) == 0
+    message = "\n\n".join(message_parts)
+    
+    return is_valid, message
+    """Validate provider data quality and return status with message."""
+    
+    if df.empty:
+        return False, "❌ **Error**: No provider data available. Please check data files."
+    
+    issues = []
+    info = []
+    
+    # Check required columns
+    required_cols = ['Full Name', 'Referral Count', 'Latitude', 'Longitude']
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        issues.append(f"Missing required columns: {', '.join(missing_cols)}")
+    
+    # Check data quality
+    if 'Referral Count' in df.columns:
+        invalid_counts = df['Referral Count'].isna().sum()
+        if invalid_counts > 0:
+            issues.append(f"{invalid_counts} providers have invalid referral counts")
+        
+        zero_referrals = (df['Referral Count'] == 0).sum()
+        if zero_referrals > 0:
+            info.append(f"{zero_referrals} providers have zero referrals")
+    
+    if 'Latitude' in df.columns and 'Longitude' in df.columns:
+        missing_coords = (df['Latitude'].isna() | df['Longitude'].isna()).sum()
+        if missing_coords > 0:
+            issues.append(f"{missing_coords} providers missing geographic coordinates")
+    
+    # Summary info
+    total_providers = len(df)
+    info.append(f"Total providers in database: {total_providers}")
+    
+    if 'Referral Count' in df.columns:
+        avg_referrals = df['Referral Count'].mean()
+        max_referrals = df['Referral Count'].max()
+        info.append(f"Average referrals per provider: {avg_referrals:.1f}")
+        info.append(f"Most referred provider has: {max_referrals} referrals")
+    
+    # Compile message
+    message_parts = []
+    if issues:
+        message_parts.append("⚠️ **Data Quality Issues**: " + "; ".join(issues))
+    if info:
+        message_parts.append("ℹ️ **Data Summary**: " + "; ".join(info))
+    
+    is_valid = len(issues) == 0
+    message = "\n\n".join(message_parts)
+    
+    return is_valid, message
 
 
 def get_word_bytes(best):

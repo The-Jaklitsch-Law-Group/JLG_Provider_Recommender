@@ -6,3 +6,6 @@ python-docx>=0.8.11
 openpyxl>=3.0.10
 pyarrow>=8.0.0  # used by pandas for parquet
 pytest>=7.0.0
+pytest-cov>=4.0.0  # for coverage reports
+pytest-mock>=3.10.0  # for mocking in tests
+plotly>=5.0.0  # for interactive charts in data dashboard
