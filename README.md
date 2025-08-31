@@ -1,12 +1,11 @@
-# Provider Recommender for New Clients
+# Provider Recommender for Legal Clients
 
 ---
 
 ## Contact
-**Ben McCarty**  
-*Data Operations Specialist*  
-Jaklitsch Law Group  
-Email: [benjamin@jaklitschlawgroup.com](mailto:benjamin@jaklitschlawgroup.com)
+For questions, support, or collaboration opportunities, please open an issue in this repository or contact:
+**The Jaklitsch Law Group**  
+Email: [info@jaklitschlawgroup.com](mailto:info@jaklitschlawgroup.com)
 
 ---
 
@@ -324,3 +323,36 @@ chmod +x setup.sh run_app.sh
 - **Dependencies:** Use `uv add package-name` to add new dependencies and `uv lock` to update the lock file.
 
 ---
+
+## 🤝 Contributing
+
+We welcome contributions from the community! This project is open source and available for:
+- Bug fixes and improvements
+- Feature enhancements
+- Documentation updates
+- Performance optimizations
+
+Please see [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines on:
+- Development setup
+- Code style requirements
+- Testing procedures
+- Pull request process
+
+## 🛡️ Security
+
+For security considerations and reporting vulnerabilities, please see [SECURITY.md](SECURITY.md).
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙋 Support
+
+- **Issues**: Report bugs or request features via [GitHub Issues](https://github.com/The-Jaklitsch-Law-Group/JLG_Provider_Recommender/issues)
+- **Documentation**: Check our comprehensive guides in the repository
+- **Contact**: Email [info@jaklitschlawgroup.com](mailto:info@jaklitschlawgroup.com) for direct support
+
+---
+
+**Made with ❤️ by The Jaklitsch Law Group**  
+*Empowering legal professionals with data-driven solutions*

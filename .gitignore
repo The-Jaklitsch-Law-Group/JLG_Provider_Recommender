@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyc
 
 # C extensions
 *.so
@@ -185,6 +186,40 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
-# Secrets
+# Secrets and sensitive data
 secrets.json
+*.key
+*.pem
+*.p12
+*.pfx
+.env
+.env.local
+.env.*.local
+config.json
+api_keys.txt
+
+# IDE and editor files
 .vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Development and temporary files
+*.log
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
+
+# Personal development notes
+personal_notes.md
+dev_notes.txt
+TODO.md
+
+# Local data files (for privacy)
+data/local/
+data/backup/
+data/raw/
+*.csv.bak
+*.xlsx.bak

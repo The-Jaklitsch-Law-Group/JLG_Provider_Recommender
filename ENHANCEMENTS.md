@@ -291,12 +291,13 @@ The enhanced data cleaning script automatically generates both aggregated and de
 
 ## 📞 Support and Contact
 
-For technical questions or issues with the enhanced features:
+For technical questions, issues, bug reports, or feature requests:
 
-**Ben McCarty**  
-*Data Operations Specialist*  
-Jaklitsch Law Group  
-Email: [benjamin@jaklitschlawgroup.com](mailto:benjamin@jaklitschlawgroup.com)
+**The Jaklitsch Law Group**  
+*Development Team*  
+Email: [info@jaklitschlawgroup.com](mailto:info@jaklitschlawgroup.com)
+
+Please open an issue in this repository for the fastest response.
 
 **Development Notes:**
 - All enhancements maintain backward compatibility

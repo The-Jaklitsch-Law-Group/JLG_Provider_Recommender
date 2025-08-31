@@ -87,6 +87,27 @@ uv run pytest tests/ -v --cov=. --cov-report=html
 
 ---
 
-**Status**: ✅ Production Ready for Streamlit Cloud
-**Last Updated**: December 2024
+## 🔒 Public Deployment Security
+
+When deploying publicly, ensure:
+
+1. **Environment Variables**
+   - Configure all API keys via Streamlit Cloud secrets
+   - Never commit sensitive data to version control
+   - Use `.streamlit/secrets.toml` template for reference
+
+2. **Data Privacy**
+   - Review all data files for sensitive information
+   - Consider data anonymization for demo deployments
+   - Implement appropriate access controls
+
+3. **Configuration**
+   - Production settings are pre-configured in `.streamlit/config.toml`
+   - Logo and branding assets are embedded (no external dependencies)
+   - All file paths use relative references
+
+---
+
+**Status**: ✅ Production Ready for Public Deployment
+**Last Updated**: August 2025
 **Environment**: Python 3.11+ with UV package management

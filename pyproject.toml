@@ -27,10 +27,10 @@ description = "Medical Provider Recommender for New Clients - Streamlit Applicat
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
-    {name = "Ben McCarty", email = "benjamin@jaklitschlawgroup.com"},
+    {name = "The Jaklitsch Law Group", email = "info@jaklitschlawgroup.com"},
 ]
 maintainers = [
-    {name = "Ben McCarty", email = "benjamin@jaklitschlawgroup.com"},
+    {name = "The Jaklitsch Law Group", email = "info@jaklitschlawgroup.com"},
 ]
 keywords = ["streamlit", "healthcare", "provider", "recommendation", "geolocation"]
 classifiers = [
