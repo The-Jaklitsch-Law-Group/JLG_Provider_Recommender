@@ -1,0 +1,67 @@
+# Streamlit Cloud Configuration
+# Official configuration for professional deployment
+
+[server]
+# Disable file watching in cloud environment (prevents warnings)
+fileWatcherType = "none"
+
+# Cloud deployment settings
+headless = true
+enableCORS = false
+enableXsrfProtection = false
+
+# Port configuration (Streamlit Cloud handles this automatically)
+port = 8501
+
+[browser]
+# Disable usage statistics collection for privacy
+gatherUsageStats = false
+
+# Server-only mode (no browser auto-opening)
+serverAddress = "0.0.0.0"
+
+[runner]
+# Disable magic commands for security and performance
+magicEnabled = false
+
+# Disable installation tracer for faster startup
+installTracer = false
+
+# Enable fast re-run for better user experience
+fastReruns = true
+
+[logger]
+# Set appropriate log level for production
+level = "info"
+
+# Log message format
+messageFormat = "%(asctime)s %(message)s"
+
+[theme]
+# Professional theme matching JLG branding
+primaryColor = "#1f4e79"           # JLG blue
+backgroundColor = "#ffffff"         # Clean white background
+secondaryBackgroundColor = "#f8f9fa" # Light gray for sections
+textColor = "#212529"              # Dark text for readability
+font = "sans serif"                # Clean, professional font
+
+[client]
+# Optimize for cloud deployment
+caching = true
+displayEnabled = true
+
+# Toolbar configuration for professional appearance
+toolbarMode = "minimal"
+
+[global]
+# Development vs Production settings
+developmentMode = false
+
+# Disable developer options in production
+showErrorDetails = false
+
+# Performance optimizations
+maxCachedMessageAge = 2
+
+# Data frame display settings
+dataFrameSerialization = "legacy"
