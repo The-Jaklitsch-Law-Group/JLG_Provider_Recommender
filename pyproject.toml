@@ -2,6 +2,24 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+include = [
+    "*.py",
+    "data/*.parquet",
+    "data/*.xlsx", 
+    "*.svg",
+    "*.jpg",
+    "*.md",
+]
+exclude = [
+    "tests/",
+    "__pycache__/",
+    "*.pyc",
+    ".pytest_cache/",
+    ".coverage",
+]
+
 [project]
 name = "jlg-provider-recommender"
 version = "2.0.0"

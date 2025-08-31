@@ -17,18 +17,43 @@ from provider_utils import (
     recommend_provider,
     get_word_bytes,
     cached_geocode_address,
+    # Import new enhanced functions
+    load_and_validate_provider_data,
+    handle_streamlit_error,
+    geocode_address_with_cache,
+    validate_address,
+    safe_numeric_conversion,
 )
 
 # --- Helper Functions ---
 
 
-# Attempt to load provider data with caching in provider_utils; show error but continue with empty DataFrame
-try:
-    provider_df = load_provider_data(filepath="data/cleaned_outbound_referrals.parquet")
-    provider_df = validate_and_clean_coordinates(provider_df)
-    detailed_referrals_df = load_detailed_referrals(filepath="data/detailed_referrals.parquet")
-    
-    # Validate provider data quality
+# --- Enhanced Data Loading with Validation ---
+@st.cache_data(ttl=3600)
+def load_application_data():
+    """Load and validate provider data for the application."""
+    try:
+        # Try the enhanced loading function first
+        provider_df = load_and_validate_provider_data()
+        
+        if provider_df.empty:
+            # Fallback to original loading method
+            provider_df = load_provider_data(filepath="data/cleaned_outbound_referrals.parquet")
+            provider_df = validate_and_clean_coordinates(provider_df)
+        
+        detailed_referrals_df = load_detailed_referrals(filepath="data/detailed_referrals.parquet")
+        
+        return provider_df, detailed_referrals_df
+        
+    except Exception as e:
+        st.error(f"Failed to load provider data: {e}")
+        return pd.DataFrame(), pd.DataFrame()
+
+# Load data using enhanced function
+provider_df, detailed_referrals_df = load_application_data()
+
+# Validate provider data quality and show feedback
+if not provider_df.empty:
     data_valid, data_message = validate_provider_data(provider_df)
     if data_message:
         if data_valid:
@@ -36,11 +61,8 @@ try:
                 st.success(data_message)
         else:
             st.error(data_message)
-            
-except Exception as e:
-    st.error(f"Failed to load provider data: {e}")
-    provider_df = pd.DataFrame()
-    detailed_referrals_df = pd.DataFrame()
+else:
+    st.warning("⚠️ No provider data available. Please check data files in the 'data/' directory.")
 
 # --- Set random seed for reproducibility ---
 np.random.seed(42)  # Ensures consistent placeholder data and recommendations across runs
@@ -90,6 +112,7 @@ with st.sidebar:
             "Street Address",
             value=st.session_state.get("street", ""),
             help="e.g., 123 Main St",
+            placeholder="Enter full street address"
         )
         city = st.text_input(
             "City", value=st.session_state.get("city", ""), help="e.g., Baltimore"
@@ -100,6 +123,21 @@ with st.sidebar:
         zipcode = st.text_input(
             "Zip Code", value=st.session_state.get("zipcode", ""), help="5-digit ZIP"
         )
+
+        # Real-time address validation feedback
+        if street or city or state or zipcode:
+            full_address = f"{street}, {city}, {state} {zipcode}".strip(", ")
+            if len(full_address.strip()) > 5:  # Basic check to avoid validating very short inputs
+                is_valid, validation_message = validate_address(full_address)
+                if is_valid:
+                    if validation_message:  # Has suggestions but is valid
+                        st.info(f"✅ Address looks good. {validation_message}")
+                    else:
+                        st.success("✅ Address format validated.")
+                else:
+                    st.warning(f"⚠️ {validation_message}")
+
+        st.markdown("---")  # Visual separator
 
         # --- More accessible weight control ---
         blend = st.select_slider(
@@ -204,24 +242,45 @@ with tabs[0]:
     if submit and st.session_state.get("street"):
         user_full_address = f"{street}, {city}, {state} {zipcode}".strip(", ")
         user_lat, user_lon = None, None
-        try:
-            user_location = cached_geocode_address(user_full_address)
-            if not user_location and street:
-                street_simple = street.split(",")[0].split(" Apt")[0].split(" Suite")[0]
-                user_location = cached_geocode_address(street_simple)
-            if not user_location:
-                if city and state:
-                    user_location = cached_geocode_address(f"{city}, {state}")
-                elif zipcode:
-                    user_location = cached_geocode_address(zipcode)
-            if user_location:
-                user_lat, user_lon = user_location.latitude, user_location.longitude
-                st.session_state["user_lat"] = user_lat
-                st.session_state["user_lon"] = user_lon
-            else:
-                st.error("Could not geocode your address. Please check and try again.")
-        except Exception as e:
-            st.error(f"Geocoding error: {e}")
+        
+        # Enhanced geocoding with better error handling
+        with st.spinner("🔍 Finding your location..."):
+            try:
+                # First, validate the complete address
+                is_valid, validation_msg = validate_address(user_full_address)
+                if not is_valid:
+                    st.error(f"Address validation failed: {validation_msg}")
+                else:
+                    # Try geocoding with the improved function
+                    coords = geocode_address_with_cache(user_full_address)
+                    
+                    if coords:
+                        user_lat, user_lon = coords
+                        st.session_state["user_lat"] = user_lat
+                        st.session_state["user_lon"] = user_lon
+                        st.success(f"✅ Successfully located: {user_full_address}")
+                    else:
+                        # Try fallback strategies
+                        if street:
+                            street_simple = street.split(",")[0].split(" Apt")[0].split(" Suite")[0]
+                            coords = geocode_address_with_cache(f"{street_simple}, {city}, {state}")
+                            
+                        if not coords and city and state:
+                            coords = geocode_address_with_cache(f"{city}, {state}")
+                            
+                        if not coords and zipcode:
+                            coords = geocode_address_with_cache(zipcode)
+                            
+                        if coords:
+                            user_lat, user_lon = coords
+                            st.session_state["user_lat"] = user_lat
+                            st.session_state["user_lon"] = user_lon
+                            st.warning("⚠️ Used approximate location based on available address components.")
+                        else:
+                            st.error("❌ Could not find coordinates for the provided address. Please verify and try again.")
+                            
+            except Exception as e:
+                handle_streamlit_error(e, "geocoding address")
 
         if user_lat is not None and user_lon is not None:
             # Use time-based filtering if enabled

@@ -15,6 +15,30 @@ The Provider Recommender is a web-based tool designed to help personal injury la
 
 ---
 
+## ✨ Recent Improvements (v2.0)
+
+**🔧 Enhanced Data Pipeline & Integration:**
+- **Missing Function Integration:** Added `validate_provider_data`, `safe_numeric_conversion`, and other critical functions
+- **Improved Data Loading:** Enhanced `load_and_validate_provider_data` with automatic fallbacks and better error handling
+- **Type Safety:** Complete type annotations throughout the codebase for better reliability
+- **Performance Optimization:** Vectorized distance calculations and improved caching strategies
+
+**🎯 Complete Streamlit App Implementation:**
+- **Enhanced Algorithm Explanation:** Interactive mathematical demonstrations with LaTeX formulas and live examples
+- **Real-time Address Validation:** Immediate feedback on address format and completeness
+- **Advanced Error Handling:** User-friendly error messages with specific guidance for resolution
+- **Professional UI/UX:** Improved styling, validation feedback, and intuitive workflows
+- **Export Functionality:** Generate professional Word documents with recommendations
+
+**🧪 Comprehensive Testing Infrastructure:**
+- **Complete Test Suite:** Unit and integration tests covering all core functions
+- **Performance Testing:** Validation with large datasets (500+ providers)
+- **Mocking & Coverage:** pytest-based testing with coverage reporting and mock services
+- **Validation Script:** `validate_improvements.py` for quick system health checks
+- **CI/CD Ready:** Automated testing infrastructure for continuous integration
+
+---
+
 ## Key Features & Results
 - **Guided, User-Friendly Workflow:** Enter a client address, select a specialty (optional), and choose the balance between provider quality and proximity.
 - **Time-Based Filtering:** Calculate referral counts for specific time periods to support seasonal analysis and recent activity monitoring.
@@ -185,6 +209,27 @@ If you prefer manual setup:
 
 ### Running the Application
 
+#### Quick Start Scripts
+For the easiest setup, use the provided scripts:
+
+**On Windows:**
+```bash
+# Run setup first (if not done already)
+setup.bat
+
+# Then run the app
+run_app.bat
+```
+
+**On macOS/Linux:**
+```bash
+# Run setup first (if not done already)
+chmod +x setup.sh && ./setup.sh
+
+# Then run the app
+./run_app.sh
+```
+
 #### Using uv (Recommended)
 ```bash
 # Run main application
@@ -218,6 +263,39 @@ python run_tests.py
 
 ### Access the Application
 Open your browser to the URL provided by Streamlit (typically `http://localhost:8501`)
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+**❌ "ModuleNotFoundError: No module named 'geopy'"**
+This means the dependencies aren't installed. Fix with:
+
+```bash
+# If using uv (recommended):
+uv venv --python 3.11
+uv pip install -r requirements.txt
+
+# If using pip:
+python -m venv .venv
+source .venv/bin/activate  # On macOS/Linux
+.venv\Scripts\activate     # On Windows
+pip install -r requirements.txt
+```
+
+**❌ "No runtime found, using MemoryCacheStorageManager"**
+This is a warning that can be safely ignored when testing imports outside of Streamlit.
+
+**❌ Virtual environment not found**
+Run the setup script for your platform:
+- Windows: `setup.bat`
+- macOS/Linux: `./setup.sh`
+
+**❌ Permission denied when running scripts**
+On macOS/Linux, make scripts executable:
+```bash
+chmod +x setup.sh run_app.sh
+```
 
 ### Data & Customization
 - **Provider Data:** Loaded from `data/cleaned_outbound_referrals.parquet`. Update this file as your provider list changes.

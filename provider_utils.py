@@ -1,11 +1,17 @@
 import pandas as pd
 import numpy as np
-from geopy.exc import GeocoderUnavailable
+from geopy.exc import GeocoderUnavailable, GeocoderTimedOut, GeocoderServiceError
+from geopy.geocoders import Nominatim
+from geopy.distance import geodesic
 import streamlit as st
 import io
 from docx import Document
 import re
 from pathlib import Path
+import time
+from datetime import datetime, timedelta
+from typing import Tuple, Optional, Dict, Any, List
+import logging
 
 
 # --- Data Loading ---
@@ -122,6 +128,188 @@ def calculate_time_based_referral_counts(detailed_df: pd.DataFrame, start_date, 
     return time_based_counts
 
 
+def safe_numeric_conversion(value: Any, default: float = 0.0) -> float:
+    """
+    Safely convert a value to float with fallback.
+    
+    Args:
+        value: Value to convert
+        default: Default value if conversion fails
+        
+    Returns:
+        Converted float value or default
+    """
+    try:
+        if pd.isna(value):
+            return default
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
+
+def load_and_validate_provider_data(start_date: Optional[datetime] = None, 
+                                   end_date: Optional[datetime] = None) -> pd.DataFrame:
+    """
+    Load provider data with optional time filtering and validation.
+    
+    Args:
+        start_date: Start date for filtering referrals
+        end_date: End date for filtering referrals
+        
+    Returns:
+        Validated provider dataframe
+    """
+    try:
+        # Try to load the detailed referrals data first
+        try:
+            df = pd.read_parquet('data/detailed_referrals.parquet')
+            
+            # Convert date columns if they exist
+            if 'Referral Date' in df.columns:
+                df['Referral Date'] = pd.to_datetime(df['Referral Date'], errors='coerce')
+                
+                # Apply time filtering if dates provided
+                if start_date and end_date:
+                    mask = (df['Referral Date'] >= start_date) & (df['Referral Date'] <= end_date)
+                    df = df[mask]
+                    
+                    # Group by provider and count referrals - adapt to actual column names
+                    groupby_cols = []
+                    for col in ['Full Name', 'Street', 'City', 'State', 'Zip', 'Latitude', 'Longitude', 'Phone Number']:
+                        if col in df.columns:
+                            groupby_cols.append(col)
+                    
+                    if groupby_cols:
+                        referral_counts = df.groupby(groupby_cols).size().reset_index(name='Referral Count')
+                        df = referral_counts
+                else:
+                    # Use pre-aggregated data if no time filtering
+                    if 'Referral Count' not in df.columns:
+                        groupby_cols = []
+                        for col in ['Full Name', 'Street', 'City', 'State', 'Zip', 'Latitude', 'Longitude', 'Phone Number']:
+                            if col in df.columns:
+                                groupby_cols.append(col)
+                        if groupby_cols:
+                            df = df.groupby(groupby_cols).size().reset_index(name='Referral Count')
+                        
+        except FileNotFoundError:
+            # Fallback to original cleaned data
+            st.warning("Detailed referrals data not found. Using aggregated data (time filtering not available).")
+            df = pd.read_parquet('data/cleaned_outbound_referrals.parquet')
+            
+        # Validate data
+        is_valid, issues = validate_provider_data(df)
+        if not is_valid and isinstance(issues, list):
+            st.warning(f"Data quality issues detected: {'; '.join(issues)}")
+            
+        # Clean and standardize coordinates
+        if 'Latitude' in df.columns:
+            df['Latitude'] = df['Latitude'].apply(lambda x: safe_numeric_conversion(x, 0.0))
+        if 'Longitude' in df.columns:
+            df['Longitude'] = df['Longitude'].apply(lambda x: safe_numeric_conversion(x, 0.0))
+        
+        # Remove providers with invalid coordinates
+        if 'Latitude' in df.columns and 'Longitude' in df.columns:
+            df = df[(df['Latitude'] != 0) & (df['Longitude'] != 0)]
+        
+        return df
+        
+    except Exception as e:
+        st.error(f"Error loading provider data: {str(e)}")
+        return pd.DataFrame()
+
+
+def handle_streamlit_error(error: Exception, context: str = "operation"):
+    """
+    Handle errors gracefully in Streamlit with user-friendly messages.
+    
+    Args:
+        error: The exception that occurred
+        context: Context description for the error
+    """
+    error_type = type(error).__name__
+    error_message = str(error)
+    
+    if "geocod" in error_message.lower():
+        st.error(f"❌ **Geocoding Error**: Unable to find coordinates for the provided address. Please check the address format and try again.")
+    elif "network" in error_message.lower() or "connection" in error_message.lower():
+        st.error(f"❌ **Network Error**: Unable to connect to geocoding service. Please check your internet connection.")
+    elif "timeout" in error_message.lower():
+        st.error(f"❌ **Timeout Error**: The geocoding service is taking too long to respond. Please try again.")
+    elif "file" in error_message.lower() or "not found" in error_message.lower():
+        st.error(f"❌ **Data Error**: Required data files are missing. Please contact support.")
+    else:
+        st.error(f"❌ **Error during {context}**: {error_message}")
+    
+    # Log the full error details
+    st.exception(error)
+
+
+@st.cache_data(ttl=3600)
+def geocode_address_with_cache(address: str) -> Optional[Tuple[float, float]]:
+    """
+    Geocode an address with caching and error handling.
+    
+    Args:
+        address: Address string to geocode
+        
+    Returns:
+        Tuple of (latitude, longitude) or None if failed
+    """
+    try:
+        geolocator = Nominatim(user_agent="jlg_provider_recommender", timeout=10)
+        location = geolocator.geocode(address)
+        
+        if location:
+            return (location.latitude, location.longitude)
+        else:
+            return None
+            
+    except (GeocoderTimedOut, GeocoderServiceError) as e:
+        st.warning(f"Geocoding service temporarily unavailable. Please try again.")
+        return None
+    except Exception as e:
+        st.error(f"Error geocoding address: {str(e)}")
+        return None
+
+
+def validate_address(address: str) -> Tuple[bool, str]:
+    """
+    Validate address format and completeness.
+    
+    Args:
+        address: Address string to validate
+        
+    Returns:
+        Tuple of (is_valid, validation_message)
+    """
+    if not address or not address.strip():
+        return False, "Address cannot be empty"
+    
+    address = address.strip()
+    
+    # Basic length check
+    if len(address) < 10:
+        return False, "Address appears too short. Please provide a complete address."
+    
+    # Check for basic components
+    has_number = any(char.isdigit() for char in address)
+    has_street_indicator = any(indicator in address.lower() for indicator in 
+                              ['street', 'st', 'avenue', 'ave', 'road', 'rd', 'drive', 'dr', 'lane', 'ln', 'way', 'blvd', 'boulevard'])
+    
+    if not has_number:
+        return False, "Address should include a street number"
+    
+    # Check for state abbreviation or full state name
+    state_patterns = ['\\b[A-Z]{2}\\b', '\\d{5}(-\\d{4})?\\b']  # State abbrev or ZIP
+    has_state_or_zip = any(re.search(pattern, address) for pattern in state_patterns)
+    
+    if not has_state_or_zip:
+        return True, "Consider adding state and ZIP code for better accuracy"
+    
+    return True, ""
+
+
 def sanitize_filename(name):
     """Sanitize a string for use as a filename."""
     return re.sub(r"[^A-Za-z0-9_]", "", name.replace(" ", "_"))
@@ -205,16 +393,6 @@ def handle_geocoding_error(address: str, error: Exception) -> str:
         return f"❌ **Geocoding Error**: Unable to find location for '{address}'. Please check the address and try again. (Error: {error_type})"
 
 
-def safe_numeric_conversion(value, default=0):
-    """Safely convert a value to numeric, returning default if conversion fails."""
-    try:
-        if pd.isna(value):
-            return default
-        return float(value)
-    except (ValueError, TypeError):
-        return default
-
-
 def validate_and_clean_coordinates(df: pd.DataFrame) -> pd.DataFrame:
     """Validate and clean latitude/longitude coordinates in provider data."""
     
@@ -225,10 +403,10 @@ def validate_and_clean_coordinates(df: pd.DataFrame) -> pd.DataFrame:
     
     # Convert coordinates to numeric, handling errors gracefully
     if 'Latitude' in df.columns:
-        df['Latitude'] = df['Latitude'].apply(lambda x: safe_numeric_conversion(x, None))
+        df['Latitude'] = df['Latitude'].apply(lambda x: safe_numeric_conversion(x, 0.0))
     
     if 'Longitude' in df.columns:
-        df['Longitude'] = df['Longitude'].apply(lambda x: safe_numeric_conversion(x, None))
+        df['Longitude'] = df['Longitude'].apply(lambda x: safe_numeric_conversion(x, 0.0))
     
     # Validate coordinate ranges
     if 'Latitude' in df.columns and 'Longitude' in df.columns:
