@@ -1,3 +1,68 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jlg-provider-recommender"
+version = "2.0.0"
+description = "Medical Provider Recommender for New Clients - Streamlit Application"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Ben McCarty", email = "benjamin@jaklitschlawgroup.com"},
+]
+maintainers = [
+    {name = "Ben McCarty", email = "benjamin@jaklitschlawgroup.com"},
+]
+keywords = ["streamlit", "healthcare", "provider", "recommendation", "geolocation"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Healthcare Industry",
+    "Topic :: Office/Business :: Financial :: Accounting",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "streamlit>=1.18.0",
+    "pandas>=1.5.0",
+    "numpy>=1.23.0",
+    "geopy>=2.3.0",
+    "python-docx>=0.8.11",
+    "openpyxl>=3.0.10",
+    "pyarrow>=8.0.0",
+    "plotly>=5.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.10.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+test = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0", 
+    "pytest-mock>=3.10.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/The-Jaklitsch-Law-Group/JLG_Provider_Recommender"
+Repository = "https://github.com/The-Jaklitsch-Law-Group/JLG_Provider_Recommender"
+Issues = "https://github.com/The-Jaklitsch-Law-Group/JLG_Provider_Recommender/issues"
+
+[project.scripts]
+provider-recommender = "app:main"
+data-dashboard = "data_dashboard:main"
+
 # Test configuration
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -13,7 +78,8 @@ omit = [
     "tests/*",
     "setup.py",
     "*/venv/*",
-    "*/.venv/*"
+    "*/.venv/*",
+    "*/.uv-venv/*"
 ]
 
 [tool.coverage.report]
@@ -27,3 +93,71 @@ exclude_lines = [
     "if 0:",
     "if __name__ == .__main__.:"
 ]
+
+# UV configuration
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.10.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+
+# Black code formatting
+[tool.black]
+line-length = 88
+target-version = ['py39', 'py310', 'py311', 'py312']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | \.uv-venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+# isort import sorting
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+line_length = 88
+
+# MyPy type checking
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "streamlit.*",
+    "geopy.*",
+    "plotly.*",
+]
+ignore_missing_imports = true

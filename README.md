@@ -121,50 +121,128 @@ The Provider Recommender is a web-based tool designed to help personal injury la
 ## For Developers
 ### Technology Stack
 - **Frontend/UI:** [Streamlit](https://streamlit.io/)
-- **Data Handling:** [pandas](https://pandas.pydata.org/)
+- **Data Handling:** [pandas](https://pandas.pydata.org/), [NumPy](https://numpy.org/)
 - **Geocoding & Distance:** [geopy](https://geopy.readthedocs.io/)
-- **Document Export:** [python-docx](https://python-docx.readthedocs.io/), [reportlab](https://www.reportlab.com/)
-- **Environment:** [uv](https://github.com/astral-sh/uv) for fast, reproducible Python environments
+- **Visualization:** [Plotly](https://plotly.com/python/) for interactive charts and maps
+- **Document Export:** [python-docx](https://python-docx.readthedocs.io/)
+- **Testing:** [pytest](https://pytest.org/) with coverage and mocking
+- **Package Management:** [uv](https://github.com/astral-sh/uv) for fast, modern Python dependency management
+- **Environment:** Python 3.11+ with virtual environment management via uv
 
-### Setup & Usage
-1. **Install dependencies:**
+### Quick Setup with uv (Recommended)
+
+#### Prerequisites
+First, install uv if you haven't already:
+
+**On Windows (PowerShell):**
+```powershell
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+**On macOS/Linux:**
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**Or via pip:**
+```bash
+pip install uv
+```
+
+#### Automated Setup
+Run the setup script for your platform:
+
+**On Windows:**
+```bash
+# In Git Bash or WSL
+./setup.sh
+# Or in Command Prompt/PowerShell
+setup.bat
+```
+
+**On macOS/Linux:**
+```bash
+chmod +x setup.sh
+./setup.sh
+```
+
+#### Manual Setup
+If you prefer manual setup:
+
+1. **Create and activate virtual environment:**
    ```bash
-   pip install -r requirements.txt
+   uv venv --python 3.11
+   source .venv/bin/activate  # On macOS/Linux
+   # OR
+   .venv\Scripts\activate     # On Windows
    ```
-2. **Run the main app:**
+
+2. **Install dependencies:**
    ```bash
-   streamlit run app.py
+   uv pip install -e .
+   uv pip install -e ".[dev]"  # For development dependencies
    ```
-3. **Run the data quality dashboard:**
-   ```bash
-   streamlit run data_dashboard.py
-   ```
-4. **Run tests:**
-   ```bash
-   python run_tests.py
-   # Or for quick validation:
-   python run_tests.py --quick
-   ```
-5. **Access the app:**
-   Open the provided local URL in your browser.
+
+### Running the Application
+
+#### Using uv (Recommended)
+```bash
+# Run main application
+uv run streamlit run app.py
+
+# Run data quality dashboard
+uv run streamlit run data_dashboard.py
+
+# Run tests
+uv run python run_tests.py
+
+# Run tests with coverage
+uv run pytest --cov=. --cov-report=html
+
+# Quick test validation
+uv run python run_tests.py --quick
+```
+
+#### Traditional Method
+```bash
+# Activate virtual environment first
+source .venv/bin/activate  # On macOS/Linux
+# OR
+.venv\Scripts\activate     # On Windows
+
+# Then run commands
+streamlit run app.py
+streamlit run data_dashboard.py
+python run_tests.py
+```
+
+### Access the Application
+Open your browser to the URL provided by Streamlit (typically `http://localhost:8501`)
 
 ### Data & Customization
 - **Provider Data:** Loaded from `data/cleaned_outbound_referrals.parquet`. Update this file as your provider list changes.
 - **Time-Based Data:** Detailed referral records in `data/detailed_referrals.parquet` enable time-period filtering.
 - **Data Quality:** Monitor data completeness and quality using the built-in dashboard or standalone `data_dashboard.py`.
-- **Testing:** Run `python run_tests.py` to validate core functionality and data processing logic.
+- **Testing:** Run `uv run python run_tests.py` to validate core functionality and data processing logic.
 - **Branding:** Place your logo (`jlg_logo.svg`) in the project root. Adjust firm name and colors in the app script as needed.
 - **Fonts & Styles:** Further customize the look and feel via CSS injected in the Streamlit script.
 - **API Integrations:** Add credentials to `.streamlit/secrets.toml` for secure API access.
 - **Reproducibility:** The app uses a fixed random seed for any placeholder data, ensuring consistent recommendations.
 
+### Development Workflow
+- **Environment Management:** Use `uv` for fast, reliable dependency installation and updates
+- **Code Quality:** Pre-configured with black (formatting), flake8 (linting), and mypy (type checking)
+- **Testing:** Comprehensive test suite with coverage reporting via pytest
+- **Project Configuration:** Modern `pyproject.toml` setup with all tool configurations
+
 ### Best Practices & Suggestions
 - **Documentation:** Maintain up-to-date docstrings and inline comments for maintainability.
-- **Testing:** Use the comprehensive test suite (`run_tests.py`) to validate changes and catch regressions.
+- **Testing:** Use the comprehensive test suite (`uv run python run_tests.py`) to validate changes and catch regressions.
 - **Data Quality:** Regularly monitor the data quality dashboard to ensure accurate recommendations.
 - **Input Validation:** The app includes robust address validation - review error messages for data quality insights.
 - **Security:** Use Streamlit secrets for API keys and sensitive data. Consider user authentication for sensitive workflows.
 - **Accessibility:** Regularly review UI for clarity and usability, especially for non-technical users.
 - **Performance:** Monitor the time-based filtering performance with large datasets and adjust caching as needed.
+- **Dependencies:** Use `uv add package-name` to add new dependencies and `uv lock` to update the lock file.
 
 ---
