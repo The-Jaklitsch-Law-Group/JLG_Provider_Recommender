@@ -9,6 +9,46 @@ Email: [info@jaklitschlawgroup.com](mailto:info@jaklitschlawgroup.com)
 
 ---
 
+## 📁 Repository Structure
+
+```
+├── 📊 app.py                     # Main Streamlit application
+├── 📊 data_dashboard.py          # Data quality monitoring dashboard
+├── 🛠️ provider_utils.py          # Core utility functions
+├── 📋 pyproject.toml             # Project configuration
+├── 📋 requirements.txt           # Streamlit Cloud dependencies
+├── 📋 uv.lock                    # UV lockfile
+├── 📄 LICENSE                    # MIT License
+├── 📄 README.md                  # This file
+├── 📂 assets/                    # Logo and branding files
+│   ├── 🖼️ JaklitschLaw_NewLogo_withDogsRed.jpg
+│   ├── 🖼️ jlg_logo.svg
+│   ├── 🔧 logo_data.py          # Base64-encoded logo
+│   └── 🔧 create_*.py           # Logo generation utilities
+├── 📂 data/                      # Data files
+│   ├── cleaned_outbound_referrals.parquet
+│   └── Referrals_App_Outbound.*
+├── 📂 docs/                      # Documentation
+│   ├── CONTRIBUTING.md
+│   ├── DEPLOYMENT.md
+│   ├── IMPLEMENTATION_SUMMARY.md
+│   └── *.md                     # Other documentation
+├── 📂 scripts/                   # Utility scripts
+│   ├── setup.bat / setup.sh     # Environment setup
+│   ├── run_app.bat / run_app.sh  # App launchers
+│   ├── run_tests.py             # Test runner
+│   └── validate_improvements.py # Validation script
+├── 📂 tests/                     # Test suite
+│   ├── test_provider_utils.py
+│   └── test_integration.py
+├── 📂 prepare_contacts/          # Data preparation tools
+└── 📂 .streamlit/               # Streamlit configuration
+    ├── config.toml              # UI configuration
+    └── secrets.toml.template    # Secrets template
+```
+
+---
+
 ## Executive Summary
 The Provider Recommender is a web-based tool designed to help personal injury law firm staff quickly and confidently recommend the best healthcare provider for new clients. By blending provider quality (rank) and proximity (distance), the app ensures that clients are matched with trusted, convenient providers—streamlining the referral process and supporting better client outcomes. The application is intuitive and accessible for all users, regardless of technical background.
 
@@ -214,19 +254,19 @@ For the easiest setup, use the provided scripts:
 **On Windows:**
 ```bash
 # Run setup first (if not done already)
-setup.bat
+scripts/setup.bat
 
 # Then run the app
-run_app.bat
+scripts/run_app.bat
 ```
 
 **On macOS/Linux:**
 ```bash
 # Run setup first (if not done already)
-chmod +x setup.sh && ./setup.sh
+chmod +x scripts/setup.sh && ./scripts/setup.sh
 
 # Then run the app
-./run_app.sh
+./scripts/run_app.sh
 ```
 
 #### Using uv (Recommended)
@@ -238,13 +278,13 @@ uv run streamlit run app.py
 uv run streamlit run data_dashboard.py
 
 # Run tests
-uv run python run_tests.py
+uv run python scripts/run_tests.py
 
 # Run tests with coverage
 uv run pytest --cov=. --cov-report=html
 
 # Quick test validation
-uv run python run_tests.py --quick
+uv run python scripts/run_tests.py --quick
 ```
 
 #### Traditional Method
@@ -300,7 +340,7 @@ chmod +x setup.sh run_app.sh
 - **Provider Data:** Loaded from `data/cleaned_outbound_referrals.parquet`. Update this file as your provider list changes.
 - **Time-Based Data:** Detailed referral records in `data/detailed_referrals.parquet` enable time-period filtering.
 - **Data Quality:** Monitor data completeness and quality using the built-in dashboard or standalone `data_dashboard.py`.
-- **Testing:** Run `uv run python run_tests.py` to validate core functionality and data processing logic.
+- **Testing:** Run `uv run python scripts/run_tests.py` to validate core functionality and data processing logic.
 - **Branding:** Place your logo (`jlg_logo.svg`) in the project root. Adjust firm name and colors in the app script as needed.
 - **Fonts & Styles:** Further customize the look and feel via CSS injected in the Streamlit script.
 - **API Integrations:** Add credentials to `.streamlit/secrets.toml` for secure API access.
@@ -314,7 +354,7 @@ chmod +x setup.sh run_app.sh
 
 ### Best Practices & Suggestions
 - **Documentation:** Maintain up-to-date docstrings and inline comments for maintainability.
-- **Testing:** Use the comprehensive test suite (`uv run python run_tests.py`) to validate changes and catch regressions.
+- **Testing:** Use the comprehensive test suite (`uv run python scripts/run_tests.py`) to validate changes and catch regressions.
 - **Data Quality:** Regularly monitor the data quality dashboard to ensure accurate recommendations.
 - **Input Validation:** The app includes robust address validation - review error messages for data quality insights.
 - **Security:** Use Streamlit secrets for API keys and sensitive data. Consider user authentication for sensitive workflows.

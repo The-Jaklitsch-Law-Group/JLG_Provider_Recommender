@@ -10,8 +10,10 @@ import sys
 import os
 from datetime import datetime, timedelta
 
-# Add current directory to path for imports
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Add project root directory to path for imports
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(project_root)
+os.chdir(project_root)
 
 def test_core_functions():
     """Test core utility functions."""

@@ -9,8 +9,8 @@ from pathlib import Path
 def run_tests():
     """Run all tests with coverage reporting."""
     
-    # Get the project root directory
-    project_root = Path(__file__).parent.absolute()
+    # Get the project root directory (parent of scripts directory)
+    project_root = Path(__file__).parent.parent.absolute()
     
     # Change to project directory
     os.chdir(project_root)

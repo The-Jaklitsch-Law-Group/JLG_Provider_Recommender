@@ -17,7 +17,40 @@ import logging
 # --- Data Loading ---
 @st.cache_data(ttl=3600)
 def load_provider_data(filepath: str) -> pd.DataFrame:
-    """Load and preprocess provider data from Excel, CSV, Feather, or Parquet."""
+    """
+    Load and preprocess provider data from various file formats.
+    
+    This function loads healthcare provider data from Excel, CSV, Feather, or Parquet files
+    and performs basic preprocessing including column cleaning, data type conversion,
+    and address formatting.
+    
+    Args:
+        filepath (str): Path to the data file. Supported formats: .xlsx, .csv, .feather, .parquet
+        
+    Returns:
+        pd.DataFrame: Preprocessed provider data with columns:
+            - Full Name: Provider's complete name
+            - Specialty: Medical specialty
+            - Street, City, State, Zip: Address components
+            - Full Address: Formatted complete address
+            - Referral Count: Number of referrals (converted to numeric)
+            - Latitude, Longitude: Geographic coordinates (if available)
+            
+    Raises:
+        FileNotFoundError: If the specified file does not exist
+        ValueError: If the file format is not supported
+        
+    Example:
+        >>> df = load_provider_data("data/providers.xlsx")
+        >>> print(df.columns.tolist())
+        ['Full Name', 'Specialty', 'Street', 'City', 'State', 'Zip', 'Full Address', 'Referral Count']
+        
+    Note:
+        - Function is cached with Streamlit for 1 hour to improve performance
+        - Preference column is automatically dropped if present
+        - ZIP codes are converted to strings to preserve leading zeros
+        - Missing address components are filled with empty strings
+    """
 
     path = Path(filepath)
     if not path.exists():
@@ -130,14 +163,32 @@ def calculate_time_based_referral_counts(detailed_df: pd.DataFrame, start_date, 
 
 def safe_numeric_conversion(value: Any, default: float = 0.0) -> float:
     """
-    Safely convert a value to float with fallback.
+    Safely convert a value to float with fallback to default.
+    
+    This function handles common conversion errors when dealing with mixed data types,
+    missing values, or malformed numeric strings. It's particularly useful for
+    cleaning data from external sources.
     
     Args:
-        value: Value to convert
-        default: Default value if conversion fails
+        value (Any): Value to convert to float. Can be str, int, float, None, or pandas.NA
+        default (float, optional): Default value to return if conversion fails. Defaults to 0.0
         
     Returns:
-        Converted float value or default
+        float: Successfully converted float value or the default value
+        
+    Examples:
+        >>> safe_numeric_conversion("123.45")
+        123.45
+        >>> safe_numeric_conversion("invalid", default=0.0)
+        0.0
+        >>> safe_numeric_conversion(None)
+        0.0
+        >>> safe_numeric_conversion(pd.NA, default=-1.0)
+        -1.0
+        
+    Note:
+        Uses pandas.isna() to check for missing values, which handles both
+        None and pandas NA values properly.
     """
     try:
         if pd.isna(value):
@@ -316,8 +367,39 @@ def sanitize_filename(name):
 
 
 def validate_address_input(street: str, city: str, state: str, zipcode: str) -> tuple[bool, str]:
-    """Validate address input and return validation status and message."""
+    """
+    Comprehensive address validation with enhanced security and validation.
     
+    This function validates individual address components using enhanced validation
+    rules and security checks to ensure data integrity and prevent injection attacks.
+    
+    Args:
+        street (str): Street address (e.g., "123 Main St")
+        city (str): City name (e.g., "New York")
+        state (str): State abbreviation (e.g., "NY")
+        zipcode (str): ZIP code (e.g., "10001" or "10001-1234")
+        
+    Returns:
+        tuple[bool, str]: (is_valid, detailed_error_message)
+        
+    Examples:
+        >>> is_valid, msg = validate_address_input("123 Main St", "Anytown", "CA", "12345")
+        >>> print(is_valid)  # True
+        
+        >>> is_valid, msg = validate_address_input("", "Anytown", "INVALID", "12345")
+        >>> print(msg)  # "Street address must be at least 3 characters; State must be a valid 2-letter abbreviation"
+    """
+    try:
+        # Import validation utilities
+        from security_utils import InputValidator
+        
+        # Use enhanced validation
+        return InputValidator.validate_address_input(street, city, state, zipcode)
+        
+    except ImportError:
+        # Fallback to basic validation if security_utils not available
+        pass
+        
     errors = []
     warnings = []
     
@@ -548,12 +630,58 @@ def get_word_bytes(best):
 
 
 def recommend_provider(provider_df, distance_weight=0.5, referral_weight=0.5, min_referrals=None):
-    """Return the best provider and scored DataFrame.
-
-    Parameters
-    - provider_df: DataFrame with at least 'Distance (Miles)' and 'Referral Count'
-    - distance_weight, referral_weight: blend weights (should sum to 1 but not required)
-    - min_referrals: optional int to filter providers with Referral Count >= min_referrals
+    """
+    Recommend the best healthcare provider based on distance and referral score.
+    
+    This function implements a weighted scoring algorithm that combines provider distance
+    from the client and historical referral patterns to recommend the most suitable
+    healthcare provider. The algorithm normalizes both metrics and allows customizable
+    weighting between proximity and provider popularity.
+    
+    Args:
+        provider_df (pd.DataFrame): DataFrame containing provider information with required columns:
+            - 'Distance (Miles)': Float distance from client to provider
+            - 'Referral Count': Integer number of historical referrals
+            - 'Full Name': Provider name
+            - Additional columns preserved in output
+        distance_weight (float, optional): Weight for distance factor (0.0-1.0). Defaults to 0.5.
+            Higher values prioritize closer providers.
+        referral_weight (float, optional): Weight for referral count factor (0.0-1.0). Defaults to 0.5.
+            Higher values prioritize more frequently referred providers.
+        min_referrals (int, optional): Minimum referral count threshold. Providers with fewer
+            referrals are excluded. Defaults to None (no filtering).
+    
+    Returns:
+        tuple: A tuple containing:
+            - best_provider (pd.Series or None): Series containing the top recommended provider's data
+            - scored_df (pd.DataFrame or None): DataFrame with all eligible providers and their scores,
+              sorted by recommendation score (lower is better)
+              
+    Raises:
+        KeyError: If required columns ('Distance (Miles)', 'Referral Count') are missing
+        
+    Algorithm:
+        1. Filters out providers with missing distance or referral data
+        2. Applies minimum referral threshold if specified
+        3. Normalizes distance (0-1, lower is better) and referral count (0-1, higher is better)
+        4. Calculates composite score: distance_weight * norm_distance + referral_weight * (1 - norm_referrals)
+        5. Returns provider with lowest composite score
+        
+    Examples:
+        >>> # Basic usage with equal weighting
+        >>> best, scored = recommend_provider(providers_df)
+        
+        >>> # Prioritize distance over referral history
+        >>> best, scored = recommend_provider(providers_df, distance_weight=0.8, referral_weight=0.2)
+        
+        >>> # Only consider providers with at least 5 referrals
+        >>> best, scored = recommend_provider(providers_df, min_referrals=5)
+        
+    Note:
+        - Returns (None, None) if no providers meet the criteria
+        - Weights don't need to sum to 1.0, but typical usage has distance_weight + referral_weight = 1.0
+        - Lower composite scores indicate better recommendations
+        - Preferred providers can be prioritized by uncommenting the preferred provider logic
     """
     df = provider_df.copy(deep=True)
     df = df[df["Distance (Miles)"].notnull() & df["Referral Count"].notnull()]

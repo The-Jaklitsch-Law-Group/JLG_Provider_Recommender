@@ -75,7 +75,7 @@ st.set_page_config(
 )
 
 # --- Company Logo and Title at Top ---
-st.image("JaklitschLaw_NewLogo_withDogsRed.jpg", width=100)
+st.image("assets/JaklitschLaw_NewLogo_withDogsRed.jpg", width=100)
 st.markdown("<h1>Medical Provider Recommender for New Clients</h1>", unsafe_allow_html=True)
 
 

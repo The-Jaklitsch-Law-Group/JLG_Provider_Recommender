@@ -6,8 +6,9 @@ import os
 from pathlib import Path
 
 # Add project root to path
-project_root = Path(__file__).parent.absolute()
+project_root = Path(__file__).parent.parent.absolute()
 sys.path.append(str(project_root))
+os.chdir(project_root)
 
 def regenerate_data():
     """Regenerate cleaned data with new features."""
