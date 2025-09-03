@@ -18,7 +18,7 @@ port = 8501
 gatherUsageStats = false
 
 # Server-only mode (no browser auto-opening)
-serverAddress = "0.0.0.0"
+# serverAddress = "0.0.0.0"
 
 [runner]
 # Disable magic commands for security and performance
