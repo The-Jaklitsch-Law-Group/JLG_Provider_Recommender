@@ -397,21 +397,55 @@ with tabs[0]:
             "<h3 style='color: #2E86C1;'>🏆 Recommended Provider</h3>",
             unsafe_allow_html=True,
         )
-        st.markdown(
-            # f"<h4 style='color: #117A65;'>{best['Full Name']}</h4>",
-            f"<h4>{best['Full Name']}</h4>",
-            unsafe_allow_html=True,
-        )
-        address_for_url = best["Full Address"].replace(" ", "+")
-        maps_url = f"https://www.google.com/maps/search/?api=1&query={address_for_url}"
-        st.markdown(
-            f"🏥 <b>Address:</b> <a href='{maps_url}' target='_blank'>{best['Full Address']}</a>",
-            unsafe_allow_html=True,
-        )
-        if "Phone Number" in best:
+        
+        # Safely handle provider name display
+        try:
+            provider_name = best['Full Name'] if 'Full Name' in best.index else 'Unknown Provider'
             st.markdown(
-                f"📞 <b>Phone:</b> {best['Phone Number']}", unsafe_allow_html=True
+                f"<h4>{provider_name}</h4>",
+                unsafe_allow_html=True,
             )
+        except (KeyError, TypeError, AttributeError) as e:
+            st.error(f"Error displaying provider name: {e}")
+            st.markdown("<h4>Provider information unavailable</h4>", unsafe_allow_html=True)
+        
+        # Safely handle address URL creation
+        try:
+            if "Full Address" in best.index and pd.notna(best["Full Address"]) and best["Full Address"]:
+                address_for_url = str(best["Full Address"]).replace(" ", "+")
+                maps_url = f"https://www.google.com/maps/search/?api=1&query={address_for_url}"
+                st.markdown(
+                    f"🏥 <b>Address:</b> <a href='{maps_url}' target='_blank'>{best['Full Address']}</a>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                # Try to construct address from components
+                address_parts = []
+                for col in ['Street', 'City', 'State', 'Zip']:
+                    if col in best.index and pd.notna(best[col]) and best[col]:
+                        address_parts.append(str(best[col]))
+                
+                if address_parts:
+                    full_address = " ".join(address_parts)
+                    st.markdown(
+                        f"🏥 <b>Address:</b> {full_address}",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown("🏥 <b>Address:</b> Address information unavailable", unsafe_allow_html=True)
+        except (KeyError, TypeError, AttributeError) as e:
+            st.error(f"Error displaying provider address: {e}")
+            st.markdown("🏥 <b>Address:</b> Address information unavailable", unsafe_allow_html=True)
+        
+        # Safely handle phone number display
+        try:
+            if "Phone Number" in best.index and pd.notna(best["Phone Number"]) and best["Phone Number"]:
+                st.markdown(
+                    f"📞 <b>Phone:</b> {best['Phone Number']}", unsafe_allow_html=True
+                )
+        except (KeyError, TypeError, AttributeError):
+            # Phone number not available or accessible
+            pass
 
         st.write(f"*Providers sorted by: **{blend}***")
         mandatory_cols = [
@@ -435,39 +469,58 @@ with tabs[0]:
             )
 
         # --- Export Button ---
-        provider_name = sanitize_filename(str(best["Full Name"]))
-        base_filename = f"Provider_{provider_name}"
-        word_bytes = get_word_bytes(best)
-        st.download_button(
-            label="Export as Word Document",
-            data=word_bytes,
-            file_name=f"{base_filename}.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        )
+        try:
+            provider_name = sanitize_filename(str(best["Full Name"]) if "Full Name" in best.index else "Unknown_Provider")
+            base_filename = f"Provider_{provider_name}"
+            word_bytes = get_word_bytes(best)
+            st.download_button(
+                label="Export as Word Document",
+                data=word_bytes,
+                file_name=f"{base_filename}.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        except (KeyError, TypeError, AttributeError) as e:
+            st.error(f"Error creating export: {e}")
 
         # --- Rationale for Selection ---
         with st.expander("Why was this provider selected?", expanded=False):
-            rationale = []
-            rationale.append(
-                f"* **Distance** from the address is **{best['Distance (Miles)']:.2f} miles**."
-            )
-            rationale.append("")
-            rationale.append(
-                f"* This provider has **{best['Referral Count']}** recent referrals from our office (fewer are better for load balancing)."
-            )
-            rationale.append("")
-            min_referrals_disp = params.get("min_referrals", min_referrals)
-            rationale.append(
-                f"* Only providers with **{min_referrals_disp} or more referrals** were considered in this search."
-            )
-            rationale.append("")
-            rationale.append(
-                f"The final score is a blend of normalized distance and referral count, using your chosen weights: **Distance weight = {alpha_disp:.2f}**, **Referral weight = {beta_disp:.2f}**."
-            )
-            rationale.append(
-                "The provider with the lowest blended score was recommended."
-            )
-            st.markdown("<br>".join(rationale), unsafe_allow_html=True)
+            try:
+                rationale = []
+                
+                # Distance information
+                if "Distance (Miles)" in best.index and pd.notna(best["Distance (Miles)"]):
+                    rationale.append(
+                        f"* **Distance** from the address is **{best['Distance (Miles)']:.2f} miles**."
+                    )
+                else:
+                    rationale.append("* **Distance** information not available.")
+                
+                rationale.append("")
+                
+                # Referral count information
+                if "Referral Count" in best.index and pd.notna(best["Referral Count"]):
+                    rationale.append(
+                        f"* This provider has **{best['Referral Count']}** recent referrals from our office (fewer are better for load balancing)."
+                    )
+                else:
+                    rationale.append("* Referral count information not available.")
+                
+                rationale.append("")
+                min_referrals_disp = params.get("min_referrals", min_referrals)
+                rationale.append(
+                    f"* Only providers with **{min_referrals_disp} or more referrals** were considered in this search."
+                )
+                rationale.append("")
+                rationale.append(
+                    f"The final score is a blend of normalized distance and referral count, using your chosen weights: **Distance weight = {alpha_disp:.2f}**, **Referral weight = {beta_disp:.2f}**."
+                )
+                rationale.append(
+                    "The provider with the lowest blended score was recommended."
+                )
+                st.markdown("<br>".join(rationale), unsafe_allow_html=True)
+            except (KeyError, TypeError, AttributeError) as e:
+                st.error(f"Error displaying rationale: {e}")
+                st.markdown("Rationale information unavailable.", unsafe_allow_html=True)
     elif submit:
         st.warning(
             f"No providers met the requirements (minimum {min_referrals} referrals). Please check the address, lower the minimum referral count, or try again."
