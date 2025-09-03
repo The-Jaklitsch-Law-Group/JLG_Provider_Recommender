@@ -22,7 +22,7 @@ Thank you for your interest in contributing to the JLG Provider Recommender! Thi
    # Using UV (recommended)
    ./setup.sh  # Linux/macOS
    setup.bat   # Windows
-   
+
    # Or manually with UV
    uv venv --python 3.11
    uv sync

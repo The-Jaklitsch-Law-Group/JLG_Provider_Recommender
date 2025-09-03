@@ -293,8 +293,8 @@ The enhanced data cleaning script automatically generates both aggregated and de
 
 For technical questions, issues, bug reports, or feature requests:
 
-**The Jaklitsch Law Group**  
-*Development Team*  
+**The Jaklitsch Law Group**
+*Development Team*
 Email: [info@jaklitschlawgroup.com](mailto:info@jaklitschlawgroup.com)
 
 Please open an issue in this repository for the fastest response.
@@ -307,5 +307,5 @@ Please open an issue in this repository for the fastest response.
 
 ---
 
-*Last Updated: August 30, 2025*  
+*Last Updated: August 30, 2025*
 *Version: 2.0 - Enhanced Provider Recommender*

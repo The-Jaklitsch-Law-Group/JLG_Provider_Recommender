@@ -4,7 +4,7 @@
 
 ## Contact
 For questions, support, or collaboration opportunities, please open an issue in this repository or contact:
-**The Jaklitsch Law Group**  
+**The Jaklitsch Law Group**
 Email: [info@jaklitschlawgroup.com](mailto:info@jaklitschlawgroup.com)
 
 ---
@@ -166,17 +166,17 @@ The Provider Recommender is a web-based tool designed to help personal injury la
 ---
 
 ## Future Work
-- **API Integration with Lead Docket:**  
+- **API Integration with Lead Docket:**
   Implement API calls to retrieve and update provider and client data directly from Lead Docket, ensuring real-time accuracy and reducing manual data entry.
-- **Dynamic Provider Ranking:**  
+- **Dynamic Provider Ranking:**
   Develop logic to determine provider rank programmatically using more detailed source data (e.g., client outcomes, feedback, referral volume, or other performance metrics) for a more objective and up-to-date ranking system.
-- **Enhanced Data Validation:**  
+- **Enhanced Data Validation:**
   Add more robust validation and error handling for user input and provider data to further reduce the risk of incorrect recommendations.
-- **Mobile Optimization:**  
+- **Mobile Optimization:**
   Further optimize the UI for mobile and tablet users.
-- **Customizable Export Templates:**  
+- **Customizable Export Templates:**
   Allow users to customize the format and content of exported Word/PDF documents.
-- **Automated Testing & CI:**  
+- **Automated Testing & CI:**
   Integrate automated testing and continuous integration to ensure code quality and reliability.
 
 ---
@@ -394,5 +394,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Made with ❤️ by The Jaklitsch Law Group**  
+**Made with ❤️ by The Jaklitsch Law Group**
 *Empowering legal professionals with data-driven solutions*

@@ -8,7 +8,6 @@ import pandas as pd
 from geopy.extra.rate_limiter import RateLimiter
 from geopy.geocoders import Nominatim
 
-
 EXCEL_PATH = "../data/Ranked_Contacts.xlsx"
 df = pd.read_excel(EXCEL_PATH)
 
@@ -22,11 +21,7 @@ if "Full Address" not in df.columns:
         + " "
         + df["Address 1 Zip"].fillna("")
     )
-    df["Full Address"] = (
-        df["Full Address"]
-        .str.replace(r",\s*,", ",", regex=True)
-        .str.replace(r",\s*$", "", regex=True)
-    )
+    df["Full Address"] = df["Full Address"].str.replace(r",\s*,", ",", regex=True).str.replace(r",\s*$", "", regex=True)
 
 geolocator = Nominatim(user_agent="provider_geocoder")
 geocode = RateLimiter(geolocator.geocode, min_delay_seconds=1, max_retries=3)

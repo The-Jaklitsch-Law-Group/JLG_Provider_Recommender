@@ -7,7 +7,7 @@ packages = ["."]
 include = [
     "*.py",
     "data/*.parquet",
-    "data/*.xlsx", 
+    "data/*.xlsx",
     "assets/*.svg",
     "assets/*.jpg",
     "docs/*.md",
@@ -72,7 +72,7 @@ dev = [
 ]
 test = [
     "pytest>=7.0.0",
-    "pytest-cov>=4.0.0", 
+    "pytest-cov>=4.0.0",
     "pytest-mock>=3.10.0",
 ]
 
