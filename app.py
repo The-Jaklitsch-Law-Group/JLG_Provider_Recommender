@@ -17,12 +17,14 @@ except ImportError:
 
 from provider_utils import (  # Import new enhanced functions
     calculate_distances,
+    calculate_inbound_referral_counts,
     calculate_time_based_referral_counts,
     geocode_address_with_cache,
     get_word_bytes,
     handle_streamlit_error,
     load_and_validate_provider_data,
     load_detailed_referrals,
+    load_inbound_referrals,
     load_provider_data,
     recommend_provider,
     sanitize_filename,
@@ -63,6 +65,44 @@ def load_application_data():
                 detailed_referrals_df = load_detailed_referrals(filepath=alt_filepath)
             else:
                 st.info("Time-based filtering not available: No detailed referral data found.")
+
+        # Load inbound referrals data
+        inbound_referrals_df = pd.DataFrame()
+        inbound_filepath = "data/Referrals_App_Inbound.xlsx"
+        if Path(inbound_filepath).exists():
+            inbound_referrals_df = load_inbound_referrals(inbound_filepath)
+            
+            # Calculate inbound referral counts
+            if not inbound_referrals_df.empty:
+                inbound_counts_df = calculate_inbound_referral_counts(inbound_referrals_df)
+                
+                # Merge inbound referral counts with provider data
+                if not inbound_counts_df.empty and not provider_df.empty:
+                    # Merge on Person ID first, then try Full Name
+                    if "Person ID" in provider_df.columns and "Person ID" in inbound_counts_df.columns:
+                        provider_df = provider_df.merge(
+                            inbound_counts_df[["Person ID", "Inbound Referral Count"]], 
+                            on="Person ID", 
+                            how="left"
+                        )
+                    else:
+                        # Fallback to name-based matching
+                        provider_df = provider_df.merge(
+                            inbound_counts_df[["Full Name", "Inbound Referral Count"]], 
+                            on="Full Name", 
+                            how="left"
+                        )
+                    
+                    # Fill missing inbound referral counts with 0
+                    provider_df["Inbound Referral Count"] = provider_df["Inbound Referral Count"].fillna(0)
+                    
+                    st.success(f"✅ Merged inbound referral data for {len(inbound_counts_df)} providers")
+                else:
+                    st.warning("⚠️ Could not merge inbound referral data - empty datasets")
+            else:
+                st.info("ℹ️ No inbound referral data available")
+        else:
+            st.info("ℹ️ Inbound referrals file not found - inbound scoring not available")
 
         return provider_df, detailed_referrals_df
 
@@ -149,35 +189,99 @@ with st.sidebar:
 
         st.markdown("---")  # Visual separator
 
-        # --- More accessible weight control ---
-        blend = st.select_slider(
-            "Prioritize Distance or Referral Count?",
-            options=[
-                "Only Distance",
-                "Mostly Distance",
-                "Balanced",
-                "Mostly Referral Count",
-                "Only Referral Count",
-            ],
-            value=st.session_state.get("blend", "Mostly Distance"),
-            help="Choose how much to prioritize proximity (distance) vs. referral count.",
-        )
-        blend_map = {
-            "Only Distance": (1.0, 0.0),
-            "Mostly Distance": (0.75, 0.25),
-            "Balanced": (0.5, 0.5),
-            "Mostly Referral Count": (0.25, 0.75),
-            "Only Referral Count": (0.0, 1.0),
-        }
-        alpha, beta = blend_map[blend]
-        st.markdown(f"**Proximity (distance) weight:** {alpha:.2f}  |  **Referral Count weight:** {beta:.2f}")
+        # --- Weight control with three factors ---
+        st.markdown("### 🎯 Scoring Weights")
+        
+        # Check if inbound referral data is available
+        has_inbound_data = "Inbound Referral Count" in provider_df.columns if not provider_df.empty else False
+        
+        # Initialize variables
+        distance_weight = outbound_weight = inbound_weight = 0.0
+        alpha = beta = gamma = 0.0
+        blend = "Balanced"  # Default value
+        
+        if has_inbound_data:
+            st.info("✅ Inbound referral data available - three-factor scoring enabled")
+            
+            # Use individual sliders for three-factor scoring
+            distance_weight = st.slider(
+                "Distance Weight",
+                min_value=0.0,
+                max_value=1.0,
+                value=st.session_state.get("distance_weight", 0.4),
+                step=0.1,
+                help="Higher values prioritize closer providers"
+            )
+            
+            outbound_weight = st.slider(
+                "Outbound Referral Weight", 
+                min_value=0.0,
+                max_value=1.0,
+                value=st.session_state.get("outbound_weight", 0.4),
+                step=0.1,
+                help="Higher values prioritize providers we refer to more often"
+            )
+            
+            inbound_weight = st.slider(
+                "Inbound Referral Weight",
+                min_value=0.0, 
+                max_value=1.0,
+                value=st.session_state.get("inbound_weight", 0.2),
+                step=0.1,
+                help="Higher values prioritize providers who refer clients to us"
+            )
+            
+            # Normalize weights to sum to 1.0
+            total_weight = distance_weight + outbound_weight + inbound_weight
+            if total_weight > 0:
+                distance_weight_norm = distance_weight / total_weight
+                outbound_weight_norm = outbound_weight / total_weight  
+                inbound_weight_norm = inbound_weight / total_weight
+            else:
+                distance_weight_norm = outbound_weight_norm = inbound_weight_norm = 1/3
+            
+            # Map to old variable names for compatibility
+            alpha, beta, gamma = distance_weight_norm, outbound_weight_norm, inbound_weight_norm
+            
+            st.markdown(
+                f"**Normalized weights:** Distance: {alpha:.2f} | "
+                f"Outbound Referrals: {beta:.2f} | Inbound Referrals: {gamma:.2f}"
+            )
+            
+        else:
+            st.warning("⚠️ No inbound referral data - using two-factor scoring")
+            
+            # Use simple slider for two-factor scoring
+            blend = st.select_slider(
+                "Prioritize Distance or Outbound Referral Count?",
+                options=[
+                    "Only Distance",
+                    "Mostly Distance", 
+                    "Balanced",
+                    "Mostly Referral Count",
+                    "Only Referral Count",
+                ],
+                value=st.session_state.get("blend", "Mostly Distance"),
+                help="Choose how much to prioritize proximity (distance) vs. outbound referral count.",
+            )
+            blend_map = {
+                "Only Distance": (1.0, 0.0),
+                "Mostly Distance": (0.75, 0.25),
+                "Balanced": (0.5, 0.5),
+                "Mostly Referral Count": (0.25, 0.75),
+                "Only Referral Count": (0.0, 1.0),
+            }
+            alpha, beta = blend_map[blend]
+            gamma = 0.0  # No inbound weight
+            
+            st.markdown(f"**Proximity (distance) weight:** {alpha:.2f}  |  **Outbound Referral Count weight:** {beta:.2f}")
 
         # --- Referral Count Filter ---
         min_referrals = st.number_input(
-            "Minimum Inbound Referral Count",
+            "Minimum Outbound Referral Count",
             min_value=0,
             value=st.session_state.get("min_referrals", 1),
-            help="Only show providers with at least this many referrals. Lower values show more providers, higher values show only established providers.",
+            help="Only show providers with at least this many outbound referrals. Lower values show more providers, higher values show only established providers.",
         )
 
         # --- Time Period Filter
@@ -219,8 +323,22 @@ with st.sidebar:
             st.session_state["state"] = state
             st.session_state["zipcode"] = zipcode
 
-            st.session_state["blend"] = blend
-            st.session_state["alpha"] = alpha
+            # Save weight values to session state
+            if has_inbound_data:
+                st.session_state["distance_weight"] = distance_weight
+                st.session_state["outbound_weight"] = outbound_weight  
+                st.session_state["inbound_weight"] = inbound_weight
+                st.session_state["alpha"] = alpha
+                st.session_state["beta"] = beta
+                st.session_state["gamma"] = gamma
+                st.session_state["scoring_type"] = "three_factor"
+            else:
+                st.session_state["blend"] = blend
+                st.session_state["alpha"] = alpha
+                st.session_state["beta"] = beta
+                st.session_state["gamma"] = gamma
+                st.session_state["scoring_type"] = "two_factor"
+                
             st.session_state["min_referrals"] = min_referrals
             st.session_state["time_period"] = time_period
             st.session_state["use_time_filter"] = use_time_filter
@@ -316,6 +434,7 @@ with tabs[0]:
                 filtered_df,
                 distance_weight=alpha,
                 referral_weight=beta,
+                inbound_weight=gamma,
                 min_referrals=min_referrals,
             )
 
@@ -325,6 +444,7 @@ with tabs[0]:
             st.session_state["last_params"] = {
                 "alpha": alpha,
                 "beta": beta,
+                "gamma": gamma,
                 "min_referrals": min_referrals,
             }
 
@@ -395,14 +515,25 @@ with tabs[0]:
             # Phone number not available or accessible
             pass
 
-        st.write(f"*Providers sorted by: **{blend}***")
+        # Display scoring method used
+        scoring_type = st.session_state.get("scoring_type", "two_factor")
+        if scoring_type == "three_factor":
+            st.write("*Three-factor scoring: Distance, Outbound Referrals, and Inbound Referrals*")
+        else:
+            scoring_blend = st.session_state.get("blend", "Balanced")
+            st.write(f"*Providers sorted by: **{scoring_blend}***")
         mandatory_cols = [
             "Full Name",
             "Full Address",
             "Distance (Miles)",
             "Referral Count",
-            "Score",
         ]
+        
+        # Add inbound referral count if available
+        if "Inbound Referral Count" in scored_df.columns:
+            mandatory_cols.append("Inbound Referral Count")
+            
+        mandatory_cols.append("Score")  # Score should be last
 
         # Check which columns actually exist
         available_cols = [col for col in mandatory_cols if col in scored_df.columns]
@@ -479,8 +610,9 @@ with tabs[1]:
 
     st.markdown(
         """
-    Our provider recommendation system uses a sophisticated algorithm that balances two key factors:
-    **geographic proximity** and **referral load balancing** to ensure optimal client care and fair distribution.
+    Our provider recommendation system uses a sophisticated algorithm that balances multiple key factors:
+    **geographic proximity**, **outbound referral load balancing**, and **inbound referral patterns** 
+    to ensure optimal client care and fair distribution across our provider network.
     """
     )
 
@@ -504,7 +636,8 @@ with tabs[1]:
 
         **3. Data Normalization**
         - Distance: Min-max normalization to [0,1] scale
-        - Referral Count: Min-max normalization to [0,1] scale
+        - Outbound Referral Count: Min-max normalization to [0,1] scale
+        - Inbound Referral Count: Min-max normalization to [0,1] scale (when available)
         - Ensures fair comparison between different metrics
         """
         )
@@ -513,8 +646,9 @@ with tabs[1]:
         st.markdown(
             """
         **4. Weighted Scoring**
-        - Combines normalized distance and referral count
-        - Formula: `Score = α × Distance + β × Referral_Count`
+        - Combines normalized distance, outbound referrals, and inbound referrals
+        - Three-factor formula: `Score = α × Distance + β × Outbound_Referrals + γ × Inbound_Referrals`
+        - Two-factor fallback: `Score = α × Distance + β × Referral_Count`
         - Lower scores indicate better recommendations
 
         **5. Ranking & Selection**
@@ -530,23 +664,43 @@ with tabs[1]:
         )
 
     # Scoring Formula Explanation
-    st.markdown("#### 📊 Scoring Formula")
+    st.markdown("#### 📊 Scoring Formulas")
+    
+    st.markdown("**Three-Factor Scoring (when inbound data is available):**")
     st.latex(
-        r"Score = \alpha \times \frac{Distance - Distance_{min}}{Distance_{max} - Distance_{min}} + \beta \times \frac{Referrals - Referrals_{min}}{Referrals_{max} - Referrals_{min}}"
+        r"Score = \alpha \times Distance_{norm} + \beta \times (1-Outbound_{norm}) + \gamma \times Inbound_{norm}"
+    )
+    
+    st.markdown("**Two-Factor Scoring (fallback):**")
+    st.latex(
+        r"Score = \alpha \times Distance_{norm} + \beta \times (1-Outbound_{norm})"
     )
 
     st.markdown(
         """
     Where:
     - **α (alpha)**: Distance weight (0.0 to 1.0)
-    - **β (beta)**: Referral count weight (0.0 to 1.0)
-    - **α + β = 1.0** for balanced weighting
+    - **β (beta)**: Outbound referral count weight (0.0 to 1.0)  
+    - **γ (gamma)**: Inbound referral count weight (0.0 to 1.0)
+    - **α + β + γ = 1.0** for balanced three-factor weighting
+    - **α + β = 1.0** for balanced two-factor weighting
+    - Lower outbound referrals are preferred (load balancing)
+    - Higher inbound referrals are preferred (mutual referral relationships)
     """
     )
 
     # Weight Selection Guide
     st.markdown("#### ⚖️ Weight Selection Guide")
-
+    
+    st.markdown("**Three-Factor Scoring Options:**")
+    st.markdown("""
+    - **Distance-Focused (α=0.6, β=0.3, γ=0.1)**: Prioritizes proximity with light load balancing
+    - **Balanced (α=0.4, β=0.4, γ=0.2)**: Equal weight to distance and outbound referrals, with inbound consideration
+    - **Relationship-Focused (α=0.3, β=0.3, γ=0.4)**: Emphasizes mutual referral relationships
+    - **Load-Balancing (α=0.2, β=0.6, γ=0.2)**: Prioritizes distributing referrals evenly
+    """)
+    
+    st.markdown("**Two-Factor Scoring Options:**")
     weight_guide = {
         "Only Distance (α=1.0, β=0.0)": "Prioritizes closest providers only. Best for urgent care or mobility-limited clients.",
         "Mostly Distance (α=0.75, β=0.25)": "Strong preference for proximity with slight load balancing. Good default choice.",

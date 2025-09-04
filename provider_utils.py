@@ -192,6 +192,162 @@ def calculate_time_based_referral_counts(detailed_df: pd.DataFrame, start_date, 
     return time_based_counts
 
 
+@st.cache_data(ttl=3600)
+def load_inbound_referrals(filepath: str) -> pd.DataFrame:
+    """Load inbound referral data with provider information.
+    
+    Args:
+        filepath (str): Path to the inbound referrals Excel file
+        
+    Returns:
+        pd.DataFrame: Processed inbound referrals data with provider information
+    """
+    path = Path(filepath)
+    if not path.exists():
+        return pd.DataFrame()
+    
+    try:
+        df = pd.read_excel(path)
+        
+        # Standardize date columns
+        date_columns = ["Create Date", "Date of Intake", "Sign Up Date"]
+        for col in date_columns:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors="coerce")
+        
+        # Create a primary referral date
+        if "Create Date" in df.columns:
+            df["Referral Date"] = df["Create Date"]
+        elif "Date of Intake" in df.columns:
+            df["Referral Date"] = df["Date of Intake"]
+        elif "Sign Up Date" in df.columns:
+            df["Referral Date"] = df["Sign Up Date"]
+        
+        return df
+    except Exception as e:
+        st.warning(f"Could not load inbound referral data: {e}")
+        return pd.DataFrame()
+
+
+def calculate_inbound_referral_counts(inbound_df: pd.DataFrame, start_date=None, end_date=None) -> pd.DataFrame:
+    """Calculate inbound referral counts for each provider.
+    
+    Args:
+        inbound_df (pd.DataFrame): Raw inbound referrals data
+        start_date: Start date for filtering (optional)
+        end_date: End date for filtering (optional)
+        
+    Returns:
+        pd.DataFrame: Provider data with inbound referral counts
+    """
+    if inbound_df.empty:
+        return pd.DataFrame()
+    
+    # Filter by date range if provided
+    if start_date and end_date and "Referral Date" in inbound_df.columns:
+        mask = (inbound_df["Referral Date"] >= pd.to_datetime(start_date)) & (
+            inbound_df["Referral Date"] <= pd.to_datetime(end_date)
+        )
+        filtered_df = inbound_df[mask]
+    else:
+        filtered_df = inbound_df
+    
+    if filtered_df.empty:
+        return pd.DataFrame()
+    
+    # Process primary referral source
+    primary_cols = {
+        "Referred From Person Id": "Person ID",
+        "Referred From Full Name": "Full Name",
+        "Referred From Address 1 Line 1": "Street",
+        "Referred From Address 1 City": "City", 
+        "Referred From Address 1 State": "State",
+        "Referred From Address 1 Zip": "Zip",
+        "Referred From's Details: Latitude": "Latitude",
+        "Referred From's Details: Longitude": "Longitude"
+    }
+    
+    # Create primary referrals dataframe
+    primary_df = filtered_df.copy()
+    for old_col, new_col in primary_cols.items():
+        if old_col in primary_df.columns:
+            primary_df[new_col] = primary_df[old_col]
+    
+    # Process secondary referral source if available
+    secondary_cols = {
+        "Secondary Referred From Person Id": "Person ID",
+        "Secondary Referred From Full Name": "Full Name",
+        "Secondary Referred From Address 1 Line 1": "Street",
+        "Secondary Referred From Address 1 City": "City",
+        "Secondary Referred From Address 1 State": "State", 
+        "Secondary Referred From Address 1 Zip": "Zip",
+        "Secondary Referred From's Details: Latitude": "Latitude",
+        "Secondary Referred From's Details: Longitude": "Longitude"
+    }
+    
+    secondary_df = filtered_df.copy()
+    for old_col, new_col in secondary_cols.items():
+        if old_col in secondary_df.columns:
+            secondary_df[new_col] = secondary_df[old_col]
+    
+    # Remove rows where secondary referral data is missing
+    secondary_df = secondary_df.dropna(subset=["Secondary Referred From Person Id"])
+    
+    # Combine primary and secondary referrals
+    provider_cols = ["Person ID", "Full Name", "Street", "City", "State", "Zip", "Latitude", "Longitude"]
+    available_cols = [col for col in provider_cols if col in primary_df.columns]
+    
+    if not available_cols:
+        return pd.DataFrame()
+    
+    # Count inbound referrals for each provider
+    all_referrals = []
+    
+    # Add primary referrals
+    primary_subset = primary_df[available_cols].dropna(subset=["Person ID"])
+    if not primary_subset.empty:
+        all_referrals.append(primary_subset)
+    
+    # Add secondary referrals if they exist
+    if not secondary_df.empty:
+        secondary_subset = secondary_df[available_cols].dropna(subset=["Person ID"])
+        if not secondary_subset.empty:
+            all_referrals.append(secondary_subset)
+    
+    if not all_referrals:
+        return pd.DataFrame()
+    
+    # Combine all referrals
+    combined_df = pd.concat(all_referrals, ignore_index=True)
+    
+    # Group by provider and count inbound referrals
+    inbound_counts = (
+        combined_df.groupby(available_cols, as_index=False)
+        .size()
+        .rename(columns={"size": "Inbound Referral Count"})
+        .sort_values(by="Inbound Referral Count", ascending=False)
+    )
+    
+    # Add Full Address if components are available
+    if all(col in inbound_counts.columns for col in ["Street", "City", "State", "Zip"]):
+        inbound_counts["Full Address"] = (
+            inbound_counts["Street"].fillna("")
+            + ", "
+            + inbound_counts["City"].fillna("")
+            + ", "
+            + inbound_counts["State"].fillna("")
+            + " "
+            + inbound_counts["Zip"].fillna("")
+        )
+        inbound_counts["Full Address"] = (
+            inbound_counts["Full Address"]
+            .str.replace(r",\s*,", ",", regex=True)
+            .str.replace(r",\s*$", "", regex=True)
+        )
+    
+    return inbound_counts
+
+
 def safe_numeric_conversion(value: Any, default: float = 0.0) -> float:
     """
     Safely convert a value to float with fallback to default.
@@ -737,25 +893,29 @@ def get_word_bytes(best):
     return buffer.getvalue()
 
 
-def recommend_provider(provider_df, distance_weight=0.5, referral_weight=0.5, min_referrals=None):
+def recommend_provider(provider_df, distance_weight=0.5, referral_weight=0.5, inbound_weight=0.0, min_referrals=None):
     """
-    Recommend the best healthcare provider based on distance and referral score.
+    Recommend the best healthcare provider based on distance, outbound referral count, and inbound referral count.
 
     This function implements a weighted scoring algorithm that combines provider distance
-    from the client and historical referral patterns to recommend the most suitable
-    healthcare provider. The algorithm normalizes both metrics and allows customizable
-    weighting between proximity and provider popularity.
+    from the client, historical outbound referral patterns, and inbound referral patterns
+    to recommend the most suitable healthcare provider. The algorithm normalizes all metrics
+    and allows customizable weighting between proximity, provider popularity, and provider
+    inbound referral activity.
 
     Args:
         provider_df (pd.DataFrame): DataFrame containing provider information with required columns:
             - 'Distance (Miles)': Float distance from client to provider
-            - 'Referral Count': Integer number of historical referrals
+            - 'Referral Count': Integer number of historical outbound referrals
+            - 'Inbound Referral Count': Integer number of inbound referrals (optional)
             - 'Full Name': Provider name
             - Additional columns preserved in output
         distance_weight (float, optional): Weight for distance factor (0.0-1.0). Defaults to 0.5.
             Higher values prioritize closer providers.
-        referral_weight (float, optional): Weight for referral count factor (0.0-1.0). Defaults to 0.5.
+        referral_weight (float, optional): Weight for outbound referral count factor (0.0-1.0). Defaults to 0.5.
             Higher values prioritize more frequently referred providers.
+        inbound_weight (float, optional): Weight for inbound referral count factor (0.0-1.0). Defaults to 0.0.
+            Higher values prioritize providers who refer more clients to the firm.
         min_referrals (int, optional): Minimum referral count threshold. Providers with fewer
             referrals are excluded. Defaults to None (no filtering).
 
@@ -771,13 +931,17 @@ def recommend_provider(provider_df, distance_weight=0.5, referral_weight=0.5, mi
     Algorithm:
         1. Filters out providers with missing distance or referral data
         2. Applies minimum referral threshold if specified
-        3. Normalizes distance (0-1, lower is better) and referral count (0-1, higher is better)
-        4. Calculates composite score: distance_weight * norm_distance + referral_weight * (1 - norm_referrals)
+        3. Normalizes distance (0-1, lower is better), outbound referral count (0-1, higher is better),
+           and inbound referral count (0-1, higher is better)
+        4. Calculates composite score: distance_weight * norm_distance + referral_weight * (1 - norm_referrals) + inbound_weight * norm_inbound
         5. Returns provider with lowest composite score
 
     Examples:
-        >>> # Basic usage with equal weighting
+        >>> # Basic usage with equal weighting for distance and outbound referrals
         >>> best, scored = recommend_provider(providers_df)
+
+        >>> # Include inbound referrals in scoring
+        >>> best, scored = recommend_provider(providers_df, distance_weight=0.4, referral_weight=0.4, inbound_weight=0.2)
 
         >>> # Prioritize distance over referral history
         >>> best, scored = recommend_provider(providers_df, distance_weight=0.8, referral_weight=0.2)
@@ -787,8 +951,9 @@ def recommend_provider(provider_df, distance_weight=0.5, referral_weight=0.5, mi
 
     Note:
         - Returns (None, None) if no providers meet the criteria
-        - Weights don't need to sum to 1.0, but typical usage has distance_weight + referral_weight = 1.0
+        - Weights don't need to sum to 1.0, but typical usage has distance_weight + referral_weight + inbound_weight = 1.0
         - Lower composite scores indicate better recommendations
+        - If 'Inbound Referral Count' column is missing, inbound_weight is ignored
         - Preferred providers can be prioritized by uncommenting the preferred provider logic
     """
     df = provider_df.copy(deep=True)
@@ -807,9 +972,35 @@ def recommend_provider(provider_df, distance_weight=0.5, referral_weight=0.5, mi
     # Safe normalization (avoid division by zero)
     referral_range = df["Referral Count"].max() - df["Referral Count"].min()
     dist_range = df["Distance (Miles)"].max() - df["Distance (Miles)"].min()
+    
+    # Normalize distance and outbound referrals
     df["norm_rank"] = (df["Referral Count"] - df["Referral Count"].min()) / referral_range if referral_range != 0 else 0
     df["norm_dist"] = (df["Distance (Miles)"] - df["Distance (Miles)"].min()) / dist_range if dist_range != 0 else 0
+    
+    # Initialize score with distance and outbound referrals
     df["Score"] = distance_weight * df["norm_dist"] + referral_weight * df["norm_rank"]
+    
+    # Add inbound referrals to scoring if the column exists and weight > 0
+    if inbound_weight > 0 and "Inbound Referral Count" in df.columns:
+        # Filter out providers with missing inbound referral data for scoring
+        inbound_df = df[df["Inbound Referral Count"].notnull()].copy()
+        
+        if not inbound_df.empty:
+            inbound_range = inbound_df["Inbound Referral Count"].max() - inbound_df["Inbound Referral Count"].min()
+            
+            if inbound_range != 0:
+                inbound_df["norm_inbound"] = (inbound_df["Inbound Referral Count"] - inbound_df["Inbound Referral Count"].min()) / inbound_range
+            else:
+                inbound_df["norm_inbound"] = 0
+            
+            # Recalculate score for providers with inbound data
+            inbound_df["Score"] = (distance_weight * inbound_df["norm_dist"] + 
+                                 referral_weight * inbound_df["norm_rank"] + 
+                                 inbound_weight * inbound_df["norm_inbound"])
+            
+            # Update the main dataframe with new scores
+            df.loc[inbound_df.index, "Score"] = inbound_df["Score"]
+            df.loc[inbound_df.index, "norm_inbound"] = inbound_df["norm_inbound"]
 
     # Tie-break behavior:
     # - If distance is prioritized (distance_weight > referral_weight), sort ties by
@@ -820,6 +1011,10 @@ def recommend_provider(provider_df, distance_weight=0.5, referral_weight=0.5, mi
         sort_keys = ["Score", "Distance (Miles)", "Referral Count"]
     else:
         sort_keys = ["Score", "Referral Count", "Distance (Miles)"]
+    
+    # Add inbound referrals to tie-break if available
+    if "Inbound Referral Count" in df.columns:
+        sort_keys.append("Inbound Referral Count")
 
     # Add a stable final tie-break key so ordering is deterministic across runs/users.
     # Prefer alphabetical provider name if available.
