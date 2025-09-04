@@ -1,4 +1,5 @@
 import datetime as dt
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -47,14 +48,21 @@ def load_application_data():
             provider_df = load_provider_data(filepath="data/cleaned_outbound_referrals.parquet")
             provider_df = validate_and_clean_coordinates(provider_df)
 
-        # Try to load detailed referrals, but handle gracefully if not available
+        # Try to load detailed referrals with better error handling
+        detailed_referrals_df = pd.DataFrame()
+        
+        # Try detailed referrals file first
         detailed_referrals_filepath = "data/detailed_referrals.parquet"
-        detailed_referrals_df = load_detailed_referrals(filepath=detailed_referrals_filepath)
-
-        # If detailed referrals not available, try alternative file
+        if Path(detailed_referrals_filepath).exists():
+            detailed_referrals_df = load_detailed_referrals(filepath=detailed_referrals_filepath)
+        
+        # If detailed referrals not available or empty, try alternative file
         if detailed_referrals_df.empty:
             alt_filepath = "data/Referrals_App_Outbound.parquet"
-            detailed_referrals_df = load_detailed_referrals(filepath=alt_filepath)
+            if Path(alt_filepath).exists():
+                detailed_referrals_df = load_detailed_referrals(filepath=alt_filepath)
+            else:
+                st.info("Time-based filtering not available: No detailed referral data found.")
 
         return provider_df, detailed_referrals_df
 

@@ -97,7 +97,29 @@ def load_detailed_referrals(filepath: str) -> pd.DataFrame:
 
     try:
         df = pd.read_parquet(path)
-        df["Referral Date"] = pd.to_datetime(df["Referral Date"], errors="coerce")
+        
+        # Check if Referral Date column exists, if not try to create it
+        if "Referral Date" in df.columns:
+            df["Referral Date"] = pd.to_datetime(df["Referral Date"], errors="coerce")
+        else:
+            # Try to create Referral Date from available date columns
+            date_columns = ["Create Date", "Date of Intake", "Sign Up Date"]
+            available_date_cols = [col for col in date_columns if col in df.columns]
+            
+            if available_date_cols:
+                # Convert available date columns to datetime
+                for col in available_date_cols:
+                    df[col] = pd.to_datetime(df[col], errors="coerce")
+                
+                # Create Referral Date using the priority order
+                df["Referral Date"] = df[available_date_cols[0]]  # Start with first available
+                for col in available_date_cols[1:]:
+                    df["Referral Date"] = df["Referral Date"].fillna(df[col])
+            else:
+                # No date columns available, return empty DataFrame
+                st.warning(f"No date columns found in {filepath}. Time-based filtering not available.")
+                return pd.DataFrame()
+        
         return df
     except Exception as e:
         st.warning(f"Could not load detailed referral data: {e}")
