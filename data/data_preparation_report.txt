@@ -1,69 +1,31 @@
-================================================================================
-JLG PROVIDER RECOMMENDER - DATA PREPARATION REPORT
-Generated: 2025-09-04 22:54:00
-================================================================================
+============================================================
+JLG PROVIDER RECOMMENDER - OPTIMIZED DATA PREPARATION
+Completed: 2025-09-04 23:07:52
+============================================================
 
-PROCESSING LOG:
-========================================
-[22:53:59] Starting data preparation pipeline...
-[22:53:59] Processing inbound referrals data...
-[22:53:59] Data quality analysis for Inbound Referrals (Raw):
-[22:53:59]   - Records: 540
-[22:53:59]   - Columns: 22
-[22:54:00]   - Memory: 346.7 KB
-[22:54:00]   - Duplicates: 0
-[22:54:00]   - Date columns: ['Create Date', 'Date of Intake', 'Sign Up Date']
-[22:54:00]   - Address columns: ['Referred From Address 1 Line 1', 'Referred From Address 1 City', 'Referred From Address 1 State', 'Referred From Address 1 Zip', 'Secondary Referred From Address 1 Line 1', 'Secondary Referred From Address 1 City', 'Secondary Referred From Address 1 State', 'Secondary Referred From Address 1 Zip']
-[22:54:00]   - Create Date: converted 540 dates, 0 invalid, 0 nulls
-[22:54:00]   - Date of Intake: converted 518 dates, 0 invalid, 22 nulls
-[22:54:00]   - Sign Up Date: converted 501 dates, 0 invalid, 39 nulls
-[22:54:00]   - Filled 39 missing 'Sign Up Date' values with 'Create Date'
-[22:54:00]   - Created 462 full addresses from components
-[22:54:00]   - 83 records have valid coordinates
-[22:54:00] Data quality analysis for Inbound Referrals (Cleaned):
-[22:54:00]   - Records: 540
-[22:54:00]   - Columns: 24
-[22:54:00]   - Memory: 424.0 KB
-[22:54:00]   - Duplicates: 0
-[22:54:00]   - Date columns: ['Create Date', 'Date of Intake', 'Sign Up Date', 'Referral Date']
-[22:54:00]   - Address columns: ['Secondary Referred From Address 1 Line 1', 'Secondary Referred From Address 1 City', 'Secondary Referred From Address 1 State', 'Secondary Referred From Address 1 Zip', 'Street', 'City', 'State', 'Zip', 'Full Address']
-[22:54:00] Processing outbound referrals data...
-[22:54:00] Loaded from existing Parquet file
-[22:54:00] Data quality analysis for Outbound Referrals (Raw):
-[22:54:00]   - Records: 362
-[22:54:00]   - Columns: 13
-[22:54:00]   - Memory: 156.1 KB
-[22:54:00]   - Duplicates: 0
-[22:54:00]   - Date columns: ['Create Date', 'Date of Intake', 'Sign Up Date']
-[22:54:00]   - Address columns: ['Dr/Facility Referred To Address 1 Line 1', 'Dr/Facility Referred To Address 1 City', 'Dr/Facility Referred To Address 1 State', 'Dr/Facility Referred To Address 1 Zip']
-[22:54:00]   - Create Date: converted 362 dates, 0 invalid, 0 nulls
-[22:54:00]   - Date of Intake: converted 0 dates, 362 invalid, 362 nulls
-[22:54:00]   - Sign Up Date: converted 0 dates, 356 invalid, 362 nulls
-[22:54:00]   - Filled 362 missing 'Sign Up Date' values with 'Create Date'
-[22:54:00]   - Created 362 full addresses from components
-[22:54:00]   - 362 records have valid coordinates
-[22:54:00] Data quality analysis for Outbound Referrals (Cleaned):
-[22:54:00]   - Records: 362
-[22:54:00]   - Columns: 15
-[22:54:00]   - Memory: 208.8 KB
-[22:54:00]   - Duplicates: 0
-[22:54:00]   - Date columns: ['Create Date', 'Date of Intake', 'Sign Up Date', 'Referral Date']
-[22:54:00]   - Address columns: ['Street', 'City', 'State', 'Zip', 'Full Address']
-[22:54:00] Saving cleaned data...
-[22:54:00] Saved inbound data: data\cleaned_inbound_referrals.parquet (55.9 KB)
-[22:54:00] Saved outbound data: data\cleaned_outbound_referrals.parquet (30.1 KB)
+[23:07:52] Starting optimized data preparation...
+[23:07:52] Processing inbound referrals...
+[23:07:52] Filled 39 missing Sign Up Date values
+[23:07:52] Created 0 full addresses for inbound
+[23:07:52] Inbound processing completed: 540 records in 0.35s
+[23:07:52] Processing outbound referrals from Referrals_App_Outbound.parquet...
+[23:07:52] Filled 6 missing Sign Up Date values
+[23:07:52] Created 362 full addresses for outbound
+[23:07:52] Validated 362 coordinate pairs
+[23:07:52] Outbound processing completed: 362 records in 0.08s
+[23:07:52] Saving optimized data...
+[23:07:52] Saved inbound data: 540 records, 47.9 KB
+[23:07:52] Saved outbound data: 362 records, 28.6 KB
 
 PERFORMANCE SUMMARY:
-========================================
+------------------------------
 
-INBOUND DATASET:
-  Records: 540 -> 540
-  Memory: 346.7 KB -> 424.0 KB
-  Reduction: -22.3%
-  Duplicates removed: 0
+INBOUND:
+  Records: 540
+  Processing Time: 0.35s
+  Memory Reduction: -23.1%
 
-OUTBOUND DATASET:
-  Records: 362 -> 362
-  Memory: 156.1 KB -> 208.8 KB
-  Reduction: -33.8%
-  Duplicates removed: 0
+OUTBOUND:
+  Records: 362
+  Processing Time: 0.08s
+  Memory Reduction: -20.6%

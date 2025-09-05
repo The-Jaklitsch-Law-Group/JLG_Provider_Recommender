@@ -16,6 +16,14 @@ except ImportError:
     st.error("geopy package is required. Please install it with: pip install geopy")
     GEOPY_AVAILABLE = False
 
+# Import optimized data ingestion
+from data_ingestion import (
+    get_data_ingestion_status,
+    load_detailed_referrals,
+    load_inbound_referrals,
+    load_provider_data,
+    refresh_data_cache,
+)
 from provider_utils import (  # Import new enhanced functions
     calculate_distances,
     calculate_inbound_referral_counts,
@@ -24,9 +32,6 @@ from provider_utils import (  # Import new enhanced functions
     get_word_bytes,
     handle_streamlit_error,
     load_and_validate_provider_data,
-    load_detailed_referrals,
-    load_inbound_referrals,
-    load_provider_data,
     recommend_provider,
     sanitize_filename,
     validate_address,
@@ -126,8 +131,8 @@ def load_application_data():
         provider_df = load_and_validate_provider_data()
 
         if provider_df.empty:
-            # Fallback to original loading method
-            provider_df = load_provider_data(filepath="data/cleaned_outbound_referrals.parquet")
+            # Fallback to optimized loading method
+            provider_df = load_provider_data()
             provider_df = validate_and_clean_coordinates(provider_df)
 
         # Clean and validate provider data - handle missing values
@@ -178,55 +183,37 @@ def load_application_data():
             if dropped_count > 0:
                 st.info(f"ℹ️ Dropped {dropped_count} providers with incomplete address information")
 
-        # Try to load detailed referrals with better error handling
-        detailed_referrals_df = pd.DataFrame()
+        # Load detailed referrals with optimized ingestion
+        detailed_referrals_df = load_detailed_referrals()
 
-        # Try detailed referrals file first
-        detailed_referrals_filepath = "data/detailed_referrals.parquet"
-        if Path(detailed_referrals_filepath).exists():
-            detailed_referrals_df = load_detailed_referrals(filepath=detailed_referrals_filepath)
+        # Load inbound referrals data with optimized ingestion
+        inbound_referrals_df = load_inbound_referrals()
 
-        # If detailed referrals not available or empty, try alternative file
-        if detailed_referrals_df.empty:
-            alt_filepath = "data/Referrals_App_Outbound.parquet"
-            if Path(alt_filepath).exists():
-                detailed_referrals_df = load_detailed_referrals(filepath=alt_filepath)
-            else:
-                st.info("Time-based filtering not available: No detailed referral data found.")
+        # Calculate inbound referral counts (time filtering will be applied later during recommendation)
+        if not inbound_referrals_df.empty:
+            inbound_counts_df = calculate_inbound_referral_counts(inbound_referrals_df)
 
-        # Load inbound referrals data
-        inbound_referrals_df = pd.DataFrame()
-        inbound_filepath = "data/Referrals_App_Inbound.xlsx"
-        if Path(inbound_filepath).exists():
-            inbound_referrals_df = load_inbound_referrals(inbound_filepath)
-
-            # Calculate inbound referral counts (time filtering will be applied later during recommendation)
-            if not inbound_referrals_df.empty:
-                inbound_counts_df = calculate_inbound_referral_counts(inbound_referrals_df)
-
-                # Merge inbound referral counts with provider data
-                if not inbound_counts_df.empty and not provider_df.empty:
-                    # Merge on Person ID first, then try Full Name
-                    if "Person ID" in provider_df.columns and "Person ID" in inbound_counts_df.columns:
-                        provider_df = provider_df.merge(
-                            inbound_counts_df[["Person ID", "Inbound Referral Count"]], on="Person ID", how="left"
-                        )
-                    else:
-                        # Fallback to name-based matching
-                        provider_df = provider_df.merge(
-                            inbound_counts_df[["Full Name", "Inbound Referral Count"]], on="Full Name", how="left"
-                        )
-
-                    # Fill missing inbound referral counts with 0
-                    provider_df["Inbound Referral Count"] = provider_df["Inbound Referral Count"].fillna(0)
-
-                    st.success(f"✅ Merged inbound referral data for {len(inbound_counts_df)} providers")
+            # Merge inbound referral counts with provider data
+            if not inbound_counts_df.empty and not provider_df.empty:
+                # Merge on Person ID first, then try Full Name
+                if "Person ID" in provider_df.columns and "Person ID" in inbound_counts_df.columns:
+                    provider_df = provider_df.merge(
+                        inbound_counts_df[["Person ID", "Inbound Referral Count"]], on="Person ID", how="left"
+                    )
                 else:
-                    st.warning("⚠️ Could not merge inbound referral data - empty datasets")
+                    # Fallback to name-based matching
+                    provider_df = provider_df.merge(
+                        inbound_counts_df[["Full Name", "Inbound Referral Count"]], on="Full Name", how="left"
+                    )
+
+                # Fill missing inbound referral counts with 0
+                provider_df["Inbound Referral Count"] = provider_df["Inbound Referral Count"].fillna(0)
+
+                st.success(f"✅ Merged inbound referral data for {len(inbound_counts_df)} providers")
             else:
-                st.info("ℹ️ No inbound referral data available")
+                st.warning("⚠️ Could not merge inbound referral data - empty datasets")
         else:
-            st.info("ℹ️ Inbound referrals file not found - inbound scoring not available")
+            st.info("ℹ️ No inbound referral data available")
 
         return provider_df, detailed_referrals_df
 
@@ -271,28 +258,26 @@ def apply_time_filtering(provider_df, detailed_referrals_df, start_date, end_dat
             st.warning("⚠️ No outbound referrals found in selected time period.")
 
     # Apply time filtering to inbound referrals if available
-    inbound_filepath = "data/Referrals_App_Inbound.xlsx"
-    if Path(inbound_filepath).exists():
-        inbound_referrals_df = load_inbound_referrals(inbound_filepath)
-        if not inbound_referrals_df.empty:
-            time_filtered_inbound = calculate_inbound_referral_counts(inbound_referrals_df, start_date, end_date)
-            if not time_filtered_inbound.empty:
-                # Update inbound referral counts with time-filtered data
-                working_df = working_df.drop(columns=["Inbound Referral Count"], errors="ignore")
-                if "Person ID" in working_df.columns and "Person ID" in time_filtered_inbound.columns:
-                    working_df = working_df.merge(
-                        time_filtered_inbound[["Person ID", "Inbound Referral Count"]], on="Person ID", how="left"
-                    )
-                else:
-                    working_df = working_df.merge(
-                        time_filtered_inbound[["Full Name", "Inbound Referral Count"]], on="Full Name", how="left"
-                    )
-
-                # Fill missing inbound referral counts with 0
-                working_df["Inbound Referral Count"] = working_df["Inbound Referral Count"].fillna(0)
-                st.info(f"📊 Applied time filter to inbound referrals: {start_date} to {end_date}")
+    inbound_referrals_df = load_inbound_referrals()
+    if not inbound_referrals_df.empty:
+        time_filtered_inbound = calculate_inbound_referral_counts(inbound_referrals_df, start_date, end_date)
+        if not time_filtered_inbound.empty:
+            # Update inbound referral counts with time-filtered data
+            working_df = working_df.drop(columns=["Inbound Referral Count"], errors="ignore")
+            if "Person ID" in working_df.columns and "Person ID" in time_filtered_inbound.columns:
+                working_df = working_df.merge(
+                    time_filtered_inbound[["Person ID", "Inbound Referral Count"]], on="Person ID", how="left"
+                )
             else:
-                st.warning("⚠️ No inbound referrals found in selected time period.")
+                working_df = working_df.merge(
+                    time_filtered_inbound[["Full Name", "Inbound Referral Count"]], on="Full Name", how="left"
+                )
+
+            # Fill missing inbound referral counts with 0
+            working_df["Inbound Referral Count"] = working_df["Inbound Referral Count"].fillna(0)
+            st.info(f"📊 Applied time filter to inbound referrals: {start_date} to {end_date}")
+        else:
+            st.warning("⚠️ No inbound referrals found in selected time period.")
 
     return working_df
 
