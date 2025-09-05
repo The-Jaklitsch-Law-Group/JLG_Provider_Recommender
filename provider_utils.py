@@ -94,15 +94,54 @@ def load_provider_data(filepath: str) -> pd.DataFrame:
 
 @st.cache_data(ttl=3600)
 def load_detailed_referrals(filepath: str) -> pd.DataFrame:
-    """Load detailed referral data with dates for time-based filtering."""
+    """Load detailed referral data with dates for time-based filtering.
 
+    This function now prioritizes cleaned parquet files for better performance.
+    """
     path = Path(filepath)
+
+    # Check for cleaned parquet file first
+    cleaned_path = path.parent / "cleaned_outbound_referrals.parquet"
+    if cleaned_path.exists():
+        try:
+            df = pd.read_parquet(cleaned_path)
+            st.info("📊 Using cleaned and optimized outbound referrals data")
+            return df
+        except Exception as e:
+            st.warning(f"Could not load cleaned data, falling back to original: {e}")
+
+    # Fallback to original file
     if not path.exists():
-        # If detailed data doesn't exist, return empty DataFrame
         return pd.DataFrame()
 
     try:
-        df = pd.read_parquet(path)
+        # Read the data based on file extension
+        if path.suffix.lower() == ".parquet":
+            df = pd.read_parquet(path)
+        elif path.suffix.lower() in [".xlsx", ".xls"]:
+            df = pd.read_excel(path)
+        else:
+            df = pd.read_csv(path)
+
+        # Check if this is outbound referrals data and map columns appropriately
+        if "Dr/Facility Referred To Person Id" in df.columns:
+            # This is outbound referrals data - map columns to standard format
+            column_mapping = {
+                "Dr/Facility Referred To Person Id": "Person ID",
+                "Dr/Facility Referred To Full Name": "Full Name",
+                "Dr/Facility Referred To Address 1 Line 1": "Street",
+                "Dr/Facility Referred To Address 1 City": "City",
+                "Dr/Facility Referred To Address 1 State": "State",
+                "Dr/Facility Referred To Address 1 Zip": "Zip",
+                "Dr/Facility Referred To's Details: Latitude": "Latitude",
+                "Dr/Facility Referred To's Details: Longitude": "Longitude",
+                "Dr/Facility Referred To Phone 1": "Phone Number",
+            }
+
+            # Rename columns that exist
+            for old_col, new_col in column_mapping.items():
+                if old_col in df.columns:
+                    df[new_col] = df[old_col]
 
         # Check if Referral Date column exists, if not try to create it
         if "Referral Date" in df.columns:
@@ -113,18 +152,48 @@ def load_detailed_referrals(filepath: str) -> pd.DataFrame:
             available_date_cols = [col for col in date_columns if col in df.columns]
 
             if available_date_cols:
-                # Convert available date columns to datetime
+                # Convert available date columns to datetime, handling problematic values
                 for col in available_date_cols:
-                    df[col] = pd.to_datetime(df[col], errors="coerce")
+                    if col == "Create Date":
+                        # Create Date is typically reliable for outbound referrals
+                        df[col] = pd.to_datetime(df[col], errors="coerce")
+                    elif col in ["Date of Intake", "Sign Up Date"]:
+                        # These might be numeric values in some data - filter out invalid dates
+                        df[col] = pd.to_datetime(df[col], errors="coerce")
+                        # Filter out dates from 1970 which are likely data errors
+                        df.loc[df[col] < pd.Timestamp("1990-01-01"), col] = pd.NaT
 
-                # Create Referral Date using the priority order
-                df["Referral Date"] = df[available_date_cols[0]]  # Start with first available
-                for col in available_date_cols[1:]:
-                    df["Referral Date"] = df["Referral Date"].fillna(df[col])
+                # Fill missing Sign Up Date values with Create Date values
+                if "Sign Up Date" in df.columns and "Create Date" in df.columns:
+                    initial_nulls = df["Sign Up Date"].isnull().sum()
+                    df["Sign Up Date"] = df["Sign Up Date"].fillna(df["Create Date"])
+                    filled_count = initial_nulls - df["Sign Up Date"].isnull().sum()
+                    if filled_count > 0:
+                        st.info(
+                            f"📅 Filled {filled_count} missing 'Sign Up Date' values with 'Create Date' values in outbound data"
+                        )
+
+                # Create Referral Date using the priority order: Create Date > Date of Intake > Sign Up Date
+                df["Referral Date"] = None
+                for col in date_columns:
+                    if col in df.columns:
+                        df["Referral Date"] = df["Referral Date"].fillna(df[col])
+                        break  # Use the first available and valid date column
+
+                # Convert to datetime
+                df["Referral Date"] = pd.to_datetime(df["Referral Date"], errors="coerce")
             else:
                 # No date columns available, return empty DataFrame
                 st.warning(f"No date columns found in {filepath}. Time-based filtering not available.")
                 return pd.DataFrame()
+
+        # Remove rows with invalid/missing referral dates
+        if "Referral Date" in df.columns:
+            initial_count = len(df)
+            df = df.dropna(subset=["Referral Date"])
+            dropped_count = initial_count - len(df)
+            if dropped_count > 0:
+                st.info(f"Removed {dropped_count} records with invalid/missing referral dates")
 
         return df
     except Exception as e:
@@ -206,13 +275,27 @@ def calculate_time_based_referral_counts(detailed_df: pd.DataFrame, start_date, 
 def load_inbound_referrals(filepath: str) -> pd.DataFrame:
     """Load inbound referral data with provider information.
 
+    This function now prioritizes cleaned parquet files for better performance.
+
     Args:
-        filepath (str): Path to the inbound referrals Excel file
+        filepath (str): Path to the inbound referrals file
 
     Returns:
         pd.DataFrame: Processed inbound referrals data with provider information
     """
     path = Path(filepath)
+
+    # Check for cleaned parquet file first
+    cleaned_path = path.parent / "cleaned_inbound_referrals.parquet"
+    if cleaned_path.exists():
+        try:
+            df = pd.read_parquet(cleaned_path)
+            st.info("📊 Using cleaned and optimized inbound referrals data")
+            return df
+        except Exception as e:
+            st.warning(f"Could not load cleaned data, falling back to original: {e}")
+
+    # Fallback to original file
     if not path.exists():
         return pd.DataFrame()
 
@@ -224,6 +307,16 @@ def load_inbound_referrals(filepath: str) -> pd.DataFrame:
         for col in date_columns:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors="coerce")
+
+        # Fill missing Sign Up Date values with Create Date values
+        if "Sign Up Date" in df.columns and "Create Date" in df.columns:
+            initial_nulls = df["Sign Up Date"].isnull().sum()
+            df["Sign Up Date"] = df["Sign Up Date"].fillna(df["Create Date"])
+            filled_count = initial_nulls - df["Sign Up Date"].isnull().sum()
+            if filled_count > 0:
+                st.info(
+                    f"📅 Filled {filled_count} missing 'Sign Up Date' values with 'Create Date' values in inbound data"
+                )
 
         # Create a primary referral date
         if "Create Date" in df.columns:

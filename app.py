@@ -200,7 +200,7 @@ def load_application_data():
         if Path(inbound_filepath).exists():
             inbound_referrals_df = load_inbound_referrals(inbound_filepath)
 
-            # Calculate inbound referral counts
+            # Calculate inbound referral counts (time filtering will be applied later during recommendation)
             if not inbound_referrals_df.empty:
                 inbound_counts_df = calculate_inbound_referral_counts(inbound_referrals_df)
 
@@ -237,8 +237,69 @@ def load_application_data():
         return pd.DataFrame(), pd.DataFrame()
 
 
+def apply_time_filtering(provider_df, detailed_referrals_df, start_date, end_date, use_time_filter):
+    """Apply time filtering to both inbound and outbound referrals and return updated provider data."""
+
+    if not use_time_filter or not start_date or not end_date:
+        return provider_df
+
+    working_df = provider_df.copy()
+
+    # Apply time filtering to outbound referrals
+    if not detailed_referrals_df.empty:
+        time_filtered_outbound = calculate_time_based_referral_counts(detailed_referrals_df, start_date, end_date)
+        if not time_filtered_outbound.empty:
+            # Update outbound referral counts with time-filtered data
+            # Merge on Person ID or Full Name
+            if "Person ID" in working_df.columns and "Person ID" in time_filtered_outbound.columns:
+                # Remove existing referral count and merge new time-filtered counts
+                working_df = working_df.drop(columns=["Referral Count"], errors="ignore")
+                working_df = working_df.merge(
+                    time_filtered_outbound[["Person ID", "Referral Count"]], on="Person ID", how="left"
+                )
+            else:
+                # Fallback to name-based matching
+                working_df = working_df.drop(columns=["Referral Count"], errors="ignore")
+                working_df = working_df.merge(
+                    time_filtered_outbound[["Full Name", "Referral Count"]], on="Full Name", how="left"
+                )
+
+            # Fill missing outbound referral counts with 0
+            working_df["Referral Count"] = working_df["Referral Count"].fillna(0)
+            st.info(f"📊 Applied time filter to outbound referrals: {start_date} to {end_date}")
+        else:
+            st.warning("⚠️ No outbound referrals found in selected time period.")
+
+    # Apply time filtering to inbound referrals if available
+    inbound_filepath = "data/Referrals_App_Inbound.xlsx"
+    if Path(inbound_filepath).exists():
+        inbound_referrals_df = load_inbound_referrals(inbound_filepath)
+        if not inbound_referrals_df.empty:
+            time_filtered_inbound = calculate_inbound_referral_counts(inbound_referrals_df, start_date, end_date)
+            if not time_filtered_inbound.empty:
+                # Update inbound referral counts with time-filtered data
+                working_df = working_df.drop(columns=["Inbound Referral Count"], errors="ignore")
+                if "Person ID" in working_df.columns and "Person ID" in time_filtered_inbound.columns:
+                    working_df = working_df.merge(
+                        time_filtered_inbound[["Person ID", "Inbound Referral Count"]], on="Person ID", how="left"
+                    )
+                else:
+                    working_df = working_df.merge(
+                        time_filtered_inbound[["Full Name", "Inbound Referral Count"]], on="Full Name", how="left"
+                    )
+
+                # Fill missing inbound referral counts with 0
+                working_df["Inbound Referral Count"] = working_df["Inbound Referral Count"].fillna(0)
+                st.info(f"📊 Applied time filter to inbound referrals: {start_date} to {end_date}")
+            else:
+                st.warning("⚠️ No inbound referrals found in selected time period.")
+
+    return working_df
+
+
 # Load data using enhanced function
 with st.spinner("Loading provider data..."):
+    # Load base data without time filtering initially
     provider_df, detailed_referrals_df = load_application_data()
 
 # Validate provider data quality and show feedback
@@ -270,9 +331,11 @@ with st.expander(label="**INSTRUCTIONS** (*Click here to collapse.*)", expanded=
             1. Enter the client's address in the sidebar to the left.
             2. Choose how to balance provider proximity and referral count.
             3. Specify the minimum number of outbound referrals (minimum 1)
-            4. Set the time period for calculating the outbound referral counts (e.g, last 30 days)
+            4. Set the time period for calculating referral counts (defaults to rolling last year)
+               * This applies to both inbound and outbound referrals
+               * Enable/disable time-based filtering as needed
             5. Click ***Find Best Provider*** to get a recommendation.
-                * By default, the app prioritizes the closests providers,
+                * By default, the app prioritizes the closest providers,
                   then prefers providers with fewer recent referrals.
             6. The final result is contact information to direct the client
                to the best provider.
@@ -436,13 +499,13 @@ with st.sidebar:
             "Time Period for Referral Count",
             value=[dt.date.today() - dt.timedelta(days=365), dt.date.today()],
             max_value=dt.date.today() + dt.timedelta(days=1),
-            help="Calculate referral counts only for this time period. Defaults to last 12 months.",
+            help="Calculate referral counts only for this time period. Defaults to rolling last year.",
         )
 
         use_time_filter = st.checkbox(
             "Enable time-based filtering",
-            value=False,
-            help="When enabled, referral counts will be calculated only for the selected time period.",
+            value=True,
+            help="When enabled, referral counts will be calculated only for the selected time period. Applies to both inbound and outbound referrals.",
         )
 
         submit = st.form_submit_button("Find Best Provider")
@@ -560,20 +623,14 @@ with tabs[0]:
                 return None, None
 
         if user_lat is not None and user_lon is not None:
-            # Use time-based filtering if enabled
-            if use_time_filter and not detailed_referrals_df.empty and len(time_period) == 2:
+            # Apply time filtering to both inbound and outbound referrals if enabled
+            if use_time_filter and len(time_period) == 2:
                 start_date, end_date = time_period
-                time_filtered_df = calculate_time_based_referral_counts(detailed_referrals_df, start_date, end_date)
-                if not time_filtered_df.empty:
-                    # Use time-filtered data
-                    working_df = time_filtered_df
-                    st.info(f"Using referral counts from {start_date} to {end_date}")
-                else:
-                    # Fall back to regular data if no results in time period
-                    working_df = provider_df
-                    st.warning(f"No referrals found in selected time period. Using all-time data.")
+                working_df = apply_time_filtering(
+                    provider_df, detailed_referrals_df, start_date, end_date, use_time_filter
+                )
             else:
-                # Use regular aggregated data
+                # Use regular data without time filtering
                 working_df = provider_df
 
             filtered_df = working_df[working_df["Referral Count"] >= min_referrals].copy()
