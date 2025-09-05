@@ -199,7 +199,7 @@ plotly>=5.0.0
 - `regenerate_data.py` - Data regeneration utility
 
 ### Data Files
-- `data/cleaned_outbound_referrals.parquet` - Aggregated provider data
+- `data/processed/cleaned_outbound_referrals.parquet` - Aggregated provider data
 - `data/detailed_referrals.parquet` - Individual referral records with dates
 
 ## 🔄 Migration Guide

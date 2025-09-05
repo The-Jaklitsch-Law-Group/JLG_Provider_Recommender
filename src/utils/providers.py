@@ -548,7 +548,7 @@ def load_and_validate_provider_data(
         except FileNotFoundError:
             # Fallback to original cleaned data
             st.warning("Detailed referrals data not found. Using aggregated data (time filtering not available).")
-            df = pd.read_parquet("data/cleaned_outbound_referrals.parquet")
+            df = pd.read_parquet("data/processed/cleaned_outbound_referrals.parquet")
 
         # Validate data
         is_valid, issues = validate_provider_data(df)

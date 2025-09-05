@@ -24,7 +24,7 @@ def display_data_quality_dashboard():
 
     # Load data
     try:
-        provider_df = load_provider_data("data/cleaned_outbound_referrals.parquet")
+        provider_df = load_provider_data("data/processed/cleaned_outbound_referrals.parquet")
         detailed_df = load_detailed_referrals("data/detailed_referrals.parquet")
     except Exception as e:
         st.error(f"Failed to load data: {e}")

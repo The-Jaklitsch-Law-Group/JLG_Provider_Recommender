@@ -336,7 +336,7 @@ def test_optimization_preparation():
             print("   ✅ StreamlinedDataPreparation class importable")
 
             # Check if cleaned files exist (result of preparation)
-            cleaned_files = ["data/cleaned_inbound_referrals.parquet", "data/cleaned_outbound_referrals.parquet"]
+            cleaned_files = ["data/cleaned_inbound_referrals.parquet", "data/processed/cleaned_outbound_referrals.parquet"]
 
             existing_files = [f for f in cleaned_files if Path(f).exists()]
             print(f"   ✅ {len(existing_files)}/{len(cleaned_files)} cleaned files available")

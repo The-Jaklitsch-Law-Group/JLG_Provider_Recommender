@@ -75,7 +75,7 @@ def test_data_loading():
         from provider_utils import load_provider_data, validate_and_clean_coordinates
 
         # Check if data files exist
-        data_files = ["data/cleaned_outbound_referrals.parquet", "data/detailed_referrals.parquet"]
+        data_files = ["data/processed/cleaned_outbound_referrals.parquet", "data/detailed_referrals.parquet"]
 
         existing_files = [f for f in data_files if os.path.exists(f)]
 

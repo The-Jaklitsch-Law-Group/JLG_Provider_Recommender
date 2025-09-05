@@ -6,7 +6,7 @@ Usage:
     python prepare_contacts/clean_outbound_referrals.py
 
 It reads `../data/Referrals_App_Outbound.parquet` and writes
-`../data/cleaned_outbound_referrals.parquet`.
+`../data/processed/cleaned_outbound_referrals.parquet`.
 """
 
 from pathlib import Path

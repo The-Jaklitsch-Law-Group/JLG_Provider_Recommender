@@ -337,7 +337,7 @@ chmod +x setup.sh run_app.sh
 ```
 
 ### Data & Customization
-- **Provider Data:** Loaded from `data/cleaned_outbound_referrals.parquet`. Update this file as your provider list changes.
+- **Provider Data:** Loaded from `data/processed/cleaned_outbound_referrals.parquet`. Update this file as your provider list changes.
 - **Time-Based Data:** Detailed referral records in `data/detailed_referrals.parquet` enable time-period filtering.
 - **Data Quality:** Monitor data completeness and quality using the built-in dashboard or standalone `data_dashboard.py`.
 - **Testing:** Run `uv run python scripts/run_tests.py` to validate core functionality and data processing logic.

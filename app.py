@@ -774,13 +774,13 @@ with tabs[0]:
 
                 rationale.append("")
 
-                # Referral count information
-                if "Referral Count" in best.index and pd.notna(best["Referral Count"]):
-                    rationale.append(
-                        f"* This provider has **{best['Referral Count']}** recent referrals from our office (fewer are better for load balancing)."
-                    )
-                else:
-                    rationale.append("* Referral count information not available.")
+                # # Referral count information
+                # if "Referral Count" in best.index and pd.notna(best["Referral Count"]):
+                #     rationale.append(
+                #         f"* This provider has **{best['Referral Count']}** recent referrals from our office (fewer are better for load balancing)."
+                #     )
+                # else:
+                #     rationale.append("* Referral count information not available.")
 
                 rationale.append("")
                 min_referrals_disp = params.get("min_referrals", min_referrals)

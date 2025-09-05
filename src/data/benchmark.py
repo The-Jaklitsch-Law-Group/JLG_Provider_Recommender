@@ -52,7 +52,7 @@ def benchmark_loading_performance():
     print("\n🚀 Testing Optimized Parquet File Loading...")
     parquet_files = [
         ("Inbound Parquet", "data/cleaned_inbound_referrals.parquet"),
-        ("Outbound Parquet", "data/cleaned_outbound_referrals.parquet"),
+        ("Outbound Parquet", "data/processed/cleaned_outbound_referrals.parquet"),
     ]
 
     for name, filepath in parquet_files:

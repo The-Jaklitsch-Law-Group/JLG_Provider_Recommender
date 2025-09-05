@@ -26,7 +26,7 @@ fi
 echo "✅ Source data files found"
 
 # Backup existing cleaned files if they exist
-if [ -f "data/cleaned_inbound_referrals.parquet" ] || [ -f "data/cleaned_outbound_referrals.parquet" ]; then
+if [ -f "data/cleaned_inbound_referrals.parquet" ] || [ -f "data/processed/cleaned_outbound_referrals.parquet" ]; then
     echo "💾 Backing up existing cleaned files..."
     mkdir -p data/backups
     timestamp=$(date +"%Y%m%d_%H%M%S")
@@ -35,8 +35,8 @@ if [ -f "data/cleaned_inbound_referrals.parquet" ] || [ -f "data/cleaned_outboun
         cp "data/cleaned_inbound_referrals.parquet" "data/backups/cleaned_inbound_referrals_${timestamp}.parquet"
     fi
 
-    if [ -f "data/cleaned_outbound_referrals.parquet" ]; then
-        cp "data/cleaned_outbound_referrals.parquet" "data/backups/cleaned_outbound_referrals_${timestamp}.parquet"
+    if [ -f "data/processed/cleaned_outbound_referrals.parquet" ]; then
+        cp "data/processed/cleaned_outbound_referrals.parquet" "data/backups/cleaned_outbound_referrals_${timestamp}.parquet"
     fi
 
     echo "✅ Backup completed to data/backups/"
