@@ -8,12 +8,29 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.utils.providers import (
+from src.data.ingestion import (
     load_detailed_referrals,
+    load_inbound_referrals,
     load_provider_data,
+)
+from src.utils.providers import (
     validate_and_clean_coordinates,
     validate_provider_data,
 )
+
+
+def calculate_referral_counts(provider_df, detailed_df):
+    """Calculate referral counts if missing from provider data."""
+    if not detailed_df.empty and "Full Name" in detailed_df.columns:
+        referral_counts = detailed_df.groupby("Full Name").size().reset_index(name="Referral Count")
+        # Merge with provider data
+        provider_df = provider_df.merge(referral_counts, on="Full Name", how="left")
+        provider_df["Referral Count"] = provider_df["Referral Count"].fillna(0)
+    else:
+        # If no detailed referral data, set all counts to 0
+        provider_df["Referral Count"] = 0
+    
+    return provider_df
 
 
 def display_data_quality_dashboard():
@@ -24,11 +41,20 @@ def display_data_quality_dashboard():
 
     # Load data
     try:
-        provider_df = load_provider_data("data/processed/cleaned_outbound_referrals.parquet")
-        detailed_df = load_detailed_referrals("data/detailed_referrals.parquet")
+        provider_df = load_provider_data()
+        try:
+            detailed_df = load_detailed_referrals()  # This loads the cleaned outbound referrals
+        except Exception:
+            # Fallback to empty DataFrame if detailed referrals not found
+            detailed_df = pd.DataFrame()
     except Exception as e:
         st.error(f"Failed to load data: {e}")
         return
+
+    # Add referral counts if missing
+    if "Referral Count" not in provider_df.columns:
+        st.info("📊 Calculating referral counts from detailed referral data...")
+        provider_df = calculate_referral_counts(provider_df, detailed_df)
 
     # Overview metrics
     st.markdown("## 🎯 Overview Metrics")

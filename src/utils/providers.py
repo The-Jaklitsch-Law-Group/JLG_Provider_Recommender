@@ -78,17 +78,22 @@ def load_provider_data(filepath: str) -> pd.DataFrame:
         if col in df.columns:
             df[col] = df[col].astype(str).replace(["nan", "None", "NaN"], "").fillna("")
 
-    df["Referral Count"] = pd.to_numeric(df["Referral Count"], errors="coerce")
-    df["Full Address"] = (
-        df["Street"].fillna("")
-        + ", "
-        + df["City"].fillna("")
-        + ", "
-        + df["State"].fillna("")
-        + " "
-        + df["Zip"].fillna("")
-    )
-    df["Full Address"] = df["Full Address"].str.replace(r",\s*,", ",", regex=True).str.replace(r",\s*$", "", regex=True)
+    # Handle Referral Count column if it exists
+    if "Referral Count" in df.columns:
+        df["Referral Count"] = pd.to_numeric(df["Referral Count"], errors="coerce")
+    
+    # Build Full Address from components
+    if "Full Address" not in df.columns:
+        df["Full Address"] = (
+            df["Street"].fillna("")
+            + ", "
+            + df["City"].fillna("")
+            + ", "
+            + df["State"].fillna("")
+            + " "
+            + df["Zip"].fillna("")
+        )
+        df["Full Address"] = df["Full Address"].str.replace(r",\s*,", ",", regex=True).str.replace(r",\s*$", "", regex=True)
     return df
 
 
@@ -506,7 +511,7 @@ def load_and_validate_provider_data(
     try:
         # Try to load the detailed referrals data first
         try:
-            df = pd.read_parquet("data/detailed_referrals.parquet")
+            df = pd.read_parquet("data/processed/cleaned_inbound_referrals.parquet")
 
             # Convert date columns if they exist
             if "Referral Date" in df.columns:
@@ -884,13 +889,27 @@ def validate_provider_data(df: pd.DataFrame) -> tuple[bool, str]:
     issues = []
     info = []
 
-    # Check required columns
-    required_cols = ["Full Name", "Referral Count", "Latitude", "Longitude"]
+    # Check essential columns (Referral Count is optional and can be calculated)
+    required_cols = ["Full Name"]
     missing_cols = [col for col in required_cols if col not in df.columns]
     if missing_cols:
         issues.append(f"Missing required columns: {', '.join(missing_cols)}")
 
-    # Check data quality
+    # Check for geographic data
+    if "Latitude" in df.columns and "Longitude" in df.columns:
+        missing_coords = (df["Latitude"].isna() | df["Longitude"].isna()).sum()
+        if missing_coords > 0:
+            issues.append(f"{missing_coords} providers missing geographic coordinates")
+    else:
+        missing_geo_cols = []
+        if "Latitude" not in df.columns:
+            missing_geo_cols.append("Latitude")
+        if "Longitude" not in df.columns:
+            missing_geo_cols.append("Longitude")
+        if missing_geo_cols:
+            info.append(f"Geographic columns missing: {', '.join(missing_geo_cols)} (may need geocoding)")
+
+    # Check referral count data
     if "Referral Count" in df.columns:
         invalid_counts = df["Referral Count"].isna().sum()
         if invalid_counts > 0:
@@ -899,21 +918,17 @@ def validate_provider_data(df: pd.DataFrame) -> tuple[bool, str]:
         zero_referrals = (df["Referral Count"] == 0).sum()
         if zero_referrals > 0:
             info.append(f"{zero_referrals} providers have zero referrals")
-
-    if "Latitude" in df.columns and "Longitude" in df.columns:
-        missing_coords = (df["Latitude"].isna() | df["Longitude"].isna()).sum()
-        if missing_coords > 0:
-            issues.append(f"{missing_coords} providers missing geographic coordinates")
-
-    # Summary info
-    total_providers = len(df)
-    info.append(f"Total providers in database: {total_providers}")
-
-    if "Referral Count" in df.columns:
+            
         avg_referrals = df["Referral Count"].mean()
         max_referrals = df["Referral Count"].max()
         info.append(f"Average referrals per provider: {avg_referrals:.1f}")
         info.append(f"Most referred provider has: {max_referrals} referrals")
+    else:
+        info.append("Referral Count column not found - will be calculated from detailed referral data")
+
+    # Summary info
+    total_providers = len(df)
+    info.append(f"Total providers in database: {total_providers}")
 
     # Compile message
     message_parts = []
