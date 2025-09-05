@@ -71,7 +71,13 @@ def load_provider_data(filepath: str) -> pd.DataFrame:
 
     df.columns = [col.strip() for col in df.columns]
     df = df.drop(columns="Preference", errors="ignore")
-    df["Zip"] = df["Zip"].apply(lambda x: str(x) if pd.notnull(x) else "")
+
+    # Ensure all address columns are strings to prevent concatenation errors
+    address_cols = ["Street", "City", "State", "Zip"]
+    for col in address_cols:
+        if col in df.columns:
+            df[col] = df[col].astype(str).replace(["nan", "None", "NaN"], "").fillna("")
+
     df["Referral Count"] = pd.to_numeric(df["Referral Count"], errors="coerce")
     df["Full Address"] = (
         df["Street"].fillna("")
@@ -97,7 +103,7 @@ def load_detailed_referrals(filepath: str) -> pd.DataFrame:
 
     try:
         df = pd.read_parquet(path)
-        
+
         # Check if Referral Date column exists, if not try to create it
         if "Referral Date" in df.columns:
             df["Referral Date"] = pd.to_datetime(df["Referral Date"], errors="coerce")
@@ -105,12 +111,12 @@ def load_detailed_referrals(filepath: str) -> pd.DataFrame:
             # Try to create Referral Date from available date columns
             date_columns = ["Create Date", "Date of Intake", "Sign Up Date"]
             available_date_cols = [col for col in date_columns if col in df.columns]
-            
+
             if available_date_cols:
                 # Convert available date columns to datetime
                 for col in available_date_cols:
                     df[col] = pd.to_datetime(df[col], errors="coerce")
-                
+
                 # Create Referral Date using the priority order
                 df["Referral Date"] = df[available_date_cols[0]]  # Start with first available
                 for col in available_date_cols[1:]:
@@ -119,7 +125,7 @@ def load_detailed_referrals(filepath: str) -> pd.DataFrame:
                 # No date columns available, return empty DataFrame
                 st.warning(f"No date columns found in {filepath}. Time-based filtering not available.")
                 return pd.DataFrame()
-        
+
         return df
     except Exception as e:
         st.warning(f"Could not load detailed referral data: {e}")
@@ -174,6 +180,10 @@ def calculate_time_based_referral_counts(detailed_df: pd.DataFrame, start_date, 
     if "Full Address" not in time_based_counts.columns and all(
         col in time_based_counts.columns for col in ["Street", "City", "State", "Zip"]
     ):
+        # Ensure all address columns are strings to prevent concatenation errors
+        for col in ["Street", "City", "State", "Zip"]:
+            time_based_counts[col] = time_based_counts[col].astype(str).replace(["nan", "None", "NaN"], "").fillna("")
+
         time_based_counts["Full Address"] = (
             time_based_counts["Street"].fillna("")
             + ", "
@@ -195,26 +205,26 @@ def calculate_time_based_referral_counts(detailed_df: pd.DataFrame, start_date, 
 @st.cache_data(ttl=3600)
 def load_inbound_referrals(filepath: str) -> pd.DataFrame:
     """Load inbound referral data with provider information.
-    
+
     Args:
         filepath (str): Path to the inbound referrals Excel file
-        
+
     Returns:
         pd.DataFrame: Processed inbound referrals data with provider information
     """
     path = Path(filepath)
     if not path.exists():
         return pd.DataFrame()
-    
+
     try:
         df = pd.read_excel(path)
-        
+
         # Standardize date columns
         date_columns = ["Create Date", "Date of Intake", "Sign Up Date"]
         for col in date_columns:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors="coerce")
-        
+
         # Create a primary referral date
         if "Create Date" in df.columns:
             df["Referral Date"] = df["Create Date"]
@@ -222,7 +232,7 @@ def load_inbound_referrals(filepath: str) -> pd.DataFrame:
             df["Referral Date"] = df["Date of Intake"]
         elif "Sign Up Date" in df.columns:
             df["Referral Date"] = df["Sign Up Date"]
-        
+
         return df
     except Exception as e:
         st.warning(f"Could not load inbound referral data: {e}")
@@ -231,18 +241,18 @@ def load_inbound_referrals(filepath: str) -> pd.DataFrame:
 
 def calculate_inbound_referral_counts(inbound_df: pd.DataFrame, start_date=None, end_date=None) -> pd.DataFrame:
     """Calculate inbound referral counts for each provider.
-    
+
     Args:
         inbound_df (pd.DataFrame): Raw inbound referrals data
         start_date: Start date for filtering (optional)
         end_date: End date for filtering (optional)
-        
+
     Returns:
         pd.DataFrame: Provider data with inbound referral counts
     """
     if inbound_df.empty:
         return pd.DataFrame()
-    
+
     # Filter by date range if provided
     if start_date and end_date and "Referral Date" in inbound_df.columns:
         mask = (inbound_df["Referral Date"] >= pd.to_datetime(start_date)) & (
@@ -251,75 +261,75 @@ def calculate_inbound_referral_counts(inbound_df: pd.DataFrame, start_date=None,
         filtered_df = inbound_df[mask]
     else:
         filtered_df = inbound_df
-    
+
     if filtered_df.empty:
         return pd.DataFrame()
-    
+
     # Process primary referral source
     primary_cols = {
         "Referred From Person Id": "Person ID",
         "Referred From Full Name": "Full Name",
         "Referred From Address 1 Line 1": "Street",
-        "Referred From Address 1 City": "City", 
+        "Referred From Address 1 City": "City",
         "Referred From Address 1 State": "State",
         "Referred From Address 1 Zip": "Zip",
         "Referred From's Details: Latitude": "Latitude",
-        "Referred From's Details: Longitude": "Longitude"
+        "Referred From's Details: Longitude": "Longitude",
     }
-    
+
     # Create primary referrals dataframe
     primary_df = filtered_df.copy()
     for old_col, new_col in primary_cols.items():
         if old_col in primary_df.columns:
             primary_df[new_col] = primary_df[old_col]
-    
+
     # Process secondary referral source if available
     secondary_cols = {
         "Secondary Referred From Person Id": "Person ID",
         "Secondary Referred From Full Name": "Full Name",
         "Secondary Referred From Address 1 Line 1": "Street",
         "Secondary Referred From Address 1 City": "City",
-        "Secondary Referred From Address 1 State": "State", 
+        "Secondary Referred From Address 1 State": "State",
         "Secondary Referred From Address 1 Zip": "Zip",
         "Secondary Referred From's Details: Latitude": "Latitude",
-        "Secondary Referred From's Details: Longitude": "Longitude"
+        "Secondary Referred From's Details: Longitude": "Longitude",
     }
-    
+
     secondary_df = filtered_df.copy()
     for old_col, new_col in secondary_cols.items():
         if old_col in secondary_df.columns:
             secondary_df[new_col] = secondary_df[old_col]
-    
+
     # Remove rows where secondary referral data is missing
     secondary_df = secondary_df.dropna(subset=["Secondary Referred From Person Id"])
-    
+
     # Combine primary and secondary referrals
     provider_cols = ["Person ID", "Full Name", "Street", "City", "State", "Zip", "Latitude", "Longitude"]
     available_cols = [col for col in provider_cols if col in primary_df.columns]
-    
+
     if not available_cols:
         return pd.DataFrame()
-    
+
     # Count inbound referrals for each provider
     all_referrals = []
-    
+
     # Add primary referrals
     primary_subset = primary_df[available_cols].dropna(subset=["Person ID"])
     if not primary_subset.empty:
         all_referrals.append(primary_subset)
-    
+
     # Add secondary referrals if they exist
     if not secondary_df.empty:
         secondary_subset = secondary_df[available_cols].dropna(subset=["Person ID"])
         if not secondary_subset.empty:
             all_referrals.append(secondary_subset)
-    
+
     if not all_referrals:
         return pd.DataFrame()
-    
+
     # Combine all referrals
     combined_df = pd.concat(all_referrals, ignore_index=True)
-    
+
     # Group by provider and count inbound referrals
     inbound_counts = (
         combined_df.groupby(available_cols, as_index=False)
@@ -327,9 +337,13 @@ def calculate_inbound_referral_counts(inbound_df: pd.DataFrame, start_date=None,
         .rename(columns={"size": "Inbound Referral Count"})
         .sort_values(by="Inbound Referral Count", ascending=False)
     )
-    
+
     # Add Full Address if components are available
     if all(col in inbound_counts.columns for col in ["Street", "City", "State", "Zip"]):
+        # Ensure all address columns are strings to prevent concatenation errors
+        for col in ["Street", "City", "State", "Zip"]:
+            inbound_counts[col] = inbound_counts[col].astype(str).replace(["nan", "None", "NaN"], "").fillna("")
+
         inbound_counts["Full Address"] = (
             inbound_counts["Street"].fillna("")
             + ", "
@@ -340,11 +354,9 @@ def calculate_inbound_referral_counts(inbound_df: pd.DataFrame, start_date=None,
             + inbound_counts["Zip"].fillna("")
         )
         inbound_counts["Full Address"] = (
-            inbound_counts["Full Address"]
-            .str.replace(r",\s*,", ",", regex=True)
-            .str.replace(r",\s*$", "", regex=True)
+            inbound_counts["Full Address"].str.replace(r",\s*,", ",", regex=True).str.replace(r",\s*$", "", regex=True)
         )
-    
+
     return inbound_counts
 
 
@@ -972,32 +984,36 @@ def recommend_provider(provider_df, distance_weight=0.5, referral_weight=0.5, in
     # Safe normalization (avoid division by zero)
     referral_range = df["Referral Count"].max() - df["Referral Count"].min()
     dist_range = df["Distance (Miles)"].max() - df["Distance (Miles)"].min()
-    
+
     # Normalize distance and outbound referrals
     df["norm_rank"] = (df["Referral Count"] - df["Referral Count"].min()) / referral_range if referral_range != 0 else 0
     df["norm_dist"] = (df["Distance (Miles)"] - df["Distance (Miles)"].min()) / dist_range if dist_range != 0 else 0
-    
+
     # Initialize score with distance and outbound referrals
     df["Score"] = distance_weight * df["norm_dist"] + referral_weight * df["norm_rank"]
-    
+
     # Add inbound referrals to scoring if the column exists and weight > 0
     if inbound_weight > 0 and "Inbound Referral Count" in df.columns:
         # Filter out providers with missing inbound referral data for scoring
         inbound_df = df[df["Inbound Referral Count"].notnull()].copy()
-        
+
         if not inbound_df.empty:
             inbound_range = inbound_df["Inbound Referral Count"].max() - inbound_df["Inbound Referral Count"].min()
-            
+
             if inbound_range != 0:
-                inbound_df["norm_inbound"] = (inbound_df["Inbound Referral Count"] - inbound_df["Inbound Referral Count"].min()) / inbound_range
+                inbound_df["norm_inbound"] = (
+                    inbound_df["Inbound Referral Count"] - inbound_df["Inbound Referral Count"].min()
+                ) / inbound_range
             else:
                 inbound_df["norm_inbound"] = 0
-            
+
             # Recalculate score for providers with inbound data
-            inbound_df["Score"] = (distance_weight * inbound_df["norm_dist"] + 
-                                 referral_weight * inbound_df["norm_rank"] + 
-                                 inbound_weight * inbound_df["norm_inbound"])
-            
+            inbound_df["Score"] = (
+                distance_weight * inbound_df["norm_dist"]
+                + referral_weight * inbound_df["norm_rank"]
+                + inbound_weight * inbound_df["norm_inbound"]
+            )
+
             # Update the main dataframe with new scores
             df.loc[inbound_df.index, "Score"] = inbound_df["Score"]
             df.loc[inbound_df.index, "norm_inbound"] = inbound_df["norm_inbound"]
@@ -1011,7 +1027,7 @@ def recommend_provider(provider_df, distance_weight=0.5, referral_weight=0.5, in
         sort_keys = ["Score", "Distance (Miles)", "Referral Count"]
     else:
         sort_keys = ["Score", "Referral Count", "Distance (Miles)"]
-    
+
     # Add inbound referrals to tie-break if available
     if "Inbound Referral Count" in df.columns:
         sort_keys.append("Inbound Referral Count")
