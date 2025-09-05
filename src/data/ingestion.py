@@ -48,19 +48,19 @@ class DataIngestionManager:
         """Build a registry of available data files with priorities."""
         registry = {
             DataSource.INBOUND_REFERRALS: {
-                "cleaned": self.data_dir / "cleaned_inbound_referrals.parquet",
-                "original_excel": self.data_dir / "Referrals_App_Inbound.xlsx",
-                "original_parquet": self.data_dir / "Referrals_App_Inbound.parquet",
+                "cleaned": self.data_dir / "processed" / "cleaned_inbound_referrals.parquet",
+                "original_excel": self.data_dir / "raw" / "Referrals_App_Inbound.xlsx",
+                "original_parquet": self.data_dir / "processed" / "Referrals_App_Inbound.parquet",
             },
             DataSource.OUTBOUND_REFERRALS: {
-                "cleaned": self.data_dir / "cleaned_outbound_referrals.parquet",
-                "original_excel": self.data_dir / "Referrals_App_Outbound.xlsx",
-                "original_parquet": self.data_dir / "Referrals_App_Outbound.parquet",
+                "cleaned": self.data_dir / "processed" / "cleaned_outbound_referrals.parquet",
+                "original_excel": self.data_dir / "raw" / "Referrals_App_Outbound.xlsx",
+                "original_parquet": self.data_dir / "processed" / "Referrals_App_Outbound.parquet",
             },
             DataSource.PROVIDER_DATA: {
-                "cleaned": self.data_dir / "cleaned_outbound_referrals.parquet",
-                "original_excel": self.data_dir / "Referrals_App_Outbound.xlsx",
-                "original_parquet": self.data_dir / "Referrals_App_Outbound.parquet",
+                "cleaned": self.data_dir / "processed" / "cleaned_outbound_referrals.parquet",
+                "original_excel": self.data_dir / "raw" / "Referrals_App_Outbound.xlsx",
+                "original_parquet": self.data_dir / "processed" / "Referrals_App_Outbound.parquet",
             },
         }
         return registry

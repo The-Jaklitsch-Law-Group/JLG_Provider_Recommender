@@ -16,8 +16,8 @@ import pandas as pd
 
 def main():
     repo_root = Path(__file__).resolve().parent.parent
-    src = repo_root / "data" / "Referrals_App_Outbound.parquet"
-    dst = repo_root / "data" / "cleaned_outbound_referrals.parquet"
+    src = repo_root / "data" / "processed" / "Referrals_App_Outbound.parquet"
+    dst = repo_root / "data" / "processed" / "cleaned_outbound_referrals.parquet"
 
     if not src.exists():
         raise FileNotFoundError(f"Source file not found: {src}\nPlease ensure the data file exists at this path.")

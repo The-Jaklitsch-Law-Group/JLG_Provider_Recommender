@@ -9,9 +9,9 @@ import pandas as pd
 import pytest
 
 # Add the parent directory to the path so we can import app modules
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from provider_utils import calculate_distances, load_provider_data, recommend_provider
+from src.utils.providers import calculate_distances, load_provider_data, recommend_provider
 
 
 class TestEndToEndWorkflow:

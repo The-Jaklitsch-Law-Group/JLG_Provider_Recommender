@@ -11,7 +11,7 @@ def run_tests():
     """Run all tests with coverage reporting."""
 
     # Get the project root directory (parent of scripts directory)
-    project_root = Path(__file__).parent.parent.absolute()
+    project_root = Path(__file__).parent.parent.parent.absolute()
 
     # Change to project directory
     os.chdir(project_root)
@@ -81,7 +81,12 @@ def run_quick_validation():
 
     try:
         # Test imports
-        from provider_utils import calculate_distances, recommend_provider, sanitize_filename, validate_address_input
+        from src.utils.providers import (
+            calculate_distances,
+            recommend_provider,
+            sanitize_filename,
+            validate_address_input,
+        )
 
         print("✅ Core imports successful")
 

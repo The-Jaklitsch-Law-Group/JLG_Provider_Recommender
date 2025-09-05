@@ -17,14 +17,14 @@ except ImportError:
     GEOPY_AVAILABLE = False
 
 # Import optimized data ingestion
-from data_ingestion import (
+from src.data.ingestion import (
     get_data_ingestion_status,
     load_detailed_referrals,
     load_inbound_referrals,
     load_provider_data,
     refresh_data_cache,
 )
-from provider_utils import (  # Import new enhanced functions
+from src.utils.providers import (  # Import new enhanced functions
     calculate_distances,
     calculate_inbound_referral_counts,
     calculate_time_based_referral_counts,

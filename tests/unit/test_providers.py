@@ -9,10 +9,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-# Add the parent directory to the path so we can import provider_utils
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add the parent directory to the path so we can import modules
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from provider_utils import (
+from src.utils.providers import (
     calculate_distances,
     calculate_time_based_referral_counts,
     geocode_address_with_cache,

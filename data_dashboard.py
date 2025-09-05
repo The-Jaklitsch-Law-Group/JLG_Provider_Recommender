@@ -8,7 +8,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from provider_utils import (
+from src.utils.providers import (
     load_detailed_referrals,
     load_provider_data,
     validate_and_clean_coordinates,

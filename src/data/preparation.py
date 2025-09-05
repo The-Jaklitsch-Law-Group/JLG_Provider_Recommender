@@ -57,7 +57,7 @@ class StreamlinedDataPreparation:
     def prepare_inbound_data(self) -> Optional[pd.DataFrame]:
         """Prepare inbound referrals with optimized processing."""
         start_time = datetime.now()
-        input_file = self.data_dir / "Referrals_App_Inbound.xlsx"
+        input_file = self.data_dir / "raw" / "Referrals_App_Inbound.xlsx"
 
         if not input_file.exists():
             self.log(f"Input file not found: {input_file}", "error")
@@ -116,7 +116,10 @@ class StreamlinedDataPreparation:
         start_time = datetime.now()
 
         # Try parquet first, then Excel
-        input_files = [self.data_dir / "Referrals_App_Outbound.parquet", self.data_dir / "Referrals_App_Outbound.xlsx"]
+        input_files = [
+            self.data_dir / "processed" / "Referrals_App_Outbound.parquet",
+            self.data_dir / "raw" / "Referrals_App_Outbound.xlsx",
+        ]
 
         input_file = None
         for file_path in input_files:
@@ -337,13 +340,13 @@ class StreamlinedDataPreparation:
         compression_settings = {"compression": "snappy", "index": False, "engine": "pyarrow"}
 
         if inbound_df is not None and not inbound_df.empty:
-            output_file = self.data_dir / "cleaned_inbound_referrals.parquet"
+            output_file = self.data_dir / "processed" / "cleaned_inbound_referrals.parquet"
             inbound_df.to_parquet(output_file, **compression_settings)
             file_size = output_file.stat().st_size / 1024
             self.log(f"Saved inbound data: {len(inbound_df)} records, {file_size:.1f} KB")
 
         if outbound_df is not None and not outbound_df.empty:
-            output_file = self.data_dir / "cleaned_outbound_referrals.parquet"
+            output_file = self.data_dir / "processed" / "cleaned_outbound_referrals.parquet"
             outbound_df.to_parquet(output_file, **compression_settings)
             file_size = output_file.stat().st_size / 1024
             self.log(f"Saved outbound data: {len(outbound_df)} records, {file_size:.1f} KB")

@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.absolute()
+project_root = Path(__file__).parent.parent.parent.absolute()
 sys.path.append(str(project_root))
 os.chdir(project_root)
 
@@ -51,7 +51,7 @@ def validate_generated_data():
     try:
         import pandas as pd
 
-        from provider_utils import load_detailed_referrals, validate_provider_data
+        from src.utils.providers import load_detailed_referrals, validate_provider_data
 
         # Check cleaned provider data
         provider_file = project_root / "data" / "cleaned_outbound_referrals.parquet"

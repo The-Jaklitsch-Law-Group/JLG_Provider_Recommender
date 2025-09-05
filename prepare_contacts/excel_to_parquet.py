@@ -4,7 +4,7 @@ import pandas as pd
 
 print("Import Complete")
 
-df = pd.read_excel("./data/Referrals_App_Outbound.xlsx")
+df = pd.read_excel("./data/raw/Referrals_App_Outbound.xlsx")
 
 str_cols = [
     "Dr/Facility Referred To Full Name",
@@ -34,4 +34,4 @@ for col in num_cols:
 
 print("Completed datatype conversion: numeric")
 
-df.to_parquet("./data/Referrals_App_Outbound.parquet")
+df.to_parquet("./data/processed/Referrals_App_Outbound.parquet")
