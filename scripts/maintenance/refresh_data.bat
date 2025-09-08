@@ -6,7 +6,7 @@ echo 🔄 JLG Provider Recommender - Data Refresh
 echo ==========================================
 
 REM Check if we're in the right directory
-if not exist "data_preparation.py" (
+if not exist "src\data\preparation.py" (
     echo ❌ Error: Run this script from the project root directory
     exit /b 1
 )
@@ -50,15 +50,15 @@ echo 🚀 Running data preparation...
 REM Try to find Python executable
 where python >nul 2>&1
 if %errorlevel% == 0 (
-    python data_preparation.py
+    python src\data\preparation.py
 ) else (
     where python3 >nul 2>&1
     if %errorlevel% == 0 (
-        python3 data_preparation.py
+        python3 src\data\preparation.py
     ) else (
         REM Try virtual environment
         if exist ".venv\Scripts\python.exe" (
-            .venv\Scripts\python.exe data_preparation.py
+            .venv\Scripts\python.exe src\data\preparation.py
         ) else (
             echo ❌ Error: Python not found in PATH or virtual environment
             exit /b 1

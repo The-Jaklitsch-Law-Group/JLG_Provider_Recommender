@@ -17,7 +17,7 @@ def test_imports():
     print("1. Testing Import System...")
 
     try:
-        from data_ingestion import (
+        from src.data.ingestion import (
             DataIngestionManager,
             get_data_ingestion_status,
             load_detailed_referrals,
@@ -38,7 +38,7 @@ def test_manager_initialization():
     print("\n2. Testing DataIngestionManager...")
 
     try:
-        from data_ingestion import DataIngestionManager
+        from src.data.ingestion import DataIngestionManager
 
         manager = DataIngestionManager()
 
@@ -66,7 +66,7 @@ def test_file_detection():
     print("\n3. Testing File Detection System...")
 
     try:
-        from data_ingestion import get_data_ingestion_status
+        from src.data.ingestion import get_data_ingestion_status
 
         status = get_data_ingestion_status()
 
@@ -103,7 +103,7 @@ def test_data_loading():
     print("\n4. Testing Data Loading Functions...")
 
     try:
-        from data_ingestion import load_detailed_referrals, load_inbound_referrals, load_provider_data
+        from src.data.ingestion import load_detailed_referrals, load_inbound_referrals, load_provider_data
 
         results = {}
 
@@ -174,7 +174,7 @@ def test_data_quality():
     print("\n5. Testing Data Quality...")
 
     try:
-        from data_ingestion import load_detailed_referrals, load_inbound_referrals, load_provider_data
+        from src.data.ingestion import load_detailed_referrals, load_inbound_referrals, load_provider_data
 
         # Load all datasets
         provider_df = load_provider_data()
@@ -251,7 +251,7 @@ def test_caching_system():
     print("\n6. Testing Caching System...")
 
     try:
-        from data_ingestion import load_provider_data, refresh_data_cache
+        from src.data.ingestion import load_provider_data, refresh_data_cache
 
         # First load (cache miss)
         start_time = time.time()
@@ -292,7 +292,7 @@ def test_error_handling():
     print("\n7. Testing Error Handling...")
 
     try:
-        from data_ingestion import DataIngestionManager, DataSource
+        from src.data.ingestion import DataIngestionManager, DataSource
 
         # Test with non-existent data directory
         manager = DataIngestionManager("nonexistent_data_dir")
@@ -325,14 +325,14 @@ def test_optimization_preparation():
 
     try:
         # Check if optimized preparation script exists and is importable
-        optimized_prep_path = Path("optimized_data_preparation.py")
+        optimized_prep_path = Path("src/data/preparation.py")
         if optimized_prep_path.exists():
             print("   ✅ Optimized data preparation script found")
 
-            # Test if we can import the main class
-            import optimized_data_preparation
+            # Test if we can import the main functions
+            from src.data.preparation import main, StreamlinedDataPreparation
 
-            processor = optimized_data_preparation.StreamlinedDataPreparation()
+            processor = StreamlinedDataPreparation()
             print("   ✅ StreamlinedDataPreparation class importable")
 
             # Check if cleaned files exist (result of preparation)

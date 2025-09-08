@@ -6,24 +6,56 @@ echo "🔄 JLG Provider Recommender - Data Refresh"
 echo "=========================================="
 
 # Check if we're in the right directory
-if [ ! -f "data_preparation.py" ]; then
+if [ ! -f "src/data/preparation.py" ]; then
     echo "❌ Error: Run this script from the project root directory"
     exit 1
 fi
 
 # Check for source data files
 echo "📂 Checking source data files..."
-if [ ! -f "data/Referrals_App_Inbound.xlsx" ]; then
-    echo "❌ Error: Inbound referrals Excel file not found"
+inbound_found=false
+outbound_found=false
+
+# Check for inbound data in multiple locations
+if [ -f "data/raw/Referrals_App_Inbound.xlsx" ]; then
+    inbound_found=true
+    echo "✅ Found inbound data: data/raw/Referrals_App_Inbound.xlsx"
+elif [ -f "data/Referrals_App_Inbound.xlsx" ]; then
+    inbound_found=true
+    echo "✅ Found inbound data: data/Referrals_App_Inbound.xlsx"
+elif [ -f "data/processed/cleaned_inbound_referrals.parquet" ]; then
+    inbound_found=true
+    echo "✅ Found processed inbound data: data/processed/cleaned_inbound_referrals.parquet"
+else
+    echo "⚠️  Warning: No inbound referrals data found (will proceed with outbound only)"
+fi
+
+# Check for outbound data in multiple locations
+if [ -f "data/raw/Referrals_App_Outbound.xlsx" ]; then
+    outbound_found=true
+    echo "✅ Found outbound data: data/raw/Referrals_App_Outbound.xlsx"
+elif [ -f "data/Referrals_App_Outbound.xlsx" ]; then
+    outbound_found=true
+    echo "✅ Found outbound data: data/Referrals_App_Outbound.xlsx"
+elif [ -f "data/processed/Referrals_App_Outbound.parquet" ]; then
+    outbound_found=true
+    echo "✅ Found outbound data: data/processed/Referrals_App_Outbound.parquet"
+elif [ -f "data/Referrals_App_Outbound.parquet" ]; then
+    outbound_found=true
+    echo "✅ Found outbound data: data/Referrals_App_Outbound.parquet"
+else
+    echo "❌ Error: No outbound referrals data found"
+    echo "   Expected locations:"
+    echo "   - data/raw/Referrals_App_Outbound.xlsx"
+    echo "   - data/Referrals_App_Outbound.xlsx" 
+    echo "   - data/processed/Referrals_App_Outbound.parquet"
+    echo "   - data/Referrals_App_Outbound.parquet"
     exit 1
 fi
 
-if [ ! -f "data/Referrals_App_Outbound.xlsx" ] && [ ! -f "data/Referrals_App_Outbound.parquet" ]; then
-    echo "❌ Error: Outbound referrals data file not found"
-    exit 1
+if [ "$outbound_found" = true ]; then
+    echo "✅ Required data files found"
 fi
-
-echo "✅ Source data files found"
 
 # Backup existing cleaned files if they exist
 if [ -f "data/cleaned_inbound_referrals.parquet" ] || [ -f "data/processed/cleaned_outbound_referrals.parquet" ]; then
@@ -43,11 +75,11 @@ if [ -f "data/cleaned_inbound_referrals.parquet" ] || [ -f "data/processed/clean
 fi
 
 # Run data preparation
-echo "🚀 Running data preparation..."
+echo "🚀 Running optimized data preparation..."
 if command -v python &> /dev/null; then
-    python data_preparation.py
+    python src/data/preparation.py
 elif command -v python3 &> /dev/null; then
-    python3 data_preparation.py
+    python3 src/data/preparation.py
 else
     echo "❌ Error: Python not found in PATH"
     exit 1
@@ -60,10 +92,11 @@ if [ $? -eq 0 ]; then
     echo ""
     echo "📊 File Summary:"
     echo "----------------------------------------"
-    ls -lh data/cleaned_*.parquet 2>/dev/null || echo "❌ No cleaned files found"
+    ls -lh data/cleaned_*.parquet 2>/dev/null || echo "❌ No cleaned files found in data/"
+    ls -lh data/processed/cleaned_*.parquet 2>/dev/null || echo "❌ No cleaned files found in data/processed/"
     echo ""
-    echo "📋 Report available at: data/data_preparation_report.txt"
-    echo "📝 Detailed log at: data/data_preparation.log"
+    echo "📋 Report available at: data/logs/data_preparation_report.txt"
+    echo "📝 Detailed log at: data/logs/data_preparation.log"
     echo ""
     echo "🎉 Ready to use! The application will automatically use the optimized data."
 else

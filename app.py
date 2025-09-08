@@ -200,19 +200,33 @@ def load_application_data():
                     provider_df = provider_df.merge(
                         inbound_counts_df[["Person ID", "Inbound Referral Count"]], on="Person ID", how="left"
                     )
-                else:
+                elif "Full Name" in provider_df.columns and "Full Name" in inbound_counts_df.columns:
                     # Fallback to name-based matching
                     provider_df = provider_df.merge(
                         inbound_counts_df[["Full Name", "Inbound Referral Count"]], on="Full Name", how="left"
                     )
+                else:
+                    # Add a default column if no merge is possible
+                    provider_df["Inbound Referral Count"] = 0
+                    st.warning("⚠️ Could not merge inbound referral data - column mismatch")
 
                 # Fill missing inbound referral counts with 0
-                provider_df["Inbound Referral Count"] = provider_df["Inbound Referral Count"].fillna(0)
+                if "Inbound Referral Count" in provider_df.columns:
+                    provider_df["Inbound Referral Count"] = provider_df["Inbound Referral Count"].fillna(0)
+                else:
+                    provider_df["Inbound Referral Count"] = 0
 
                 st.success(f"✅ Merged inbound referral data for {len(inbound_counts_df)} providers")
             else:
-                st.warning("⚠️ Could not merge inbound referral data - empty datasets")
+                # Add default inbound referral count column
+                provider_df["Inbound Referral Count"] = 0
+                if inbound_counts_df.empty:
+                    st.info("ℹ️ No inbound referral counts available (empty dataset)")
+                else:
+                    st.warning("⚠️ Could not merge inbound referral data - empty datasets")
         else:
+            # Add default inbound referral count column
+            provider_df["Inbound Referral Count"] = 0
             st.info("ℹ️ No inbound referral data available")
 
         return provider_df, detailed_referrals_df
