@@ -555,7 +555,7 @@ with st.sidebar:
 
 
 # --- Tabs for Main Content ---
-tabs = st.tabs(["Find Provider", "How Selection Works", "Data Quality"])
+tabs = st.tabs(["Find Provider", "How Selection Works", "Data Quality", "Update Data"])
 
 
 with tabs[0]:
@@ -1077,3 +1077,73 @@ with tabs[2]:
 
     except ImportError:
         st.warning("Data dashboard module not available. Install plotly for full dashboard functionality.")
+
+with tabs[3]:
+    st.markdown("### 🔄 Update Referral Data")
+
+    st.markdown(
+        """
+        Use this tab to upload new referral data and update the provider database.
+        This process will clean, validate, and integrate new referral information.
+        """
+    )
+
+    try:
+        from src.data.streamlit_integration import integrate_data_preparation_page
+
+        # Display the data preparation interface
+        integrate_data_preparation_page()
+
+    except ImportError as e:
+        st.error(f"Data preparation module not available: {e}")
+        st.markdown(
+            """
+            **Alternative: Manual Data Update**
+
+            If the automated data preparation module is not available, you can manually update data by:
+
+            1. **Place new Excel file** in the `data/raw/` directory
+            2. **Run data preparation script** in terminal:
+               ```bash
+               python -m src.data.preparation_enhanced
+               ```
+            3. **Refresh the app** to load updated data
+
+            **Expected file format:**
+            - Excel file (.xlsx or .xls)
+            - Contains referral data with provider information
+            - Should include columns for provider names, addresses, and referral dates
+            """
+        )
+
+        # Provide basic file upload as fallback
+        st.markdown("#### Basic File Upload")
+        uploaded_file = st.file_uploader(
+            "Upload new referral data (Excel format)",
+            type=["xlsx", "xls"],
+            help="Upload Excel file containing updated referral data",
+        )
+
+        if uploaded_file is not None:
+            # Save to raw data directory
+            raw_data_path = Path("data/raw")
+            raw_data_path.mkdir(exist_ok=True)
+
+            file_path = raw_data_path / uploaded_file.name
+
+            with open(file_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+
+            st.success(f"✅ File uploaded successfully to: {file_path}")
+            st.info("💡 Run the data preparation script manually to process this file.")
+
+            # Show file info
+            st.markdown("**File Information:**")
+            st.markdown(f"- **Name**: {uploaded_file.name}")
+            st.markdown(f"- **Size**: {uploaded_file.size:,} bytes")
+            st.markdown(f"- **Saved to**: {file_path}")
+
+            # Provide refresh option
+            if st.button("🔄 Clear Cache and Refresh Data"):
+                st.cache_data.clear()
+                st.rerun()

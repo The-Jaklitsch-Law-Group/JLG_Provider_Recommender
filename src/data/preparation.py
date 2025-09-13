@@ -1,44 +1,266 @@
 """
-Streamlined Data Preparation Pipeline for JLG Provider Recommender
+Data Preparation Module for JLG Provider Recommender
 
-This optimized version focuses on:
-- Fast, efficient data cleaning
-- Minimal memory usage
-- Consistent data quality
-- Automated validation
-- Performance monitoring
+This module provides comprehensive data cleaning and preparation functionality
+extracted from the contact cleaning notebook. It can be triggered by the Streamlit
+app to process and clean referral data.
+
+Key Features:
+- Configuration-driven data processing
+- Comprehensive data quality validation
+- Schema validation for main application compatibility
+- Support for both individual and combined datasets
+- Detailed logging and error handling
+
+Usage:
+    from src.data.preparation import DataPreparationManager
+
+    processor = DataPreparationManager()
+    result = processor.process_referrals('data/raw/Referrals_App_Full_Contacts.xlsx')
 """
 
 import logging
-import sys
-import warnings
+import os
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler("data_preparation.log"), logging.StreamHandler(sys.stdout)],
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-# Suppress warnings for cleaner output
-warnings.filterwarnings("ignore", category=pd.errors.SettingWithCopyWarning)
-warnings.filterwarnings("ignore", category=FutureWarning)
+
+class DataCleaningFunctions:
+    """Collection of data cleaning functions."""
+
+    @staticmethod
+    def clean_phone_number(phone_number: str) -> str:
+        """
+        Clean phone number by removing spaces, parentheses, and dashes.
+        Format to (XXX) XXX-XXXX if 10 digits.
+        """
+        if pd.isna(phone_number):
+            return phone_number
+
+        phone_number = phone_number.replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
+
+        if len(phone_number) == 10 and phone_number.isdigit():
+            return f"({phone_number[:3]}) {phone_number[3:6]}-{phone_number[6:]}"
+        else:
+            return phone_number
+
+    @staticmethod
+    def clean_address(address: str) -> str:
+        """Clean address by removing redundant commas and extra spaces."""
+        if pd.isna(address):
+            return address
+
+        address = address.replace(", ,", ",").replace("  ", " ").strip()
+        return address
+
+    @staticmethod
+    def clean_geocode(value) -> float:
+        """Clean geocode values by handling various input types and validating coordinate ranges."""
+        if pd.isna(value):
+            return np.nan
+
+        # Convert to string safely
+        value_str = str(value).replace("--", "-")
+
+        try:
+            result = float(value_str)
+            # Validate coordinate ranges (latitude: -90 to 90, longitude: -180 to 180)
+            return result if -180 <= result <= 180 else np.nan
+        except (ValueError, TypeError):
+            return np.nan
 
 
-class StreamlinedDataPreparation:
-    """Optimized data preparation with minimal overhead."""
+class DataValidator:
+    """Data validation and quality checking functions."""
+
+    @staticmethod
+    def validate_data_quality(df: pd.DataFrame, data_type: str) -> Dict[str, Any]:
+        """Validate data quality and return metrics."""
+        quality_metrics = {
+            "total_records": len(df),
+            "missing_names": df.get("Full Name", pd.Series()).isna().sum(),
+            "missing_addresses": df.get("Work Address", pd.Series()).isna().sum(),
+            "missing_phones": df.get("Work Phone", pd.Series()).isna().sum(),
+            "invalid_geocodes": 0,
+        }
+
+        # Check geocode validity
+        if "Latitude" in df.columns and "Longitude" in df.columns:
+            invalid_lat = (df["Latitude"].notna()) & ((df["Latitude"] < -90) | (df["Latitude"] > 90))
+            invalid_lng = (df["Longitude"].notna()) & ((df["Longitude"] < -180) | (df["Longitude"] > 180))
+            quality_metrics["invalid_geocodes"] = (invalid_lat | invalid_lng).sum()
+
+        # Log quality metrics
+        logger.info(f"{data_type} - Quality Metrics: {quality_metrics}")
+
+        return quality_metrics
+
+    @staticmethod
+    def validate_column_existence(df: pd.DataFrame, config_name: str, required_columns: list) -> bool:
+        """Validate that all required columns exist in the dataset."""
+        missing_cols = [col for col in required_columns if col not in df.columns]
+        if missing_cols:
+            logger.error(f"❌ Missing columns for {config_name}: {missing_cols}")
+            return False
+        logger.info(f"✅ All required columns found for {config_name}")
+        return True
+
+    @staticmethod
+    def validate_output_schema(df: pd.DataFrame, data_type: str) -> bool:
+        """Validate that output matches expected schema for main application."""
+        # Expected columns based on the main application's provider loading functions
+        expected_base_cols = ["Full Name", "Work Phone", "Work Address", "Latitude", "Longitude"]
+
+        missing_cols = [col for col in expected_base_cols if col not in df.columns]
+        if missing_cols:
+            logger.error(f"❌ Missing expected columns in {data_type}: {missing_cols}")
+            return False
+
+        # Check data types
+        if "Latitude" in df.columns:
+            non_numeric_lat = df["Latitude"].notna() & ~pd.to_numeric(df["Latitude"], errors="coerce").notna()
+            if non_numeric_lat.any():
+                logger.warning(f"⚠️ Non-numeric latitude values found in {data_type}: {non_numeric_lat.sum()}")
+
+        if "Longitude" in df.columns:
+            non_numeric_lng = df["Longitude"].notna() & ~pd.to_numeric(df["Longitude"], errors="coerce").notna()
+            if non_numeric_lng.any():
+                logger.warning(f"⚠️ Non-numeric longitude values found in {data_type}: {non_numeric_lng.sum()}")
+
+        logger.info(f"✅ Output schema validation passed for {data_type}")
+        return True
+
+
+class ReferralDataProcessor:
+    """Main data processing class."""
+
+    def __init__(self):
+        self.cleaner = DataCleaningFunctions()
+        self.validator = DataValidator()
+        self.referral_configs = self._get_referral_configs()
+
+    def _get_referral_configs(self) -> Dict:
+        """Get referral processing configurations."""
+        return {
+            "primary_inbound": {
+                "columns": {
+                    "Project ID": "Project ID",
+                    "Date of Intake": "Date of Intake",
+                    "Referral Source": "Referral Source",
+                    "Referred From Full Name": "Full Name",
+                    "Referred From's Work Phone": "Work Phone",
+                    "Referred From's Work Address": "Work Address",
+                    "Referred From's Details: Latitude": "Latitude",
+                    "Referred From's Details: Longitude": "Longitude",
+                },
+                "filters": [
+                    lambda df: df["Referral Source"] == "Referral - Doctor's Office",
+                    lambda df: df["Full Name"].notna(),
+                    lambda df: df["Work Address"].notna(),
+                ],
+            },
+            "secondary_inbound": {
+                "columns": {
+                    "Project ID": "Project ID",
+                    "Date of Intake": "Date of Intake",
+                    "Secondary Referral Source": "Referral Source",
+                    "Secondary Referred From Full Name": "Full Name",
+                    "Secondary Referred From's Work Phone": "Work Phone",
+                    "Secondary Referred From's Work Address": "Work Address",
+                    "Secondary Referred From's Details: Latitude": "Latitude",
+                    "Secondary Referred From's Details: Longitude": "Longitude",
+                },
+                "filters": [
+                    lambda df: df["Referral Source"] == "Referral - Doctor's Office",
+                    lambda df: df["Full Name"].notna(),
+                    lambda df: df["Work Address"].notna(),
+                ],
+            },
+            "outbound": {
+                "columns": {
+                    "Project ID": "Project ID",
+                    "Date of Intake": "Date of Intake",
+                    "Dr/Facility Referred To Full Name": "Full Name",
+                    "Dr/Facility Referred To's Work Phone": "Work Phone",
+                    "Dr/Facility Referred To's Work Address": "Work Address",
+                    "Dr/Facility Referred To's Details: Latitude": "Latitude",
+                    "Dr/Facility Referred To's Details: Longitude": "Longitude",
+                },
+                "filters": [lambda df: df["Full Name"].notna()],
+            },
+        }
+
+    def clean_referral_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Apply all cleaning functions to a standardized referral dataframe."""
+        df = df.copy()
+
+        # Clean columns if they exist
+        if "Work Phone" in df.columns:
+            df["Work Phone"] = df["Work Phone"].apply(self.cleaner.clean_phone_number)
+        if "Work Address" in df.columns:
+            df["Work Address"] = df["Work Address"].apply(self.cleaner.clean_address)
+        if "Latitude" in df.columns:
+            df["Latitude"] = df["Latitude"].apply(self.cleaner.clean_geocode)
+        if "Longitude" in df.columns:
+            df["Longitude"] = df["Longitude"].apply(self.cleaner.clean_geocode)
+
+        # Sort and set index
+        if "Date of Intake" in df.columns and "Full Name" in df.columns:
+            df = df.sort_values(by=["Date of Intake", "Full Name"], ascending=True)
+            df = df.set_index("Date of Intake")
+
+        return df
+
+    def process_referral_data(
+        self, df: pd.DataFrame, column_mapping: Dict[str, str], filter_conditions: List[Callable] = None
+    ) -> pd.DataFrame:
+        """Generic function to process referral data with column mapping."""
+        # Select and rename columns
+        processed_df = df[list(column_mapping.keys())].copy()
+        processed_df = processed_df.rename(columns=column_mapping)
+
+        # Apply filters if provided
+        if filter_conditions:
+            for condition in filter_conditions:
+                processed_df = processed_df[condition(processed_df)].reset_index(drop=True)
+
+        # Clean the data
+        processed_df = self.clean_referral_dataframe(processed_df)
+
+        return processed_df
+
+    def process_all_referrals(self, df_all: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+        """Process all referral types using configuration."""
+        results = {}
+        for referral_type, config in self.referral_configs.items():
+            logger.info(f"Processing {referral_type} referrals...")
+            results[referral_type] = self.process_referral_data(df_all, config["columns"], config.get("filters"))
+            # Validate data quality
+            self.validator.validate_data_quality(results[referral_type], referral_type)
+        return results
+
+
+class DataPreparationManager:
+    """Main data preparation manager class."""
 
     def __init__(self, data_dir: str = "data"):
         self.data_dir = Path(data_dir)
-        self.processing_log = []
-        self.performance_metrics = {}
+        self.processor = ReferralDataProcessor()
+        self.validator = DataValidator()
+        self._ensure_directories()
+
+    def _ensure_directories(self):
+        """Ensure required directories exist."""
+        processed_dir = self.data_dir / "processed"
+        processed_dir.mkdir(parents=True, exist_ok=True)
 
     def log(self, message: str, level: str = "info"):
         """Unified logging."""
