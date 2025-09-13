@@ -213,34 +213,46 @@ def calculate_time_based_referral_counts(detailed_df: pd.DataFrame, start_date, 
     if detailed_df.empty:
         return pd.DataFrame()
 
-    # Filter by date range
-    if start_date and end_date:
-        mask = (detailed_df["Referral Date"] >= pd.to_datetime(start_date)) & (
-            detailed_df["Referral Date"] <= pd.to_datetime(end_date)
-        )
-        filtered_df = detailed_df[mask]
+    # Ensure we have a copy to work with
+    df_copy = detailed_df.copy()
+
+    # Check if date is in index or in a column
+    if df_copy.index.name == "Date of Intake":
+        # Date is in the index, reset it to a column
+        df_copy = df_copy.reset_index()
+        date_col = "Date of Intake"
+    elif "Referral Date" in df_copy.columns:
+        date_col = "Referral Date"
+    elif "Date of Intake" in df_copy.columns:
+        date_col = "Date of Intake"
     else:
-        filtered_df = detailed_df
+        # No date column found, return the original dataframe without filtering
+        date_col = None
+
+    # Filter by date range
+    if start_date and end_date and date_col:
+        mask = (df_copy[date_col] >= pd.to_datetime(start_date)) & (df_copy[date_col] <= pd.to_datetime(end_date))
+        filtered_df = df_copy[mask]
+    else:
+        filtered_df = df_copy
 
     if filtered_df.empty:
         return pd.DataFrame()
 
     # Group by provider and count referrals
+    # Use the actual column names from our processed data
     provider_cols = [
         "Full Name",
-        "Street",
-        "City",
-        "State",
-        "Zip",
+        "Work Address",
+        "Work Phone",
         "Latitude",
         "Longitude",
-        "Phone Number",
     ]
 
     # Only include columns that exist in the DataFrame
     available_cols = [col for col in provider_cols if col in filtered_df.columns]
 
-    if not available_cols:
+    if not available_cols or "Full Name" not in available_cols:
         return pd.DataFrame()
 
     time_based_counts = (
@@ -249,29 +261,6 @@ def calculate_time_based_referral_counts(detailed_df: pd.DataFrame, start_date, 
         .rename(columns={"size": "Referral Count"})
         .sort_values(by="Referral Count", ascending=False)
     )
-
-    # Add Full Address if not present
-    if "Full Address" not in time_based_counts.columns and all(
-        col in time_based_counts.columns for col in ["Street", "City", "State", "Zip"]
-    ):
-        # Ensure all address columns are strings to prevent concatenation errors
-        for col in ["Street", "City", "State", "Zip"]:
-            time_based_counts[col] = time_based_counts[col].astype(str).replace(["nan", "None", "NaN"], "").fillna("")
-
-        time_based_counts["Full Address"] = (
-            time_based_counts["Street"].fillna("")
-            + ", "
-            + time_based_counts["City"].fillna("")
-            + ", "
-            + time_based_counts["State"].fillna("")
-            + " "
-            + time_based_counts["Zip"].fillna("")
-        )
-        time_based_counts["Full Address"] = (
-            time_based_counts["Full Address"]
-            .str.replace(r",\s*,", ",", regex=True)
-            .str.replace(r",\s*$", "", regex=True)
-        )
 
     return time_based_counts
 
@@ -351,14 +340,27 @@ def calculate_inbound_referral_counts(inbound_df: pd.DataFrame, start_date=None,
     if inbound_df.empty:
         return pd.DataFrame()
 
-    # Filter by date range if provided
-    if start_date and end_date and "Referral Date" in inbound_df.columns:
-        mask = (inbound_df["Referral Date"] >= pd.to_datetime(start_date)) & (
-            inbound_df["Referral Date"] <= pd.to_datetime(end_date)
-        )
-        filtered_df = inbound_df[mask]
+    # Ensure we have a copy to work with
+    df_copy = inbound_df.copy()
+
+    # Check if date is in index or in a column
+    if df_copy.index.name == "Date of Intake":
+        # Date is in the index, reset it to a column
+        df_copy = df_copy.reset_index()
+        date_col = "Date of Intake"
+    elif "Referral Date" in df_copy.columns:
+        date_col = "Referral Date"
+    elif "Date of Intake" in df_copy.columns:
+        date_col = "Date of Intake"
     else:
-        filtered_df = inbound_df
+        date_col = None
+
+    # Filter by date range if provided
+    if start_date and end_date and date_col:
+        mask = (df_copy[date_col] >= pd.to_datetime(start_date)) & (df_copy[date_col] <= pd.to_datetime(end_date))
+        filtered_df = df_copy[mask]
+    else:
+        filtered_df = df_copy
 
     if filtered_df.empty:
         return pd.DataFrame()

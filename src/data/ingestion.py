@@ -181,27 +181,44 @@ class DataIngestionManager:
         return df
 
     def _process_provider_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Process provider data for recommendations."""
-        # Clean address columns
-        address_cols = ["Street", "City", "State", "Zip"]
-        for col in address_cols:
-            if col in df.columns:
-                df[col] = df[col].astype(str).replace(["nan", "None", "NaN"], "").fillna("")
+        """Process provider data for recommendations by aggregating from outbound referrals."""
+        # The provider data source should aggregate outbound referrals to create unique providers
 
-        # Create Full Address if needed
-        if "Full Address" not in df.columns and all(col in df.columns for col in address_cols):
-            df["Full Address"] = (
-                df["Street"].fillna("")
-                + ", "
-                + df["City"].fillna("")
-                + ", "
-                + df["State"].fillna("")
-                + " "
-                + df["Zip"].fillna("")
+        # If this is already processed provider data, return as-is
+        if "Referral Count" in df.columns:
+            return df
+
+        # Aggregate outbound referrals to create provider dataset
+        provider_columns = {
+            "Full Name": "first",
+            "Work Address": "first",
+            "Work Phone": "first",
+            "Latitude": "first",
+            "Longitude": "first",
+        }
+
+        # Group by provider name and aggregate
+        if "Full Name" in df.columns:
+            provider_df = df.groupby("Full Name", as_index=False).agg(
+                {
+                    **{col: method for col, method in provider_columns.items() if col in df.columns},
+                    "Project ID": "count",  # Count referrals for each provider
+                }
             )
-            df["Full Address"] = (
-                df["Full Address"].str.replace(r",\s*,", ",", regex=True).str.replace(r",\s*$", "", regex=True)
-            )
+
+            # Rename the count column to Referral Count
+            if "Project ID" in provider_df.columns:
+                provider_df = provider_df.rename(columns={"Project ID": "Referral Count"})
+            else:
+                provider_df["Referral Count"] = 1
+
+            # Clean address columns
+            address_cols = ["Work Address", "Work Phone"]
+            for col in address_cols:
+                if col in provider_df.columns:
+                    provider_df[col] = provider_df[col].astype(str).replace(["nan", "None", "NaN"], "").fillna("")
+
+            return provider_df
 
         return df
 

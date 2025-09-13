@@ -224,6 +224,16 @@ def load_application_data():
             provider_df["Inbound Referral Count"] = 0
             st.info("ℹ️ No inbound referral data available")
 
+        # Remove any duplicate providers based on Full Name, keeping the first occurrence
+        if not provider_df.empty and "Full Name" in provider_df.columns:
+            initial_provider_count = len(provider_df)
+            provider_df = provider_df.drop_duplicates(subset=["Full Name"], keep="first")
+            final_provider_count = len(provider_df)
+
+            if initial_provider_count != final_provider_count:
+                duplicates_removed = initial_provider_count - final_provider_count
+                st.info(f"ℹ️ Removed {duplicates_removed} duplicate provider records")
+
         return provider_df, detailed_referrals_df
 
     except Exception as e:
@@ -254,7 +264,12 @@ def apply_time_filtering(provider_df, detailed_referrals_df, start_date, end_dat
 
             # Fill missing outbound referral counts with 0
             working_df["Referral Count"] = working_df["Referral Count"].fillna(0)
-            st.info(f"📊 Applied time filter to outbound referrals: {start_date} to {end_date}")
+
+            # Only show message once per session for this time period
+            time_filter_key = f"time_filter_msg_{start_date}_{end_date}"
+            if time_filter_key not in st.session_state:
+                st.info(f"📊 Applied time filter to outbound referrals: {start_date} to {end_date}")
+                st.session_state[time_filter_key] = True
         else:
             st.warning("⚠️ No outbound referrals found in selected time period.")
 
@@ -624,6 +639,10 @@ with tabs[0]:
                 min_referrals=min_referrals,
             )
 
+            # Remove duplicates from scored results based on Full Name
+            if scored_df is not None and not scored_df.empty:
+                scored_df = scored_df.drop_duplicates(subset=["Full Name"], keep="first")
+
             # Store results and params in session state
             st.session_state["last_best"] = best
             st.session_state["last_scored_df"] = scored_df
@@ -731,10 +750,14 @@ with tabs[0]:
         available_cols = [col for col in mandatory_cols if col in scored_df.columns]
 
         if available_cols:
+            # Remove any duplicate providers before displaying
+            display_df = (
+                scored_df[available_cols]
+                .drop_duplicates(subset=["Full Name"], keep="first")
+                .sort_values(by="Score" if "Score" in available_cols else available_cols[0], ignore_index=True)
+            )
             st.dataframe(
-                scored_df[available_cols].sort_values(
-                    by="Score" if "Score" in available_cols else available_cols[0], ignore_index=True
-                ),
+                display_df,
                 hide_index=True,
                 use_container_width=True,
             )
@@ -1127,5 +1150,14 @@ with tabs[3]:
 
             # Provide refresh option
             if st.button("🔄 Clear Cache and Refresh Data"):
+                # Clear cache and time filter message flags
                 st.cache_data.clear()
+                # Clear time filter message flags
+                keys_to_remove = [
+                    key
+                    for key in st.session_state.keys()
+                    if isinstance(key, str) and key.startswith("time_filter_msg_")
+                ]
+                for key in keys_to_remove:
+                    del st.session_state[key]
                 st.rerun()
