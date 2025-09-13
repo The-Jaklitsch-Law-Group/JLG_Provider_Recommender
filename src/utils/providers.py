@@ -81,7 +81,7 @@ def load_provider_data(filepath: str) -> pd.DataFrame:
     # Handle Referral Count column if it exists
     if "Referral Count" in df.columns:
         df["Referral Count"] = pd.to_numeric(df["Referral Count"], errors="coerce")
-    
+
     # Build Full Address from components
     if "Full Address" not in df.columns:
         df["Full Address"] = (
@@ -93,7 +93,9 @@ def load_provider_data(filepath: str) -> pd.DataFrame:
             + " "
             + df["Zip"].fillna("")
         )
-        df["Full Address"] = df["Full Address"].str.replace(r",\s*,", ",", regex=True).str.replace(r",\s*$", "", regex=True)
+        df["Full Address"] = (
+            df["Full Address"].str.replace(r",\s*,", ",", regex=True).str.replace(r",\s*$", "", regex=True)
+        )
     return df
 
 
@@ -132,7 +134,6 @@ def load_detailed_referrals(filepath: str) -> pd.DataFrame:
         if "Dr/Facility Referred To Person Id" in df.columns:
             # This is outbound referrals data - map columns to standard format
             column_mapping = {
-                "Dr/Facility Referred To Person Id": "Person ID",
                 "Dr/Facility Referred To Full Name": "Full Name",
                 "Dr/Facility Referred To Address 1 Line 1": "Street",
                 "Dr/Facility Referred To Address 1 City": "City",
@@ -153,7 +154,7 @@ def load_detailed_referrals(filepath: str) -> pd.DataFrame:
             df["Referral Date"] = pd.to_datetime(df["Referral Date"], errors="coerce")
         else:
             # Try to create Referral Date from available date columns
-            date_columns = ["Create Date", "Date of Intake", "Sign Up Date"]
+            date_columns = ["Create Date", "Date of Intake"]
             available_date_cols = [col for col in date_columns if col in df.columns]
 
             if available_date_cols:
@@ -162,20 +163,20 @@ def load_detailed_referrals(filepath: str) -> pd.DataFrame:
                     if col == "Create Date":
                         # Create Date is typically reliable for outbound referrals
                         df[col] = pd.to_datetime(df[col], errors="coerce")
-                    elif col in ["Date of Intake", "Sign Up Date"]:
+                    elif col in ["Date of Intake"]:
                         # These might be numeric values in some data - filter out invalid dates
                         df[col] = pd.to_datetime(df[col], errors="coerce")
                         # Filter out dates from 1970 which are likely data errors
                         df.loc[df[col] < pd.Timestamp("1990-01-01"), col] = pd.NaT
 
                 # Fill missing Sign Up Date values with Create Date values
-                if "Sign Up Date" in df.columns and "Create Date" in df.columns:
-                    initial_nulls = df["Sign Up Date"].isnull().sum()
-                    df["Sign Up Date"] = df["Sign Up Date"].fillna(df["Create Date"])
-                    filled_count = initial_nulls - df["Sign Up Date"].isnull().sum()
+                if "Date of Intake" in df.columns and "Create Date" in df.columns:
+                    initial_nulls = df["Date of Intake"].isnull().sum()
+                    df["Date of Intake"] = df["Date of Intake"].fillna(df["Create Date"])
+                    filled_count = initial_nulls - df["Date of Intake"].isnull().sum()
                     if filled_count > 0:
                         st.info(
-                            f"📅 Filled {filled_count} missing 'Sign Up Date' values with 'Create Date' values in outbound data"
+                            f"📅 Filled {filled_count} missing 'Date of Intake' values with 'Create Date' values in outbound data"
                         )
 
                 # Create Referral Date using the priority order: Create Date > Date of Intake > Sign Up Date
@@ -226,7 +227,6 @@ def calculate_time_based_referral_counts(detailed_df: pd.DataFrame, start_date, 
 
     # Group by provider and count referrals
     provider_cols = [
-        "Person ID",
         "Full Name",
         "Street",
         "City",
@@ -363,9 +363,40 @@ def calculate_inbound_referral_counts(inbound_df: pd.DataFrame, start_date=None,
     if filtered_df.empty:
         return pd.DataFrame()
 
+    # Check if this is raw data with original column names or processed data
+    has_raw_columns = "Referred From Full Name" in filtered_df.columns
+
+    if not has_raw_columns:
+        # This is already processed data - just aggregate by provider
+        provider_cols = ["Full Name"]
+
+        # Add other available columns
+        additional_cols = ["Street", "City", "State", "Zip", "Latitude", "Longitude", "Work Address", "Work Phone"]
+        for col in additional_cols:
+            if col in filtered_df.columns:
+                provider_cols.append(col)
+
+        available_cols = [col for col in provider_cols if col in filtered_df.columns]
+
+        if not available_cols:
+            return pd.DataFrame()
+
+        inbound_counts = (
+            filtered_df.groupby(available_cols, as_index=False)
+            .size()
+            .rename(columns={"size": "Inbound Referral Count"})
+            .sort_values(by="Inbound Referral Count", ascending=False)
+        )
+
+        # Add Full Address if not present and components are available
+        if "Full Address" not in inbound_counts.columns:
+            if "Work Address" in inbound_counts.columns:
+                inbound_counts["Full Address"] = inbound_counts["Work Address"]
+
+        return inbound_counts
+
     # Process primary referral source
     primary_cols = {
-        "Referred From Person Id": "Person ID",
         "Referred From Full Name": "Full Name",
         "Referred From Address 1 Line 1": "Street",
         "Referred From Address 1 City": "City",
@@ -383,7 +414,6 @@ def calculate_inbound_referral_counts(inbound_df: pd.DataFrame, start_date=None,
 
     # Process secondary referral source if available
     secondary_cols = {
-        "Secondary Referred From Person Id": "Person ID",
         "Secondary Referred From Full Name": "Full Name",
         "Secondary Referred From Address 1 Line 1": "Street",
         "Secondary Referred From Address 1 City": "City",
@@ -399,10 +429,13 @@ def calculate_inbound_referral_counts(inbound_df: pd.DataFrame, start_date=None,
             secondary_df[new_col] = secondary_df[old_col]
 
     # Remove rows where secondary referral data is missing
-    secondary_df = secondary_df.dropna(subset=["Secondary Referred From Person Id"])
+    if "Secondary Referred From Full Name" in secondary_df.columns:
+        secondary_df = secondary_df.dropna(subset=["Secondary Referred From Full Name"])
+    else:
+        secondary_df = pd.DataFrame()  # No secondary data available
 
     # Combine primary and secondary referrals
-    provider_cols = ["Person ID", "Full Name", "Street", "City", "State", "Zip", "Latitude", "Longitude"]
+    provider_cols = ["Full Name", "Street", "City", "State", "Zip", "Latitude", "Longitude"]
     available_cols = [col for col in provider_cols if col in primary_df.columns]
 
     if not available_cols:
@@ -412,13 +445,13 @@ def calculate_inbound_referral_counts(inbound_df: pd.DataFrame, start_date=None,
     all_referrals = []
 
     # Add primary referrals
-    primary_subset = primary_df[available_cols].dropna(subset=["Person ID"])
+    primary_subset = primary_df[available_cols].dropna(subset=["Full Name"])
     if not primary_subset.empty:
         all_referrals.append(primary_subset)
 
     # Add secondary referrals if they exist
     if not secondary_df.empty:
-        secondary_subset = secondary_df[available_cols].dropna(subset=["Person ID"])
+        secondary_subset = secondary_df[available_cols].dropna(subset=["Full Name"])
         if not secondary_subset.empty:
             all_referrals.append(secondary_subset)
 
@@ -918,7 +951,7 @@ def validate_provider_data(df: pd.DataFrame) -> tuple[bool, str]:
         zero_referrals = (df["Referral Count"] == 0).sum()
         if zero_referrals > 0:
             info.append(f"{zero_referrals} providers have zero referrals")
-            
+
         avg_referrals = df["Referral Count"].mean()
         max_referrals = df["Referral Count"].max()
         info.append(f"Average referrals per provider: {avg_referrals:.1f}")

@@ -195,13 +195,8 @@ def load_application_data():
 
             # Merge inbound referral counts with provider data
             if not inbound_counts_df.empty and not provider_df.empty:
-                # Merge on Person ID first, then try Full Name
-                if "Person ID" in provider_df.columns and "Person ID" in inbound_counts_df.columns:
-                    provider_df = provider_df.merge(
-                        inbound_counts_df[["Person ID", "Inbound Referral Count"]], on="Person ID", how="left"
-                    )
-                elif "Full Name" in provider_df.columns and "Full Name" in inbound_counts_df.columns:
-                    # Fallback to name-based matching
+                # Merge on Full Name
+                if "Full Name" in provider_df.columns and "Full Name" in inbound_counts_df.columns:
                     provider_df = provider_df.merge(
                         inbound_counts_df[["Full Name", "Inbound Referral Count"]], on="Full Name", how="left"
                     )
@@ -251,19 +246,11 @@ def apply_time_filtering(provider_df, detailed_referrals_df, start_date, end_dat
         time_filtered_outbound = calculate_time_based_referral_counts(detailed_referrals_df, start_date, end_date)
         if not time_filtered_outbound.empty:
             # Update outbound referral counts with time-filtered data
-            # Merge on Person ID or Full Name
-            if "Person ID" in working_df.columns and "Person ID" in time_filtered_outbound.columns:
-                # Remove existing referral count and merge new time-filtered counts
-                working_df = working_df.drop(columns=["Referral Count"], errors="ignore")
-                working_df = working_df.merge(
-                    time_filtered_outbound[["Person ID", "Referral Count"]], on="Person ID", how="left"
-                )
-            else:
-                # Fallback to name-based matching
-                working_df = working_df.drop(columns=["Referral Count"], errors="ignore")
-                working_df = working_df.merge(
-                    time_filtered_outbound[["Full Name", "Referral Count"]], on="Full Name", how="left"
-                )
+            # Merge on Full Name
+            working_df = working_df.drop(columns=["Referral Count"], errors="ignore")
+            working_df = working_df.merge(
+                time_filtered_outbound[["Full Name", "Referral Count"]], on="Full Name", how="left"
+            )
 
             # Fill missing outbound referral counts with 0
             working_df["Referral Count"] = working_df["Referral Count"].fillna(0)
@@ -278,14 +265,9 @@ def apply_time_filtering(provider_df, detailed_referrals_df, start_date, end_dat
         if not time_filtered_inbound.empty:
             # Update inbound referral counts with time-filtered data
             working_df = working_df.drop(columns=["Inbound Referral Count"], errors="ignore")
-            if "Person ID" in working_df.columns and "Person ID" in time_filtered_inbound.columns:
-                working_df = working_df.merge(
-                    time_filtered_inbound[["Person ID", "Inbound Referral Count"]], on="Person ID", how="left"
-                )
-            else:
-                working_df = working_df.merge(
-                    time_filtered_inbound[["Full Name", "Inbound Referral Count"]], on="Full Name", how="left"
-                )
+            working_df = working_df.merge(
+                time_filtered_inbound[["Full Name", "Inbound Referral Count"]], on="Full Name", how="left"
+            )
 
             # Fill missing inbound referral counts with 0
             working_df["Inbound Referral Count"] = working_df["Inbound Referral Count"].fillna(0)

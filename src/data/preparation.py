@@ -367,7 +367,6 @@ class DataPreparationManager:
 
             # Standardize column names efficiently
             column_mapping = {
-                "Dr/Facility Referred To Person Id": "Person ID",
                 "Dr/Facility Referred To Full Name": "Full Name",
                 "Dr/Facility Referred To Address 1 Line 1": "Street",
                 "Dr/Facility Referred To Address 1 City": "City",
