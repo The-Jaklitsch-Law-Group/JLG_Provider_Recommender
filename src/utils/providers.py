@@ -1,57 +1,68 @@
-import io
-import logging
-import re
-import time
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+"""Provider utilities: counting, loading and small helpers.
 
-import numpy as np
+This module contains provider-focused helpers that operate on pandas
+DataFrames produced by the ingestion pipeline. Functions are typed and
+documented to improve clarity and maintainability.
+"""
+
+import logging
+from datetime import datetime
+from typing import Any, List, Optional, Tuple
+
 import pandas as pd
 import streamlit as st
-from docx import Document
-from geopy.distance import geodesic
-from geopy.exc import GeocoderServiceError, GeocoderTimedOut, GeocoderUnavailable
-from geopy.geocoders import Nominatim
 
+from .consolidated_functions import cached_geocode_address as _cached_geocode_address
+from .consolidated_functions import calculate_distances as _calculate_distances
+from .consolidated_functions import geocode_address_with_cache as _geocode_address_with_cache
+from .consolidated_functions import recommend_provider as _recommend_provider
 from .consolidated_functions import safe_numeric_conversion
-
-# Import validation functions from centralized module
+from .consolidated_functions import validate_address as _validate_address
+from .consolidated_functions import validate_and_clean_coordinates as _validate_and_clean_coordinates
+from .consolidated_functions import validate_provider_data as _validate_provider_data
 from .validation import validate_address_input
+
+logger = logging.getLogger(__name__)
 
 
 # --- Data Loading ---
-@st.cache_data(ttl=3600)
 # Data loading functions have been moved to src.data.ingestion for better performance
 # and centralized management. These functions are now handled by DataIngestionManager.
 
 
-def calculate_time_based_referral_counts(detailed_df: pd.DataFrame, start_date, end_date) -> pd.DataFrame:
-    """Calculate referral counts for providers within a specific time period."""
+def _detect_date_column(df: pd.DataFrame) -> Optional[str]:
+    """Return the best candidate date column name or None if not found."""
+    if df.index.name == "Date of Intake":
+        return "Date of Intake"
+    for candidate in ("Referral Date", "Date of Intake"):
+        if candidate in df.columns:
+            return candidate
+    return None
+
+
+def calculate_time_based_referral_counts(
+    detailed_df: pd.DataFrame, start_date: Optional[datetime], end_date: Optional[datetime]
+) -> pd.DataFrame:
+    """Calculate referral counts for providers within a specific time period.
+
+    If no suitable date column is available the function returns aggregated
+    counts for the whole input DataFrame.
+    """
 
     if detailed_df.empty:
         return pd.DataFrame()
 
-    # Ensure we have a copy to work with
     df_copy = detailed_df.copy()
+    date_col = _detect_date_column(df_copy)
 
-    # Check if date is in index or in a column
-    if df_copy.index.name == "Date of Intake":
-        # Date is in the index, reset it to a column
+    if date_col == df_copy.index.name:
         df_copy = df_copy.reset_index()
-        date_col = "Date of Intake"
-    elif "Referral Date" in df_copy.columns:
-        date_col = "Referral Date"
-    elif "Date of Intake" in df_copy.columns:
-        date_col = "Date of Intake"
-    else:
-        # No date column found, return the original dataframe without filtering
-        date_col = None
 
-    # Filter by date range
     if start_date and end_date and date_col:
-        mask = (df_copy[date_col] >= pd.to_datetime(start_date)) & (df_copy[date_col] <= pd.to_datetime(end_date))
-        filtered_df = df_copy[mask]
+        start_ts = pd.to_datetime(start_date)
+        end_ts = pd.to_datetime(end_date)
+        mask = (df_copy[date_col] >= start_ts) & (df_copy[date_col] <= end_ts)
+        filtered_df = df_copy.loc[mask]
     else:
         filtered_df = df_copy
 
@@ -84,39 +95,29 @@ def calculate_time_based_referral_counts(detailed_df: pd.DataFrame, start_date, 
     return time_based_counts
 
 
-def calculate_inbound_referral_counts(inbound_df: pd.DataFrame, start_date=None, end_date=None) -> pd.DataFrame:
+def calculate_inbound_referral_counts(
+    inbound_df: pd.DataFrame, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None
+) -> pd.DataFrame:
     """Calculate inbound referral counts for each provider.
 
-    Args:
-        inbound_df (pd.DataFrame): Raw inbound referrals data
-        start_date: Start date for filtering (optional)
-        end_date: End date for filtering (optional)
-
-    Returns:
-        pd.DataFrame: Provider data with inbound referral counts
+    Accepts both raw and already-processed inbound referral exports. When
+    raw columns are present the function will normalize and combine primary
+    and secondary referral sources before aggregation.
     """
     if inbound_df.empty:
         return pd.DataFrame()
 
-    # Ensure we have a copy to work with
     df_copy = inbound_df.copy()
+    date_col = _detect_date_column(df_copy)
 
-    # Check if date is in index or in a column
-    if df_copy.index.name == "Date of Intake":
-        # Date is in the index, reset it to a column
+    if date_col == df_copy.index.name:
         df_copy = df_copy.reset_index()
-        date_col = "Date of Intake"
-    elif "Referral Date" in df_copy.columns:
-        date_col = "Referral Date"
-    elif "Date of Intake" in df_copy.columns:
-        date_col = "Date of Intake"
-    else:
-        date_col = None
 
-    # Filter by date range if provided
     if start_date and end_date and date_col:
-        mask = (df_copy[date_col] >= pd.to_datetime(start_date)) & (df_copy[date_col] <= pd.to_datetime(end_date))
-        filtered_df = df_copy[mask]
+        start_ts = pd.to_datetime(start_date)
+        end_ts = pd.to_datetime(end_date)
+        mask = (df_copy[date_col] >= start_ts) & (df_copy[date_col] <= end_ts)
+        filtered_df = df_copy.loc[mask]
     else:
         filtered_df = df_copy
 
@@ -269,40 +270,32 @@ def load_and_validate_provider_data(
         from ..data.ingestion import DataIngestionManager, DataSource
 
         manager = DataIngestionManager()
-
-        # Load provider data using the optimized manager
         df = manager.load_data(DataSource.PROVIDER_DATA)
 
-        # Note: Time filtering should be handled at the data preparation level
-        # in the Jupyter notebook for better performance
         if start_date or end_date:
-            st.warning(
-                "Time filtering is not supported in this function. Please apply filters during data preparation."
-            )
+            logger.debug("Time filtering requested but should be performed during data preparation")
 
-        # Validate data
         is_valid, issues = validate_provider_data(df)
-        if not is_valid and isinstance(issues, list):
-            st.warning(f"Data quality issues detected: {'; '.join(issues)}")
+        if not is_valid and isinstance(issues, str):
+            st.warning(issues)
 
-        # Clean and standardize coordinates
+        # Normalize coordinates
         if "Latitude" in df.columns:
             df["Latitude"] = df["Latitude"].apply(lambda x: safe_numeric_conversion(x, 0.0))
         if "Longitude" in df.columns:
             df["Longitude"] = df["Longitude"].apply(lambda x: safe_numeric_conversion(x, 0.0))
 
-        # Remove providers with invalid coordinates
         if "Latitude" in df.columns and "Longitude" in df.columns:
             df = df[(df["Latitude"] != 0) & (df["Longitude"] != 0)]
 
         return df
-
-    except Exception as e:
-        st.error(f"Error loading provider data: {str(e)}")
+    except Exception as exc:  # pragma: no cover - surface errors to Streamlit at runtime
+        logger.exception("Error loading provider data: %s", exc)
+        st.error(f"Error loading provider data: {exc}")
         return pd.DataFrame()
 
 
-def handle_streamlit_error(error: Exception, context: str = "operation"):
+def handle_streamlit_error(error: Exception, context: str = "operation") -> None:
     """
     Handle errors gracefully in Streamlit with user-friendly messages.
 
@@ -310,19 +303,17 @@ def handle_streamlit_error(error: Exception, context: str = "operation"):
         error: The exception that occurred
         context: Context description for the error
     """
-    error_type = type(error).__name__
+    # error_type is unused here; keep only the message for display
     error_message = str(error)
 
     if "geocod" in error_message.lower():
-        st.error(
-            f"❌ **Geocoding Error**: Unable to find coordinates for the provided address. Please check the address format and try again."
-        )
+        st.error("❌ Geocoding Error: Unable to find coordinates for the provided address. Please check the address.")
     elif "network" in error_message.lower() or "connection" in error_message.lower():
-        st.error(f"❌ **Network Error**: Unable to connect to geocoding service. Please check your internet connection.")
+        st.error("❌ Network Error: Unable to connect to geocoding service. Check your internet connection.")
     elif "timeout" in error_message.lower():
-        st.error(f"❌ **Timeout Error**: The geocoding service is taking too long to respond. Please try again.")
+        st.error("❌ Timeout: Geocoding service is slow or unresponsive. Try again later.")
     elif "file" in error_message.lower() or "not found" in error_message.lower():
-        st.error(f"❌ **Data Error**: Required data files are missing. Please contact support.")
+        st.error("❌ Data Error: Required data files are missing. Please contact support.")
     else:
         st.error(f"❌ **Error during {context}**: {error_message}")
 
@@ -330,111 +321,102 @@ def handle_streamlit_error(error: Exception, context: str = "operation"):
     st.exception(error)
 
 
-@st.cache_data(ttl=3600)
-def validate_provider_data(df: pd.DataFrame) -> tuple[bool, str]:
-    """Validate provider data quality and return status with message."""
-
-    if df.empty:
-        return False, "❌ **Error**: No provider data available. Please check data files."
-
-    issues = []
-    info = []
-
-    # Check essential columns (Referral Count is optional and can be calculated)
-    required_cols = ["Full Name"]
-    missing_cols = [col for col in required_cols if col not in df.columns]
-    if missing_cols:
-        issues.append(f"Missing required columns: {', '.join(missing_cols)}")
-
-    # Check for geographic data
-    if "Latitude" in df.columns and "Longitude" in df.columns:
-        missing_coords = (df["Latitude"].isna() | df["Longitude"].isna()).sum()
-        if missing_coords > 0:
-            issues.append(f"{missing_coords} providers missing geographic coordinates")
-    else:
-        missing_geo_cols = []
-        if "Latitude" not in df.columns:
-            missing_geo_cols.append("Latitude")
-        if "Longitude" not in df.columns:
-            missing_geo_cols.append("Longitude")
-        if missing_geo_cols:
-            info.append(f"Geographic columns missing: {', '.join(missing_geo_cols)} (may need geocoding)")
-
-    # Check referral count data
-    if "Referral Count" in df.columns:
-        invalid_counts = df["Referral Count"].isna().sum()
-        if invalid_counts > 0:
-            issues.append(f"{invalid_counts} providers have invalid referral counts")
-
-        zero_referrals = (df["Referral Count"] == 0).sum()
-        if zero_referrals > 0:
-            info.append(f"{zero_referrals} providers have zero referrals")
-
-        avg_referrals = df["Referral Count"].mean()
-        max_referrals = df["Referral Count"].max()
-        info.append(f"Average referrals per provider: {avg_referrals:.1f}")
-        info.append(f"Most referred provider has: {max_referrals} referrals")
-    else:
-        info.append("Referral Count column not found - will be calculated from detailed referral data")
-
-    # Summary info
-    total_providers = len(df)
-    info.append(f"Total providers in database: {total_providers}")
-
-    # Compile message
-    message_parts = []
-    if issues:
-        message_parts.append("⚠️ **Data Quality Issues**: " + "; ".join(issues))
-    if info:
-        message_parts.append("ℹ️ **Data Summary**: " + "; ".join(info))
-
-    is_valid = len(issues) == 0
-    message = "\n\n".join(message_parts)
-
-    return is_valid, message
+# Note: provider data validation is implemented centrally in
+# src.utils.consolidated_functions.validate_provider_data.
+# A thin wrapper exported later in this module forwards calls there.
 
 
-_geocode_cache = {}
+# canonical implementations were imported at the top of this module
 
 
-def geocode_address(addresses, _geocode):
-    """Geocode a list of addresses, returning lists of latitudes and longitudes."""
+def calculate_distances(user_lat: float, user_lon: float, provider_df: pd.DataFrame) -> List[Optional[float]]:
+    """Calculate distances (miles) from a user coordinate to providers.
 
-    def _cached_geocode(addr):
-        if addr not in _geocode_cache:
-            try:
-                location = _geocode(addr, timeout=10)
-                if location:
-                    _geocode_cache[addr] = (location.latitude, location.longitude)
-                else:
-                    _geocode_cache[addr] = (None, None)
-            except GeocoderUnavailable as e:
-                _geocode_cache[addr] = (None, None)
-                print(f"GeocoderUnavailable for address '{addr}': {e}")
-            except Exception as e:
-                _geocode_cache[addr] = (None, None)
-                print(f"Geocoding error for address '{addr}': {e}")
-        return _geocode_cache[addr]
+    This is a thin wrapper that preserves the historic import path
+    `src.utils.providers.calculate_distances` while delegating the
+    implementation to `src.utils.consolidated_functions.calculate_distances`.
 
-    results = pd.Series(addresses).map(_cached_geocode)
-    lats, lons = zip(*results)
-    return list(lats), list(lons)
+    Args:
+        user_lat: Latitude of the user
+        user_lon: Longitude of the user
+        provider_df: DataFrame containing provider 'Latitude' and 'Longitude'
 
-
-@st.cache_data(ttl=60 * 60 * 24)
-def cached_geocode_address(q: str):
-    """Cached single-address geocode using Nominatim+RateLimiter.
-
-    Returns a geopy Location or None. TTL 24 hours to reuse results.
+    Returns:
+        A list of distances in miles (None for rows with invalid coords).
     """
-    try:
-        from geopy.extra.rate_limiter import RateLimiter
-        from geopy.geocoders import Nominatim
+    return _calculate_distances(user_lat, user_lon, provider_df)
 
-        geolocator_local = Nominatim(user_agent="provider_recommender")
-        geocode_local = RateLimiter(geolocator_local.geocode, min_delay_seconds=2, max_retries=3)
-        return geocode_local(q, timeout=10)
-    except GeocoderUnavailable:
-        return None
-    except Exception:
-        return None
+
+def recommend_provider(
+    provider_df: pd.DataFrame,
+    distance_weight: float = 0.5,
+    referral_weight: float = 0.5,
+    inbound_weight: float = 0.0,
+    min_referrals: Optional[int] = None,
+) -> Tuple[Optional[pd.Series], Optional[pd.DataFrame]]:
+    """Recommend a provider using the consolidated scoring algorithm.
+
+    This wrapper preserves the legacy import while delegating to the
+    canonical implementation in `consolidated_functions`.
+    """
+    return _recommend_provider(provider_df, distance_weight, referral_weight, inbound_weight, min_referrals)
+
+
+def validate_address(address: str) -> Tuple[bool, str]:
+    """Validate a free-form address string.
+
+    Delegates to `consolidated_functions.validate_address` and returns
+    (is_valid, message).
+    """
+    return _validate_address(address)
+
+
+def validate_and_clean_coordinates(df: pd.DataFrame) -> pd.DataFrame:
+    """Validate and clean provider coordinates in a DataFrame.
+
+    Returns a DataFrame with latitude/longitude converted to numeric and
+    warnings emitted for invalid ranges. See consolidated implementation
+    for details.
+    """
+    return _validate_and_clean_coordinates(df)
+
+
+def validate_provider_data(df: pd.DataFrame) -> tuple[bool, str]:
+    """Validate provider DataFrame quality and return (is_valid, message).
+
+    This wrapper ensures the function signature remains stable for callers
+    that import it from `src.utils.providers`.
+    """
+    return _validate_provider_data(df)
+
+
+def geocode_address_with_cache(address: str) -> Optional[Tuple[float, float]]:
+    """Geocode an address with caching; returns (lat, lon) or None.
+
+    Thin wrapper to preserve prior import behavior.
+    """
+    return _geocode_address_with_cache(address)
+
+
+def cached_geocode_address(address: str) -> Any:
+    """Return a geopy Location (or None) cached for longer TTL.
+
+    Return type is intentionally broad to match geopy Location objects.
+    """
+    return _cached_geocode_address(address)
+
+
+__all__ = [
+    "calculate_inbound_referral_counts",
+    "calculate_time_based_referral_counts",
+    "load_and_validate_provider_data",
+    # Backwards-compatible wrappers
+    "calculate_distances",
+    "recommend_provider",
+    "validate_address",
+    "validate_address_input",
+    "validate_and_clean_coordinates",
+    "validate_provider_data",
+    "geocode_address_with_cache",
+    "cached_geocode_address",
+]

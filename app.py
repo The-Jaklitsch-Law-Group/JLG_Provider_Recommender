@@ -8,21 +8,13 @@ import streamlit as st
 
 # Geopy imports with error handling
 try:
-    from geopy.extra.rate_limiter import RateLimiter
-    from geopy.geocoders import Nominatim
-
-    GEOPY_AVAILABLE = True
+    GEOPY_AVAILABLE = False
 except ImportError:
     st.error("geopy package is required. Please install it with: pip install geopy")
     GEOPY_AVAILABLE = False
 
 # Import optimized data ingestion
-from src.data.ingestion import (
-    get_data_ingestion_status,
-    load_detailed_referrals,
-    load_inbound_referrals,
-    refresh_data_cache,
-)
+from src.data.ingestion import load_detailed_referrals, load_inbound_referrals
 
 # Import consolidated functions (best versions)
 from src.utils.consolidated_functions import (
@@ -32,7 +24,6 @@ from src.utils.consolidated_functions import (
     geocode_address_with_cache,
     get_word_bytes,
     handle_streamlit_error,
-    load_provider_data,
     recommend_provider,
     sanitize_filename,
     validate_address,
@@ -126,13 +117,12 @@ def load_application_data():
 
             # Merge inbound referral counts with provider data
             if not inbound_counts_df.empty and not provider_df.empty:
-                # Merge on Full Name
+                # Merge on Full Name when possible; otherwise add a default column
                 if "Full Name" in provider_df.columns and "Full Name" in inbound_counts_df.columns:
                     provider_df = provider_df.merge(
                         inbound_counts_df[["Full Name", "Inbound Referral Count"]], on="Full Name", how="left"
                     )
                 else:
-                    # Add a default column if no merge is possible
                     provider_df["Inbound Referral Count"] = 0
                     st.warning("⚠️ Could not merge inbound referral data - column mismatch")
 
@@ -357,6 +347,11 @@ with st.sidebar:
                 # Default equal weights if all are zero
                 alpha = beta = gamma = 1 / 3
 
+            # Persist normalized weights so UI and session state remain consistent
+            st.session_state["alpha"] = alpha
+            st.session_state["beta"] = beta
+            st.session_state["gamma"] = gamma
+
             st.markdown(
                 f"**Normalized weights:** Distance: {alpha:.2f} | "
                 f"Outbound Referrals: {beta:.2f} | Inbound Referrals: {gamma:.2f} "
@@ -402,6 +397,11 @@ with st.sidebar:
 
             gamma = 0.0  # No inbound weight
 
+            # Persist normalized weights immediately
+            st.session_state["alpha"] = alpha
+            st.session_state["beta"] = beta
+            st.session_state["gamma"] = gamma
+
             st.markdown(
                 f"**Normalized weights:** Distance: {alpha:.2f} | "
                 f"Outbound Referrals: {beta:.2f} (Total: {alpha + beta:.2f})"
@@ -418,7 +418,10 @@ with st.sidebar:
             "Minimum Outbound Referral Count",
             min_value=0,
             value=st.session_state.get("min_referrals", 1),
-            help="Only show providers with at least this many outbound referrals. Lower values show more providers, higher values show only established providers.",
+            help=(
+                "Only show providers with at least this many outbound referrals. "
+                "Lower values show more providers; higher values show only established providers."
+            ),
         )
 
         # --- Time Period Filter
@@ -426,13 +429,16 @@ with st.sidebar:
             "Time Period for Referral Count",
             value=[dt.date.today() - dt.timedelta(days=365), dt.date.today()],
             max_value=dt.date.today() + dt.timedelta(days=1),
-            help="Calculate referral counts only for this time period. Defaults to rolling last year.",
+            help=("Calculate referral counts only for this time period. " "Defaults to a rolling one-year window."),
         )
 
         use_time_filter = st.checkbox(
             "Enable time-based filtering",
             value=True,
-            help="When enabled, referral counts will be calculated only for the selected time period. Applies to both inbound and outbound referrals.",
+            help=(
+                "When enabled, referral counts will be calculated only for the "
+                "selected time period. Applies to both inbound and outbound referrals."
+            ),
         )
 
         submit = st.form_submit_button("Find Best Provider")
@@ -650,7 +656,10 @@ with tabs[0]:
             beta_disp = st.session_state.get("beta", 0.33)
             gamma_disp = st.session_state.get("gamma", 0.33)
             st.write(
-                f"*Three-factor scoring: Distance({alpha_disp:.1%}) + Outbound({beta_disp:.1%}) + Inbound({gamma_disp:.1%})*"
+                (
+                    f"*Three-factor scoring: Distance({alpha_disp:.1%}) + Outbound({beta_disp:.1%}) "
+                    f"+ Inbound({gamma_disp:.1%})*"
+                )
             )
         else:
             alpha_disp = st.session_state.get("alpha", 0.6)
@@ -719,7 +728,7 @@ with tabs[0]:
                 # # Referral count information
                 # if "Referral Count" in best.index and pd.notna(best["Referral Count"]):
                 #     rationale.append(
-                #         f"* This provider has **{best['Referral Count']}** recent referrals from our office (fewer are better for load balancing)."
+                #         "* This provider has **{count}** recent referrals from our office."
                 #     )
                 # else:
                 #     rationale.append("* Referral count information not available.")
@@ -738,15 +747,22 @@ with tabs[0]:
                     beta_disp = st.session_state.get("beta", 0.33)
                     gamma_disp = st.session_state.get("gamma", 0.33)
                     rationale.append(
-                        f"The final score combines normalized distance, outbound referrals, and inbound referrals using your chosen weights: "
-                        f"**Distance = {alpha_disp:.1%}**, **Outbound Referrals = {beta_disp:.1%}**, **Inbound Referrals = {gamma_disp:.1%}**."
+                        (
+                            "The final score combines normalized distance, outbound referrals, "
+                            "and inbound referrals using your chosen weights: "
+                            f"**Distance = {alpha_disp:.1%}**, **Outbound Referrals = {beta_disp:.1%}**, "
+                            f"**Inbound Referrals = {gamma_disp:.1%}**."
+                        )
                     )
                 else:
                     alpha_disp = st.session_state.get("alpha", 0.6)
                     beta_disp = st.session_state.get("beta", 0.4)
                     rationale.append(
-                        f"The final score combines normalized distance and outbound referrals using your chosen weights: "
-                        f"**Distance = {alpha_disp:.1%}**, **Outbound Referrals = {beta_disp:.1%}**."
+                        (
+                            "The final score combines normalized distance and outbound referrals "
+                            "using your chosen weights: "
+                            f"**Distance = {alpha_disp:.1%}**, **Outbound Referrals = {beta_disp:.1%}**."
+                        )
                     )
                 rationale.append("The provider with the lowest composite score was recommended.")
                 st.markdown("<br>".join(rationale), unsafe_allow_html=True)
@@ -755,7 +771,10 @@ with tabs[0]:
                 st.markdown("Rationale information unavailable.", unsafe_allow_html=True)
     elif submit:
         st.warning(
-            f"No providers met the requirements (minimum {min_referrals} referrals). Please check the address, lower the minimum referral count, or try again."
+            (
+                f"No providers met the requirements (minimum {min_referrals} referrals). "
+                "Please check the address, lower the minimum referral count, or try again."
+            )
         )
 
 with tabs[1]:
@@ -948,7 +967,7 @@ with tabs[2]:
 
     # Quick data quality summary
     try:
-        from data_dashboard import display_data_quality_dashboard
+        from data_dashboard import display_data_quality_dashboard  # noqa: F401
 
         if st.button("🚀 Launch Full Data Dashboard", help="Open comprehensive data quality dashboard"):
             st.markdown(

@@ -520,8 +520,8 @@ class DataIngestionManager:
         coord_issues = 0
         if "Latitude" in df.columns and "Longitude" in df.columns:
             invalid_coords = (
-                (pd.isna(df["Latitude"]) == False)
-                & (pd.isna(df["Longitude"]) == False)
+                pd.notna(df["Latitude"])
+                & pd.notna(df["Longitude"])
                 & ((df["Latitude"] < -90) | (df["Latitude"] > 90) | (df["Longitude"] < -180) | (df["Longitude"] > 180))
             )
             coord_issues = invalid_coords.sum()

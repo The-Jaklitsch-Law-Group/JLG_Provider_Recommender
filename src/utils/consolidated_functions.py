@@ -1,28 +1,9 @@
-"""
-Consolidated Functions Module for JLG Provider Recommender
+"""Canonical utilities used by the provider recommender.
 
-This module contains the best versions of all functions that were found to be
-redundant across multiple modules. The functions have been carefully selected
-based on:
-- Most comprehensive implementation
-- Best error handling
-- Latest features and optimizations
-- Most complete documentation
-
-Functions are organized by category:
-1. Data Loading and Processing
-2. Address Validation and Geocoding
-3. Provider Recommendation and Scoring
-4. Data Validation and Quality Checks
-5. Utility Functions
-
-Original sources consolidated:
-- src/utils/providers.py
-- src/utils/validation.py
-- src/utils/performance.py
-- src/data/ingestion.py
-- app.py
-- data_dashboard.py
+This module centralizes implementations for data loading, address
+validation and geocoding, provider scoring, and helper utilities. It is the
+recommended import location for core helper functions used by the app and
+tests.
 """
 
 import functools
@@ -30,21 +11,81 @@ import io
 import logging
 import re
 import time
-from datetime import datetime, timedelta
+
+# datetime not required in this module
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 import psutil
 import streamlit as st
 from docx import Document
-from geopy.distance import geodesic
+
+# geopy.distance.geodesic intentionally not used here (kept for reference)
 from geopy.exc import GeocoderServiceError, GeocoderTimedOut, GeocoderUnavailable
 from geopy.geocoders import Nominatim
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# Common constants
+STATE_MAPPING = {
+    "ALABAMA": "AL",
+    "ALASKA": "AK",
+    "ARIZONA": "AZ",
+    "ARKANSAS": "AR",
+    "CALIFORNIA": "CA",
+    "COLORADO": "CO",
+    "CONNECTICUT": "CT",
+    "DELAWARE": "DE",
+    "FLORIDA": "FL",
+    "GEORGIA": "GA",
+    "HAWAII": "HI",
+    "IDAHO": "ID",
+    "ILLINOIS": "IL",
+    "INDIANA": "IN",
+    "IOWA": "IA",
+    "KANSAS": "KS",
+    "KENTUCKY": "KY",
+    "LOUISIANA": "LA",
+    "MAINE": "ME",
+    "MARYLAND": "MD",
+    "MASSACHUSETTS": "MA",
+    "MICHIGAN": "MI",
+    "MINNESOTA": "MN",
+    "MISSISSIPPI": "MS",
+    "MISSOURI": "MO",
+    "MONTANA": "MT",
+    "NEBRASKA": "NE",
+    "NEVADA": "NV",
+    "NEW HAMPSHIRE": "NH",
+    "NEW JERSEY": "NJ",
+    "NEW MEXICO": "NM",
+    "NEW YORK": "NY",
+    "NORTH CAROLINA": "NC",
+    "NORTH DAKOTA": "ND",
+    "OHIO": "OH",
+    "OKLAHOMA": "OK",
+    "OREGON": "OR",
+    "PENNSYLVANIA": "PA",
+    "RHODE ISLAND": "RI",
+    "SOUTH CAROLINA": "SC",
+    "SOUTH DAKOTA": "SD",
+    "TENNESSEE": "TN",
+    "TEXAS": "TX",
+    "UTAH": "UT",
+    "VERMONT": "VT",
+    "VIRGINIA": "VA",
+    "WASHINGTON": "WA",
+    "WEST VIRGINIA": "WV",
+    "WISCONSIN": "WI",
+    "WYOMING": "WY",
+    "DISTRICT OF COLUMBIA": "DC",
+}
+
+# Cached rate-limited geocoder (factory result) to avoid re-instantiation
+_RATE_LIMITED_GEOCODER = None
 
 
 # =============================================================================
@@ -157,60 +198,7 @@ def clean_address_data(df: pd.DataFrame) -> pd.DataFrame:
 
     # Standardize state abbreviations
     if "State" in df.columns:
-        state_mapping = {
-            "ALABAMA": "AL",
-            "ALASKA": "AK",
-            "ARIZONA": "AZ",
-            "ARKANSAS": "AR",
-            "CALIFORNIA": "CA",
-            "COLORADO": "CO",
-            "CONNECTICUT": "CT",
-            "DELAWARE": "DE",
-            "FLORIDA": "FL",
-            "GEORGIA": "GA",
-            "HAWAII": "HI",
-            "IDAHO": "ID",
-            "ILLINOIS": "IL",
-            "INDIANA": "IN",
-            "IOWA": "IA",
-            "KANSAS": "KS",
-            "KENTUCKY": "KY",
-            "LOUISIANA": "LA",
-            "MAINE": "ME",
-            "MARYLAND": "MD",
-            "MASSACHUSETTS": "MA",
-            "MICHIGAN": "MI",
-            "MINNESOTA": "MN",
-            "MISSISSIPPI": "MS",
-            "MISSOURI": "MO",
-            "MONTANA": "MT",
-            "NEBRASKA": "NE",
-            "NEVADA": "NV",
-            "NEW HAMPSHIRE": "NH",
-            "NEW JERSEY": "NJ",
-            "NEW MEXICO": "NM",
-            "NEW YORK": "NY",
-            "NORTH CAROLINA": "NC",
-            "NORTH DAKOTA": "ND",
-            "OHIO": "OH",
-            "OKLAHOMA": "OK",
-            "OREGON": "OR",
-            "PENNSYLVANIA": "PA",
-            "RHODE ISLAND": "RI",
-            "SOUTH CAROLINA": "SC",
-            "SOUTH DAKOTA": "SD",
-            "TENNESSEE": "TN",
-            "TEXAS": "TX",
-            "UTAH": "UT",
-            "VERMONT": "VT",
-            "VIRGINIA": "VA",
-            "WASHINGTON": "WA",
-            "WEST VIRGINIA": "WV",
-            "WISCONSIN": "WI",
-            "WYOMING": "WY",
-            "DISTRICT OF COLUMBIA": "DC",
-        }
-        df["State"] = df["State"].str.upper().map(state_mapping).fillna(df["State"])
+        df["State"] = df["State"].str.upper().map(STATE_MAPPING).fillna(df["State"])
 
     return df
 
@@ -307,24 +295,8 @@ def validate_address(address: str) -> Tuple[bool, str]:
 
     # Check for basic components
     has_number = any(char.isdigit() for char in address)
-    has_street_indicator = any(
-        indicator in address.lower()
-        for indicator in [
-            "street",
-            "st",
-            "avenue",
-            "ave",
-            "road",
-            "rd",
-            "drive",
-            "dr",
-            "lane",
-            "ln",
-            "way",
-            "blvd",
-            "boulevard",
-        ]
-    )
+    # street-type indicator check removed to avoid unused variable warnings;
+    # basic numeric and state/ZIP checks provide sufficient validation for now
 
     if not has_number:
         return False, "Address should include a street number"
@@ -498,16 +470,15 @@ def geocode_address_with_cache(address: str) -> Optional[Tuple[float, float]]:
         Tuple of (latitude, longitude) or None if failed
     """
     try:
-        geolocator = Nominatim(user_agent="jlg_provider_recommender")
-        location = geolocator.geocode(address, timeout=10)
+        # Use the shared rate-limited geocode helper
+        location = _get_rate_limited_geocoder()(address)
 
         if location:
             return (location.latitude, location.longitude)
-        else:
-            return None
+        return None
 
-    except (GeocoderTimedOut, GeocoderServiceError) as e:
-        st.warning(f"Geocoding service temporarily unavailable. Please try again.")
+    except (GeocoderTimedOut, GeocoderServiceError):
+        st.warning("Geocoding service temporarily unavailable. Please try again.")
         return None
     except Exception as e:
         st.error(f"Error geocoding address: {str(e)}")
@@ -515,22 +486,53 @@ def geocode_address_with_cache(address: str) -> Optional[Tuple[float, float]]:
 
 
 @st.cache_data(ttl=60 * 60 * 24)
-def cached_geocode_address(address: str):
-    """
-    Cached single-address geocode using Nominatim with rate limiting.
+def cached_geocode_address(address: str) -> Optional[Any]:
+    """Cached single-address geocode using Nominatim with rate limiting.
 
-    Returns a geopy Location or None. TTL 24 hours to reuse results.
+    Returns a geopy Location object or None. TTL is 24 hours to reuse results.
+    The return type is typed as Any to avoid coupling to geopy types in tests.
     """
     try:
-        from geopy.extra.rate_limiter import RateLimiter
-
-        geolocator_local = Nominatim(user_agent="provider_recommender")
-        geocode_local = RateLimiter(geolocator_local.geocode, min_delay_seconds=2, max_retries=3)
-        return geocode_local(address, timeout=10)
+        geocode_fn = _get_rate_limited_geocoder()
+        return geocode_fn(address)
     except GeocoderUnavailable:
         return None
     except Exception:
         return None
+
+
+# Shared rate-limited geocoder factory
+def _get_rate_limited_geocoder(min_delay_seconds: float = 1.0, max_retries: int = 3) -> Any:
+    """Return a callable geocode function with internal rate limiting.
+
+    This factory caches a single RateLimiter-wrapped geocode function per process.
+    The returned object is callable (address -> Location or None).
+    """
+    global _RATE_LIMITED_GEOCODER
+    if _RATE_LIMITED_GEOCODER is not None:
+        return _RATE_LIMITED_GEOCODER
+
+    try:
+        from geopy.extra.rate_limiter import RateLimiter
+
+        geolocator = Nominatim(user_agent="provider_recommender")
+        rate_limited = RateLimiter(geolocator.geocode, min_delay_seconds=min_delay_seconds, max_retries=max_retries)
+
+        # Return a wrapper that accepts (address) and forwards timeout
+        def geocode_fn(q, timeout=10):
+            return rate_limited(q, timeout=timeout)
+
+        _RATE_LIMITED_GEOCODER = geocode_fn
+        return _RATE_LIMITED_GEOCODER
+    except Exception:
+        # Fallback to direct geocode call (may raise) if RateLimiter unavailable
+        def fallback(q, timeout=10):
+            geolocator = Nominatim(user_agent="provider_recommender")
+            # Do not forward timeout in fallback to avoid strict type issues in some environments
+            return geolocator.geocode(q)
+
+        _RATE_LIMITED_GEOCODER = fallback
+        return _RATE_LIMITED_GEOCODER
 
 
 def handle_geocoding_error(address: str, error: Exception) -> str:
@@ -538,19 +540,21 @@ def handle_geocoding_error(address: str, error: Exception) -> str:
     error_type = type(error).__name__
 
     if "timeout" in str(error).lower():
-        return f"⏱️ **Geocoding Timeout**: The address lookup service is taking too long. Please try again in a moment."
+        return "⏱️ **Geocoding Timeout**: The address lookup service is taking too long. Please try again in a moment."
 
-    elif "unavailable" in str(error).lower() or "service" in str(error).lower():
-        return f"🔌 **Service Unavailable**: The geocoding service is temporarily unavailable. Please try again later."
+    if "unavailable" in str(error).lower() or "service" in str(error).lower():
+        return "🔌 **Service Unavailable**: The geocoding service is temporarily unavailable. Please try again later."
 
-    elif "rate" in str(error).lower() or "limit" in str(error).lower():
-        return f"🚦 **Rate Limited**: Too many requests to the geocoding service. Please wait a moment and try again."
+    if "rate" in str(error).lower() or "limit" in str(error).lower():
+        return "🚦 **Rate Limited**: Too many requests to the geocoding service. Please wait a moment and try again."
 
-    elif "network" in str(error).lower() or "connection" in str(error).lower():
-        return f"🌐 **Network Error**: Cannot connect to the geocoding service. Please check your internet connection."
+    if "network" in str(error).lower() or "connection" in str(error).lower():
+        return "🌐 **Network Error**: Cannot connect to the geocoding service. Please check your internet connection."
 
-    else:
-        return f"❌ **Geocoding Error**: Unable to find location for '{address}'. Please check the address and try again. (Error: {error_type})"
+    return (
+        f"❌ **Geocoding Error**: Unable to find location for '{address}'. "
+        f"Please check the address and try again. (Error: {error_type})"
+    )
 
 
 # =============================================================================
@@ -629,11 +633,10 @@ def recommend_provider(
         KeyError: If required columns ('Distance (Miles)', 'Referral Count') are missing
 
     Algorithm:
-        1. Filters out providers with missing distance or referral data
+        1. Filters providers missing distance or referral data
         2. Applies minimum referral threshold if specified
-        3. Normalizes distance (0-1, lower is better), outbound referral count (0-1, higher is better),
-           and inbound referral count (0-1, higher is better)
-        4. Calculates composite score: distance_weight * norm_distance + referral_weight * (1 - norm_referrals) + inbound_weight * norm_inbound
+        3. Normalizes distance, outbound, and inbound referral counts to 0-1 range
+        4. Calculates composite score using the provided weights
         5. Returns provider with lowest composite score
 
     Examples:
@@ -641,17 +644,24 @@ def recommend_provider(
         >>> best, scored = recommend_provider(providers_df)
 
         >>> # Include inbound referrals in scoring
-        >>> best, scored = recommend_provider(providers_df, distance_weight=0.4, referral_weight=0.4, inbound_weight=0.2)
+    >>> best, scored = recommend_provider(
+    ...     providers_df, distance_weight=0.4, referral_weight=0.4, inbound_weight=0.2
+    ... )
 
-        >>> # Prioritize distance over referral history
-        >>> best, scored = recommend_provider(providers_df, distance_weight=0.8, referral_weight=0.2)
+    >>> # Prioritize distance over referral history
+    >>> best, scored = recommend_provider(
+    ...     providers_df, distance_weight=0.8, referral_weight=0.2
+    ... )
 
-        >>> # Only consider providers with at least 5 referrals
-        >>> best, scored = recommend_provider(providers_df, min_referrals=5)
+    >>> # Only consider providers with at least 5 referrals
+    >>> best, scored = recommend_provider(
+    ...     providers_df, min_referrals=5
+    ... )
 
     Note:
         - Returns (None, None) if no providers meet the criteria
-        - Weights don't need to sum to 1.0, but typical usage has distance_weight + referral_weight + inbound_weight = 1.0
+                - Weights don't need to sum to 1.0. Typical usage sets
+                    distance_weight + referral_weight + inbound_weight = 1.0
         - Lower composite scores indicate better recommendations
         - If 'Inbound Referral Count' column is missing, inbound_weight is ignored
     """
@@ -827,9 +837,13 @@ def validate_and_clean_coordinates(df: pd.DataFrame) -> pd.DataFrame:
 
         if invalid_coords.any():
             # Log providers with invalid coordinates but don't remove them
-            invalid_count = invalid_coords.sum()
+            invalid_count = int(invalid_coords.sum())
             st.warning(
-                f"⚠️ {invalid_count} providers have invalid or missing coordinates and will not appear in distance calculations."
+                (
+                    "⚠️ %d providers have invalid or missing coordinates; "
+                    "they may be excluded from distance calculations."
+                )
+                % (invalid_count,)
             )
 
     return df
@@ -869,7 +883,7 @@ def sanitize_filename(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_]", "", name.replace(" ", "_"))
 
 
-def handle_streamlit_error(error: Exception, context: str = "operation"):
+def handle_streamlit_error(error: Exception, context: str = "operation") -> None:
     """
     Handle errors gracefully in Streamlit with user-friendly messages.
 
@@ -877,19 +891,23 @@ def handle_streamlit_error(error: Exception, context: str = "operation"):
         error: The exception that occurred
         context: Context description for the error
     """
-    error_type = type(error).__name__
     error_message = str(error)
 
     if "geocod" in error_message.lower():
         st.error(
-            f"❌ **Geocoding Error**: Unable to find coordinates for the provided address. Please check the address format and try again."
+            (
+                "❌ **Geocoding Error**: Unable to find coordinates for the provided address. "
+                "Please check the address format and try again."
+            )
         )
     elif "network" in error_message.lower() or "connection" in error_message.lower():
-        st.error(f"❌ **Network Error**: Unable to connect to geocoding service. Please check your internet connection.")
+        st.error(
+            ("❌ **Network Error**: Unable to connect to geocoding service. " "Please check your internet connection.")
+        )
     elif "timeout" in error_message.lower():
-        st.error(f"❌ **Timeout Error**: The geocoding service is taking too long to respond. Please try again.")
+        st.error("❌ **Timeout Error**: The geocoding service is taking too long to respond. Please try again.")
     elif "file" in error_message.lower() or "not found" in error_message.lower():
-        st.error(f"❌ **Data Error**: Required data files are missing. Please contact support.")
+        st.error("❌ **Data Error**: Required data files are missing. Please contact support.")
     else:
         st.error(f"❌ **Error during {context}**: {error_message}")
 

@@ -25,7 +25,7 @@ gatherUsageStats = false
 magicEnabled = false
 
 # Disable installation tracer for faster startup
-# installTracer = false
+installTracer = false
 
 # Enable fast re-run for better user experience
 fastReruns = true

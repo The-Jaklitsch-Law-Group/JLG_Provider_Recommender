@@ -1,10 +1,12 @@
-"""Utilities package for JLG Provider Recommender."""
+"""Utilities package for JLG Provider Recommender.
 
-"""Utilities package for JLG Provider Recommender."""
+Re-export stable helper functions from the canonical utilities module.
+"""
 
-# Import main utility functions from consolidated module
+# Consolidated exports
 from .consolidated_functions import (
     build_full_address,
+    cached_geocode_address,
     calculate_distances,
     clean_address_data,
     geocode_address_with_cache,
@@ -19,12 +21,10 @@ from .consolidated_functions import (
     validate_provider_data,
 )
 
-# Import remaining functions from providers module
+# Provider-specific helpers
 from .providers import (
-    cached_geocode_address,
     calculate_inbound_referral_counts,
     calculate_time_based_referral_counts,
-    geocode_address,
     load_and_validate_provider_data,
 )
 
@@ -34,6 +34,7 @@ __all__ = [
     "calculate_distances",
     "clean_address_data",
     "geocode_address_with_cache",
+    "cached_geocode_address",
     "get_word_bytes",
     "handle_streamlit_error",
     "load_provider_data",
@@ -47,6 +48,4 @@ __all__ = [
     "calculate_inbound_referral_counts",
     "calculate_time_based_referral_counts",
     "load_and_validate_provider_data",
-    "cached_geocode_address",
-    "geocode_address",
 ]

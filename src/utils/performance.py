@@ -1,8 +1,7 @@
-"""
-Performance monitoring utilities for the JLG Provider Recommender.
+"""Performance monitoring utilities.
 
-This module provides decorators and utilities for monitoring function performance,
-logging slow operations, and tracking system health metrics.
+Provides decorators and helpers to monitor function execution time, log slow
+operations, and collect basic system health metrics for diagnostics.
 """
 
 import functools
@@ -14,9 +13,8 @@ from typing import Any, Callable, Dict, Optional
 import pandas as pd
 import psutil
 
-# Configure performance logging
-logging.basicConfig(level=logging.INFO)
-perf_logger = logging.getLogger("performance")
+# Use a module-level logger; avoid configuring logging at import time
+perf_logger = logging.getLogger(__name__)
 
 # Global performance metrics storage
 _performance_metrics: Dict[str, Dict] = {}
@@ -175,7 +173,6 @@ class PerformanceTracker:
     @staticmethod
     def reset_metrics():
         """Reset all performance metrics."""
-        global _performance_metrics
         _performance_metrics.clear()
         perf_logger.info("Performance metrics reset")
 

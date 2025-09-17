@@ -2,14 +2,13 @@
 
 from datetime import datetime, timedelta
 
-import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.data.ingestion import load_detailed_referrals, load_inbound_referrals, load_provider_data
-from src.utils.consolidated_functions import validate_and_clean_coordinates, validate_provider_data
+from src.data.ingestion import load_detailed_referrals, load_provider_data
+from src.utils.consolidated_functions import validate_provider_data
 
 
 def calculate_referral_counts(provider_df, detailed_df):

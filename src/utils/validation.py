@@ -1,7 +1,6 @@
-"""
-Simple validation utilities for JLG Provider Recommender.
+"""Validation utilities for addresses, coordinates, and phone numbers.
 
-Provides basic data validation functions used across the application.
+Small, self-contained helpers used across the application and tests.
 """
 
 import re

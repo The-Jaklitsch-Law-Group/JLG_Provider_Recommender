@@ -7,7 +7,6 @@ that can be imported directly into the Streamlit app for cloud hosting.
 """
 
 import base64
-import os
 from pathlib import Path
 
 
