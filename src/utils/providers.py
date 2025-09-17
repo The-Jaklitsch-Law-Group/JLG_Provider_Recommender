@@ -12,14 +12,14 @@ from typing import Any, List, Optional, Tuple
 import pandas as pd
 import streamlit as st
 
-from .consolidated_functions import cached_geocode_address as _cached_geocode_address
-from .consolidated_functions import calculate_distances as _calculate_distances
-from .consolidated_functions import geocode_address_with_cache as _geocode_address_with_cache
-from .consolidated_functions import recommend_provider as _recommend_provider
-from .consolidated_functions import safe_numeric_conversion
-from .consolidated_functions import validate_address as _validate_address
-from .consolidated_functions import validate_and_clean_coordinates as _validate_and_clean_coordinates
-from .consolidated_functions import validate_provider_data as _validate_provider_data
+from .addressing import validate_address as _validate_address
+from .cleaning import safe_numeric_conversion
+from .cleaning import validate_and_clean_coordinates as _validate_and_clean_coordinates
+from .cleaning import validate_provider_data as _validate_provider_data
+from .geocoding import cached_geocode_address as _cached_geocode_address
+from .geocoding import geocode_address_with_cache as _geocode_address_with_cache
+from .scoring import calculate_distances as _calculate_distances
+from .scoring import recommend_provider as _recommend_provider
 from .validation import validate_address_input
 
 logger = logging.getLogger(__name__)

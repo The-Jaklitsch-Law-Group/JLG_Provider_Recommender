@@ -15,22 +15,17 @@ except ImportError:
 
 # Import optimized data ingestion
 from src.data.ingestion import load_detailed_referrals, load_inbound_referrals
+from src.utils.addressing import validate_address, validate_address_input
 
 # Import consolidated functions (best versions)
-from src.utils.consolidated_functions import (
+from src.utils.cleaning import (
     build_full_address,
-    calculate_distances,
     clean_address_data,
-    geocode_address_with_cache,
-    get_word_bytes,
-    handle_streamlit_error,
-    recommend_provider,
-    sanitize_filename,
-    validate_address,
-    validate_address_input,
     validate_and_clean_coordinates,
     validate_provider_data,
 )
+from src.utils.geocoding import geocode_address_with_cache
+from src.utils.io_utils import get_word_bytes, handle_streamlit_error, sanitize_filename
 
 # Import remaining functions from providers that are not consolidated
 from src.utils.providers import (
@@ -38,6 +33,7 @@ from src.utils.providers import (
     calculate_time_based_referral_counts,
     load_and_validate_provider_data,
 )
+from src.utils.scoring import calculate_distances, recommend_provider
 
 # --- Helper Functions ---
 

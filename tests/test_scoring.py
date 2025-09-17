@@ -1,6 +1,6 @@
 import pandas as pd
 
-from src.utils.consolidated_functions import recommend_provider
+from src.utils.scoring import recommend_provider
 
 
 def test_recommend_provider_basic():
