@@ -1,17 +1,27 @@
 import datetime as dt
 import traceback
 from pathlib import Path
+from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 
-# Geopy imports with error handling
+# Streamlit page config must be set before any UI calls (warnings or images).
+st.set_page_config(page_title="Provider Recommender", page_icon=":hospital:", layout="wide")
+
+# Check geopy availability before importing geocoding helpers.
+# geocoding helpers (src.utils.geocoding) import geopy at module level, so
+# we must detect geopy first to avoid import-time failures when it's missing.
 try:
+    import geopy  # noqa: F401
+
+    GEOPY_AVAILABLE = True
+except Exception:
     GEOPY_AVAILABLE = False
-except ImportError:
-    st.error("geopy package is required. Please install it with: pip install geopy")
-    GEOPY_AVAILABLE = False
+    st.warning(
+        "geopy package not available. Geocoding features will be disabled. " "Install it with: pip install geopy"
+    )
 
 # Import optimized data ingestion
 from src.data.ingestion import load_detailed_referrals, load_inbound_referrals
@@ -24,7 +34,24 @@ from src.utils.cleaning import (
     validate_and_clean_coordinates,
     validate_provider_data,
 )
-from src.utils.geocoding import geocode_address_with_cache
+
+if GEOPY_AVAILABLE:
+    # Import the real geocoding helper (depends on geopy)
+    from src.utils.geocoding import geocode_address_with_cache
+else:
+    # Provide a lightweight fallback so the app can still load without geopy.
+    def geocode_address_with_cache(address: str) -> Optional[Tuple[float, float]]:
+        """Fallback geocode function used when geopy is not installed.
+
+        Returns None and shows a helpful Streamlit message.
+        """
+        st.error(
+            "Geocoding is unavailable because the 'geopy' package is not installed. "
+            "Install it with: pip install geopy to enable address lookup."
+        )
+        return None
+
+
 from src.utils.io_utils import get_word_bytes, handle_streamlit_error, sanitize_filename
 
 # Import remaining functions from providers that are not consolidated
@@ -210,6 +237,22 @@ def apply_time_filtering(provider_df, detailed_referrals_df, start_date, end_dat
     return working_df
 
 
+def filter_providers_by_radius(df: pd.DataFrame, max_radius_miles: float) -> pd.DataFrame:
+    """Filter providers by maximum radius (in miles).
+
+    Expects the DataFrame to already contain a "Distance (Miles)" column.
+    Returns a new filtered DataFrame (copy).
+    """
+    if df is None or df.empty:
+        return df
+
+    # Avoid KeyError if Distance column missing
+    if "Distance (Miles)" not in df.columns:
+        return df
+
+    return df[df["Distance (Miles)"] <= max_radius_miles].copy()
+
+
 # Load data using enhanced function
 with st.spinner("Loading provider data..."):
     # Load base data without time filtering initially
@@ -229,9 +272,6 @@ else:
 
 # --- Set random seed for reproducibility ---
 np.random.seed(42)  # Ensures consistent placeholder data and recommendations across runs
-
-# --- Streamlit Page Config ---
-st.set_page_config(page_title="Provider Recommender", page_icon=":hospital:", layout="wide")
 
 # --- Company Logo and Title at Top ---
 st.image("assets/JaklitschLaw_NewLogo_withDogsRed.jpg", width=100)
@@ -439,6 +479,19 @@ with st.sidebar:
 
         submit = st.form_submit_button("Find Best Provider")
 
+        # --- Maximum radius (miles) ---
+        max_radius_miles = st.slider(
+            "Maximum Search Radius (miles)",
+            min_value=1,
+            max_value=200,
+            value=st.session_state.get("max_radius_miles", 25),
+            step=1,
+            help="Exclude providers beyond this radius from the recommendation (in miles).",
+        )
+
+        # Persist radius
+        st.session_state["max_radius_miles"] = max_radius_miles
+
         # Real-time address validation
         if street or city or state or zipcode:
             addr_valid, addr_message = validate_address_input(street or "", city or "", state or "", zipcode or "")
@@ -555,7 +608,26 @@ with tabs[0]:
                 working_df = provider_df
 
             filtered_df = working_df[working_df["Referral Count"] >= min_referrals].copy()
+            # Calculate distances (miles)
             filtered_df["Distance (Miles)"] = calculate_distances(user_lat, user_lon, filtered_df)
+
+            # Read max radius (miles) from session state (default 25 miles)
+            max_radius_miles = st.session_state.get("max_radius_miles", 25)
+
+            pre_filter_count = len(filtered_df)
+            filtered_df = filter_providers_by_radius(filtered_df, max_radius_miles)
+            post_filter_count = len(filtered_df)
+
+            if pre_filter_count != post_filter_count:
+                st.info(
+                    f"Filtered out {pre_filter_count - post_filter_count} providers beyond {max_radius_miles} miles."
+                )
+
+            if filtered_df.empty:
+                st.warning(
+                    f"No providers found within {max_radius_miles} miles. Try increasing the maximum radius, lowering the minimum referral count, or adjusting the address."
+                )
+                return None, None
             best, scored_df = recommend_provider(
                 filtered_df,
                 distance_weight=alpha,
@@ -576,6 +648,7 @@ with tabs[0]:
                 "beta": beta,
                 "gamma": gamma,
                 "min_referrals": min_referrals,
+                "max_radius_miles": st.session_state.get("max_radius_miles", 25),
             }
 
             return best, scored_df
@@ -687,7 +760,8 @@ with tabs[0]:
             st.dataframe(
                 display_df,
                 hide_index=True,
-                use_container_width=True,
+                # use_container_width=True,
+                width="stretch",
             )
         else:
             st.error("Unable to display results: required columns not found in data.")
