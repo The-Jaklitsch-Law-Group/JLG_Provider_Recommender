@@ -1,103 +1,206 @@
-# Copilot Instructions: JLG Provider Recommender
+# JLG Provider Recommender – Copilot Development Guide
 
 ## Project Overview
-A Streamlit-based healthcare provider recommendation system for The Jaklitsch Law Group. The app geocodes client addresses and recommends medical providers based on proximity and referral history.
+
+A **Streamlit-based healthcare provider recommendation system** for The Jaklitsch Law Group. The application geocodes client addresses and recommends medical providers based on proximity and referral history.
+
+The **end user** is non-technical and requires a **simple, reliable, and accessible interface**. Data ingestion occurs weekly, while provider searches must remain highly performant.
+
+---
 
 ## Architecture & Data Flow
 
 ### Core Components
-- **`app.py`**: Main Streamlit application with 4 tabs (Find Provider, How Selection Works, Data Quality, Update Data)
-- **`data_dashboard.py`**: Standalone data quality monitoring dashboard
-- **`src/data/ingestion.py`**: Centralized data loading with smart format prioritization (Parquet > Excel)
-- **`src/utils/providers.py`**: Provider recommendation algorithm and geocoding utilities
-- **`prepare_contacts/contact_cleaning.ipynb`**: Jupyter notebook for data preprocessing
+
+- \`\` – Main Streamlit app with 4 tabs:
+  - **Find Provider** (main workflow)
+  - **How Selection Works** (explanation)
+  - **Data Quality** (metrics and validation results)
+  - **Update Data** (manual refresh)
+- \`\` – Standalone Streamlit dashboard for monitoring data quality.
+- \`\` – Centralized data loading, file registry, and enum-based `DataSource` management.
+- \`\` – Recommendation algorithm, geocoding utilities, distance calculation, and scoring logic.
+- \`\` – Performance decorators and system health tracking.
+- \`\` – Jupyter notebook for weekly preprocessing.
 
 ### Data Processing Pipeline
-1. **Raw Data**: Excel files in `data/raw/` (Referrals_App_Full_Contacts.xlsx)
-2. **Processed Data**: Optimized Parquet files in `data/processed/` (cleaned_*.parquet)
-3. **Data Sources**: Inbound referrals, outbound referrals, and provider data unified through `DataIngestionManager`
 
-## Key Development Patterns
+1. **Raw Data**: Excel in `data/raw/` (e.g., `Referrals_App_Full_Contacts.xlsx`).
+2. **Cleaned Data**: Parquet in `data/processed/` (e.g., `cleaned_providers.parquet`).
+3. **Load Strategy**: Prefer `cleaned_*.parquet` → `original_*.parquet` → raw Excel.
+4. **Data Access**: Always via `DataIngestionManager.load_data(DataSource.ENUM_VALUE)`.
 
-### Data Loading Strategy
-- **Priority order**: `cleaned_*.parquet` → `original_*.parquet` → `*.xlsx`
-- Always use `DataIngestionManager` for data access, not direct file loading
-- Leverage `@st.cache_data(ttl=3600)` for performance optimization
+### Data Schema
 
-### Provider Recommendation Algorithm
-Located in `src/utils/providers.py`, uses multi-factor scoring:
-- **Distance weight** (alpha): Geographic proximity via geopy/geodesic
-- **Referral count weight** (beta): Historical referral frequency
-- **Time decay** (gamma): Recent referral preference
-- Algorithm: `score = alpha * (1/distance) + beta * referral_count + gamma * time_factor`
+**Raw Excel Input**:
 
-### Geocoding Implementation
-- Uses Nominatim (free service) with `RateLimiter(min_delay_seconds=2, max_retries=3)`
-- Implements caching via `geocode_address_with_cache()` function
-- Address validation through `validate_address()` before geocoding
-- Coordinate validation: lat (-90,90), lng (-180,180)
-- No API keys required - relies on OpenStreetMap's Nominatim service
+- `case_id: str` (unique)
+- `signup_date: date`
+- `provider_name: str`
+- `provider_address: str`
+- `provider_phone: str`
+- `direction: enum['inbound','outbound']`
 
-## Development Workflows
+**Processed Parquet Output**:
 
-### Local Development
-```bash
-# Install dependencies
-pip install -r requirements.txt
+- `provider_id: str`
+- `provider_name: str`
+- `address_clean: str`
+- `lat: float`
+- `lon: float`
+- `in_ref_count: int`
+- `out_ref_count: int`
+- `last_referral_date: date`
 
-# Run main app
-streamlit run app.py
+---
 
-# Run data quality dashboard
-streamlit run data_dashboard.py --server.port 8502
+## Provider Recommendation Algorithm
+
+Located in `src/utils/providers.py`.
+
+### Formula
+
+```python
+score = (1 - distance_norm) * w_dist \
+      + in_ref_norm * w_in \
+      + out_ref_norm * w_out
 ```
 
-### Manual Weekly Data Update Workflow
-1. **Upload**: Place new Excel files in `data/raw/` (typically `Referrals_App_Full_Contacts.xlsx`)
-2. **Clean**: Run `prepare_contacts/contact_cleaning.ipynb` to generate cleaned Parquet files
-3. **Refresh**: Use "Update Data" tab in app or call `refresh_data_cache()` to clear Streamlit cache
-4. **Validate**: Check "Data Quality" tab for data integrity metrics and ensure new data loaded correctly
+- **Distance normalization**: `distance_norm = min(distance_km / MAX_RADIUS, 1)`
+- **Referral normalization**: min–max scaling on current dataset
+- **Weights**: `w_dist + w_in + w_out = 1`
+  - Defaults: `w_dist = 0.5`, `w_in = 0.3`, `w_out = 0.2`
+  - Sliders: range [0,1], auto-normalized
+- **Optional ratio feature**: `ratio = out/in capped at RATIO_CAP`
 
-### Data Validation
-- Use `src/utils/validation.py` to test data ingestion workflow integrity
-- Data quality metrics available through `data_dashboard.py`
-- Manual verification through app's "Data Quality" tab after each weekly update
+### Tie-Breakers
 
-## Critical Integration Points
+1. Lower distance
+2. Higher inbound referrals
+3. Alphabetical provider name
 
-### Streamlit Session State Management
-Key session variables in `app.py`:
-- `user_lat`, `user_lon`: Geocoded client coordinates
-- `last_best`, `last_scored_df`: Cached recommendation results
-- Scoring parameters: `alpha`, `beta`, `gamma`, `scoring_type`
+### Exclusions
 
-### Cross-Module Dependencies
-- `src.data.ingestion` → `src.utils.providers` for data loading
-- `app.py` imports both data and utils modules
-- `data_dashboard.py` uses same ingestion patterns as main app
+- Exclude providers beyond `MAX_RADIUS` (default: 50 km)
 
-### File Format Handling
-- **Excel**: `pd.read_excel()` with `openpyxl` engine
-- **Parquet**: `pd.read_parquet()` with `pyarrow` backend
-- **Address formatting**: Concatenated as "Street, City, State Zip"
-- **Phone numbers**: Formatted as "(XXX) XXX-XXXX" via `clean_phone_number()`
+---
 
-## Project-Specific Conventions
+## Geocoding & Distance Calculation
 
-### Error Handling
-- Geocoding errors caught with geopy-specific exceptions: `GeocoderServiceError`, `GeocoderTimedOut`
-- Data loading uses graceful fallbacks through `DataIngestionManager._get_best_available_file()`
-- Missing data handled with pandas `.fillna("")` for address components
+- **Interface**: `Geocoder.get_latlon(address: str) -> tuple[float, float]`
+- **Default**: Nominatim (rate-limited, cached)
+- **Optional**: Google Maps API (`GOOGLE_MAPS_API_KEY` in `.env`)
+- **Caching**:
+  - Geocodes: TTL = 30 days
+  - Search results: TTL = 10 minutes
+- **Distance**: Vectorized haversine (NumPy) across all providers
 
-### Performance Optimizations
-- Streamlit caching with 1-hour TTL on all data loading functions
-- Parquet format preferred for 10x faster loading vs Excel
-- Rate-limited geocoding to prevent service blocking
-- Lazy loading through `DataIngestionManager.load_data()`
-- Weekly data refresh cycle maintains manageable dataset sizes
+---
 
-### UI/UX Patterns
-- Always show spinner feedback: `with st.spinner("🔍 Finding your location..."):`
-- Use emoji prefixes for visual clarity: "✅", "❌", "🔍", "📊"
-- Tab-based navigation in main app: Find Provider | How Selection Works | Data Quality | Update Data
-- Sidebar for algorithm parameter tuning (alpha, beta, gamma sliders)
+## Data Cleaning & Validation
+
+- Convert Excel dates to UTC datetime
+- Normalize provider names (trim, uppercase)
+- Standardize phone numbers (E.164)
+- Address normalization via `clean_address_data()`
+- Deduplicate providers on `(provider_name, normalized_address)`
+- Validation rules:
+  - Non-null `case_id`
+  - Valid dates ≥ 2010
+  - Geocode hit rate ≥ 98%
+  - Duplicate rate < 1%
+
+---
+
+## Session State Management
+
+Key variables in `app.py`:
+
+- `user_lat`, `user_lon`
+- `last_best`, `last_scored_df`
+- Scoring parameters: `w_dist`, `w_in`, `w_out`
+- Message deduplication flags (e.g., `time_filter_msg_{start}_{end}`)
+
+---
+
+## UI / UX Requirements
+
+### Find Provider Tab
+
+- **Inputs**: client address form (Street, City, State, Zip)
+- **Controls**: sliders for distance vs referral weights
+- **Action**: **Search** button
+- **Outputs**:
+  - **Top Recommendation card** (provider name, distance, score)
+  - **Results table** (sortable, downloadable as CSV)
+
+### Data Quality Tab
+
+- Validation metrics: duplicates, geocode success rate, missing fields
+- Visual indicators with ✅/❌ icons
+
+### Update Data Tab
+
+- File uploader for new Excel files
+- Run cleaning and preprocessing pipeline
+- Refresh Streamlit cache
+
+### Accessibility
+
+- All form elements labeled
+- Keyboard navigation supported
+- Color-contrast compliant
+
+---
+
+## Performance & Monitoring
+
+- Use Streamlit caching (`@st.cache_data`) for ingestion and geocoding
+- Prefer Parquet over Excel for 10× faster loading
+- Apply performance decorators from `performance.py` to track execution and memory
+- Target: **<500 ms** response time for 5,000 providers
+
+---
+
+## Testing Strategy
+
+- **Unit Tests**:
+  - Data cleaning functions
+  - Geocode caching and fallback
+  - Scoring function correctness
+- **Integration Tests**:
+  - End-to-end provider search workflow
+  - Combined ingestion and recommendation
+- **Mocks**: Replace geocoding API calls with static fixtures during tests
+- **Test Files**:
+  - `test_app_functionality.py`
+  - `test_deduplication.py`
+  - `test_comprehensive.py`
+
+---
+
+## Weekly Data Update Workflow
+
+1. Place new Excel file in `data/raw/`
+2. Run `contact_cleaning.ipynb` to produce cleaned Parquet
+3. Use the **Update Data** tab or call `refresh_data_cache()`
+4. Verify results in the **Data Quality** tab
+
+---
+
+## Error Handling
+
+- **Geocoding**: catch `GeocoderServiceError`, `GeocoderTimedOut`
+- **Data loading**: graceful fallback via `DataIngestionManager`
+- **Missing fields**: handle with `.fillna('')`
+- **Streamlit**: use `handle_streamlit_error(e, context)` for user-friendly error messages
+
+---
+
+## Conventions & Best Practices
+
+- Use emojis for clarity: ✅ ❌ 🔍 📊
+- Tab-based navigation with sidebar sliders
+- Always clean address data before geocoding
+- Cache geocoding results for 24h+ to respect rate limits
+- Enforce GitHub Actions CI with `mypy`, `ruff`, and `pytest` on pull requests

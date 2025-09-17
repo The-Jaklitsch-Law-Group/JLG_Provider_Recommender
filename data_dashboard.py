@@ -8,15 +8,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.data.ingestion import (
-    load_detailed_referrals,
-    load_inbound_referrals,
-    load_provider_data,
-)
-from src.utils.providers import (
-    validate_and_clean_coordinates,
-    validate_provider_data,
-)
+from src.data.ingestion import load_detailed_referrals, load_inbound_referrals, load_provider_data
+from src.utils.consolidated_functions import validate_and_clean_coordinates, validate_provider_data
 
 
 def calculate_referral_counts(provider_df, detailed_df):
@@ -29,7 +22,7 @@ def calculate_referral_counts(provider_df, detailed_df):
     else:
         # If no detailed referral data, set all counts to 0
         provider_df["Referral Count"] = 0
-    
+
     return provider_df
 
 

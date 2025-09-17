@@ -21,17 +21,18 @@ from src.data.ingestion import (
     get_data_ingestion_status,
     load_detailed_referrals,
     load_inbound_referrals,
-    load_provider_data,
     refresh_data_cache,
 )
-from src.utils.providers import (  # Import new enhanced functions
+
+# Import consolidated functions (best versions)
+from src.utils.consolidated_functions import (
+    build_full_address,
     calculate_distances,
-    calculate_inbound_referral_counts,
-    calculate_time_based_referral_counts,
+    clean_address_data,
     geocode_address_with_cache,
     get_word_bytes,
     handle_streamlit_error,
-    load_and_validate_provider_data,
+    load_provider_data,
     recommend_provider,
     sanitize_filename,
     validate_address,
@@ -40,86 +41,14 @@ from src.utils.providers import (  # Import new enhanced functions
     validate_provider_data,
 )
 
+# Import remaining functions from providers that are not consolidated
+from src.utils.providers import (
+    calculate_inbound_referral_counts,
+    calculate_time_based_referral_counts,
+    load_and_validate_provider_data,
+)
+
 # --- Helper Functions ---
-
-
-# --- Helper Functions ---
-
-
-def clean_address_data(df):
-    """Clean and standardize address data, handling mixed types and missing values."""
-    if df.empty:
-        return df
-
-    df = df.copy()
-
-    # List of potential address-related columns
-    address_columns = [
-        "Street",
-        "City",
-        "State",
-        "Zip",
-        "Full Address",
-        "Address",
-        "Address Line 1",
-        "Address Line 2",
-        "Zip Code",
-        "Postal Code",
-        "Province",
-    ]
-
-    # Clean each address column that exists
-    for col in address_columns:
-        if col in df.columns:
-            # Convert to string and handle various null representations
-            df[col] = df[col].astype(str)
-            df[col] = df[col].replace({"nan": "", "None": "", "NaN": "", "null": "", "NULL": "", "<NA>": ""})
-            df[col] = df[col].fillna("")
-
-            # Strip whitespace
-            df[col] = df[col].str.strip()
-
-    return df
-
-
-def build_full_address(df):
-    """Build Full Address from components, handling missing values safely."""
-    if df.empty:
-        return df
-
-    df = df.copy()
-
-    # Ensure all address columns are strings and handle NaN values
-    address_cols = ["Street", "City", "State", "Zip"]
-    for col in address_cols:
-        if col in df.columns:
-            df[col] = df[col].astype(str).replace(["nan", "None", "NaN"], "").fillna("")
-
-    # Build Full Address from available components
-    def safe_join_address(row):
-        parts = []
-
-        # Add street if available
-        if "Street" in row.index and row["Street"].strip():
-            parts.append(row["Street"].strip())
-
-        # Add city if available
-        if "City" in row.index and row["City"].strip():
-            parts.append(row["City"].strip())
-
-        # Add state if available
-        if "State" in row.index and row["State"].strip():
-            parts.append(row["State"].strip())
-
-        # Add zip if available
-        if "Zip" in row.index and row["Zip"].strip():
-            parts.append(row["Zip"].strip())
-
-        return ", ".join(parts) if parts else ""
-
-    df["Full Address"] = df.apply(safe_join_address, axis=1)
-
-    return df
 
 
 # --- Enhanced Data Loading with Validation ---
@@ -132,7 +61,9 @@ def load_application_data():
 
         if provider_df.empty:
             # Fallback to optimized loading method
-            provider_df = load_provider_data()
+            from src.data.ingestion import load_provider_data as load_provider_data_ingestion
+
+            provider_df = load_provider_data_ingestion()
             provider_df = validate_and_clean_coordinates(provider_df)
 
         # Clean and validate provider data - handle missing values
@@ -556,14 +487,6 @@ tabs = st.tabs(["Find Provider", "How Selection Works", "Data Quality", "Update 
 
 
 with tabs[0]:
-    # --- Geocoding Setup ---
-    if GEOPY_AVAILABLE:
-        geolocator = Nominatim(user_agent="provider_recommender")
-        geocode = RateLimiter(geolocator.geocode, min_delay_seconds=2, max_retries=3)
-    else:
-        st.error("Geocoding services are not available. Please install the geopy package.")
-        st.stop()
-
     # --- Content for Results ---
     # Always show results if present in session state
     best = st.session_state.get("last_best")
@@ -1093,71 +1016,64 @@ with tabs[3]:
         """
     )
 
-    try:
-        from src.data.streamlit_integration import integrate_data_preparation_page
+    # Note: Data preparation interface would go here
+    # TODO: Implement data preparation interface
+    st.info("📝 Data preparation interface - coming soon!")
+    st.markdown(
+        """
+        **Alternative: Manual Data Update**
 
-        # Display the data preparation interface
-        integrate_data_preparation_page()
+        If the automated data preparation module is not available, you can manually update data by:
 
-    except ImportError as e:
-        st.error(f"Data preparation module not available: {e}")
-        st.markdown(
-            """
-            **Alternative: Manual Data Update**
+        1. **Place new Excel file** in the `data/raw/` directory
+        2. **Run data preparation script** in terminal:
+           ```bash
+           python -m src.data.preparation_enhanced
+           ```
+        3. **Refresh the app** to load updated data
 
-            If the automated data preparation module is not available, you can manually update data by:
+        **Expected file format:**
+        - Excel file (.xlsx or .xls)
+        - Contains referral data with provider information
+        - Should include columns for provider names, addresses, and referral dates
+        """
+    )
 
-            1. **Place new Excel file** in the `data/raw/` directory
-            2. **Run data preparation script** in terminal:
-               ```bash
-               python -m src.data.preparation_enhanced
-               ```
-            3. **Refresh the app** to load updated data
+    # Provide basic file upload as fallback
+    st.markdown("#### Basic File Upload")
+    uploaded_file = st.file_uploader(
+        "Upload new referral data (Excel format)",
+        type=["xlsx", "xls"],
+        help="Upload Excel file containing updated referral data",
+    )
 
-            **Expected file format:**
-            - Excel file (.xlsx or .xls)
-            - Contains referral data with provider information
-            - Should include columns for provider names, addresses, and referral dates
-            """
-        )
+    if uploaded_file is not None:
+        # Save to raw data directory
+        raw_data_path = Path("data/raw")
+        raw_data_path.mkdir(exist_ok=True)
 
-        # Provide basic file upload as fallback
-        st.markdown("#### Basic File Upload")
-        uploaded_file = st.file_uploader(
-            "Upload new referral data (Excel format)",
-            type=["xlsx", "xls"],
-            help="Upload Excel file containing updated referral data",
-        )
+        file_path = raw_data_path / uploaded_file.name
 
-        if uploaded_file is not None:
-            # Save to raw data directory
-            raw_data_path = Path("data/raw")
-            raw_data_path.mkdir(exist_ok=True)
+        with open(file_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
 
-            file_path = raw_data_path / uploaded_file.name
+        st.success(f"✅ File uploaded successfully to: {file_path}")
+        st.info("💡 Run the data preparation script manually to process this file.")
 
-            with open(file_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
+        # Show file info
+        st.markdown("**File Information:**")
+        st.markdown(f"- **Name**: {uploaded_file.name}")
+        st.markdown(f"- **Size**: {uploaded_file.size:,} bytes")
+        st.markdown(f"- **Saved to**: {file_path}")
 
-            st.success(f"✅ File uploaded successfully to: {file_path}")
-            st.info("💡 Run the data preparation script manually to process this file.")
-
-            # Show file info
-            st.markdown("**File Information:**")
-            st.markdown(f"- **Name**: {uploaded_file.name}")
-            st.markdown(f"- **Size**: {uploaded_file.size:,} bytes")
-            st.markdown(f"- **Saved to**: {file_path}")
-
-            # Provide refresh option
-            if st.button("🔄 Clear Cache and Refresh Data"):
-                # Clear cache and time filter message flags
-                st.cache_data.clear()
-                # Clear time filter message flags
-                keys_to_remove = [
-                    key
-                    for key in st.session_state.keys()
-                    if isinstance(key, str) and key.startswith("time_filter_msg_")
-                ]
-                for key in keys_to_remove:
-                    del st.session_state[key]
-                st.rerun()
+        # Provide refresh option
+        if st.button("🔄 Clear Cache and Refresh Data"):
+            # Clear cache and time filter message flags
+            st.cache_data.clear()
+            # Clear time filter message flags
+            keys_to_remove = [
+                key for key in st.session_state.keys() if isinstance(key, str) and key.startswith("time_filter_msg_")
+            ]
+            for key in keys_to_remove:
+                del st.session_state[key]
+            st.rerun()
