@@ -89,7 +89,7 @@ score = (1 - distance_norm) * w_dist \
 
 - **Interface**: `Geocoder.get_latlon(address: str) -> tuple[float, float]`
 - **Default**: Nominatim (rate-limited, cached)
-- **Optional**: Google Maps API (`GOOGLE_MAPS_API_KEY` in `.env`)
+- Geocoding is provided exclusively by Nominatim / OpenStreetMap (no Google Maps API).
 - **Caching**:
   - Geocodes: TTL = 30 days
   - Search results: TTL = 10 minutes

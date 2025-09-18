@@ -686,9 +686,10 @@ with tabs[0]:
         try:
             if "Full Address" in best.index and pd.notna(best["Full Address"]) and best["Full Address"]:
                 address_for_url = str(best["Full Address"]).replace(" ", "+")
-                maps_url = f"https://www.google.com/maps/search/?api=1&query={address_for_url}"
+                # Use OpenStreetMap search link (Nominatim/OpenStreetMap) instead of Google Maps
+                osm_url = f"https://www.openstreetmap.org/search?query={address_for_url}"
                 st.markdown(
-                    f"🏥 <b>Address:</b> <a href='{maps_url}' target='_blank'>{best['Full Address']}</a>",
+                    f"🏥 <b>Address:</b> <a href='{osm_url}' target='_blank'>{best['Full Address']}</a>",
                     unsafe_allow_html=True,
                 )
             else:
