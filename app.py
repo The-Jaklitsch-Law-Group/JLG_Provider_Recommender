@@ -277,209 +277,147 @@ np.random.seed(42)  # Ensures consistent placeholder data and recommendations ac
 st.image("assets/JaklitschLaw_NewLogo_withDogsRed.jpg", width=100)
 st.markdown("<h1>Medical Provider Recommender for New Clients</h1>", unsafe_allow_html=True)
 
-
-with st.expander(label="**INSTRUCTIONS** (*Click here to collapse.*)", expanded=True, icon="🧑‍🏫"):
-    st.write(
-        """
-            1. Enter the client's address in the sidebar to the left.
-            2. Choose how to balance provider proximity and referral count.
-            3. Specify the minimum number of outbound referrals (minimum 1)
-            4. Set the time period for calculating referral counts (defaults to rolling last year)
-               * This applies to both inbound and outbound referrals
-               * Enable/disable time-based filtering as needed
-            5. Click ***Find Best Provider*** to get a recommendation.
-                * By default, the app prioritizes the closest providers,
-                  then prefers providers with fewer recent referrals.
-            6. The final result is contact information to direct the client
-               to the best provider.
-            """
-    )
-
-# --- Sidebar Logo and Title ---
+# Sidebar: move instructions here so they’re always visible
 st.sidebar.markdown(
-    "<h2 style='font-weight: bold; margin-bottom: 0.5em;'>Search Parameters</h2>",
+    "<h2 style='font-weight: bold; margin-bottom: 0.5em;'>Instructions</h2>",
     unsafe_allow_html=True,
 )
+with st.sidebar.expander("INSTRUCTIONS (Click to collapse)", expanded=True):
+    st.write(
+        """
+        1. Enter the client's address and preferences.
+        2. Choose how to balance provider proximity and referral count.
+        3. Specify the minimum number of outbound referrals (minimum 1).
+        4. Optionally set a time period for calculating referral counts (applies to both inbound and outbound).
+        5. Click Find Best Provider to get a recommendation. By default, the app prioritizes the closest providers, then prefers providers with fewer recent referrals.
+        6. The final result is contact information to direct the client to the best provider.
+        """
+    )
 
-# --- User Input Form ---
-# This form collects the client's address and preferences.
+# --- Sidebar form removed; search moved to main tab ---
 
-with st.sidebar:
+
+# --- Tabs for Main Content ---
+tabs = st.tabs(["Find Provider"])  # Other sections moved to pages/
+
+
+with tabs[0]:
+    # --- Search Form (moved from sidebar) ---
+    # Preload defaults from session_state so results logic has values even if not submitting
+    street = st.session_state.get("street", "")
+    city = st.session_state.get("city", "")
+    state = st.session_state.get("state", "")
+    zipcode = st.session_state.get("zipcode", "")
+    alpha = st.session_state.get("alpha", 0.6)
+    beta = st.session_state.get("beta", 0.4)
+    gamma = st.session_state.get("gamma", 0.0)
+    min_referrals = st.session_state.get("min_referrals", 1)
+    time_period = st.session_state.get("time_period", [dt.date.today() - dt.timedelta(days=365), dt.date.today()])
+    use_time_filter = st.session_state.get("use_time_filter", True)
+
+    st.subheader("Search Parameters")
     with st.form(key="input_form", clear_on_submit=True):
         street = st.text_input(
             "Street Address",
-            value=st.session_state.get("street", ""),
+            value=street,
             help="e.g., 123 Main St",
-            placeholder="Enter full street address",
+            placeholder="14350 Old Marlboro Pike",
         )
-        city = st.text_input("City", value=st.session_state.get("city", ""), help="e.g., Baltimore")
-        state = st.text_input("State", value=st.session_state.get("state", ""), help="e.g., MD")
-        zipcode = st.text_input("Zip Code", value=st.session_state.get("zipcode", ""), help="5-digit ZIP")
+        city = st.text_input(
+            "City",
+            value=city,
+            help="e.g., Upper Marlboro",
+            placeholder="Upper Marlboro",
+        )
+        state = st.text_input(
+            "State",
+            value=state,
+            help="e.g., MD",
+            placeholder="MD",
+        )
+        zipcode = st.text_input(
+            "Zip Code",
+            value=zipcode,
+            help="5-digit ZIP",
+            placeholder="20772",
+        )
 
         # Real-time address validation feedback
         if street or city or state or zipcode:
             full_address = f"{street}, {city}, {state} {zipcode}".strip(", ")
-            if len(full_address.strip()) > 5:  # Basic check to avoid validating very short inputs
+            if len(full_address.strip()) > 5:
                 is_valid, validation_message = validate_address(full_address)
                 if is_valid:
-                    if validation_message:  # Has suggestions but is valid
+                    if validation_message:
                         st.info(f"✅ Address looks good. {validation_message}")
                     else:
                         st.success("✅ Address format validated.")
                 else:
                     st.warning(f"⚠️ {validation_message}")
 
-        st.markdown("---")  # Visual separator
-
-        # --- Weight control with three factors ---
+        st.markdown("---")
         st.markdown("### 🎯 Scoring Weights")
 
-        # Check if inbound referral data is available
         has_inbound_data = "Inbound Referral Count" in provider_df.columns if not provider_df.empty else False
-
-        # Initialize variables
-        distance_weight = outbound_weight = inbound_weight = 0.0
-        alpha = beta = gamma = 0.0
-        blend = "Balanced"  # Default value
+        distance_weight = st.session_state.get("distance_weight", 0.4 if has_inbound_data else 0.6)
+        outbound_weight = st.session_state.get("outbound_weight", 0.4)
+        inbound_weight = st.session_state.get("inbound_weight", 0.2 if has_inbound_data else 0.0)
 
         if has_inbound_data:
             st.info("✅ Inbound referral data available - three-factor scoring enabled")
-
-            # Use individual sliders for three-factor scoring with proportional weights
-            distance_weight = st.slider(
-                "Distance Importance",
-                min_value=0.0,
-                max_value=1.0,
-                value=st.session_state.get("distance_weight", 0.4),
-                step=0.05,
-                help="Relative importance of provider proximity (0.0 = not important, 1.0 = most important)",
-            )
-
-            outbound_weight = st.slider(
-                "Outbound Referral Importance",
-                min_value=0.0,
-                max_value=1.0,
-                value=st.session_state.get("outbound_weight", 0.4),
-                step=0.05,
-                help="Relative importance of load balancing (fewer recent referrals preferred)",
-            )
-
-            inbound_weight = st.slider(
-                "Inbound Referral Importance",
-                min_value=0.0,
-                max_value=1.0,
-                value=st.session_state.get("inbound_weight", 0.2),
-                step=0.05,
-                help="Relative importance of mutual referral relationships",
-            )
-
-            # Normalize weights to sum to 1.0
+            distance_weight = st.slider("Distance Importance", 0.0, 1.0, distance_weight, 0.05)
+            outbound_weight = st.slider("Outbound Referral Importance", 0.0, 1.0, outbound_weight, 0.05)
+            inbound_weight = st.slider("Inbound Referral Importance", 0.0, 1.0, inbound_weight, 0.05)
             total_weight = distance_weight + outbound_weight + inbound_weight
             if total_weight > 0:
                 alpha = distance_weight / total_weight
                 beta = outbound_weight / total_weight
                 gamma = inbound_weight / total_weight
             else:
-                # Default equal weights if all are zero
                 alpha = beta = gamma = 1 / 3
-
-            # Persist normalized weights so UI and session state remain consistent
-            st.session_state["alpha"] = alpha
-            st.session_state["beta"] = beta
-            st.session_state["gamma"] = gamma
-
-            st.markdown(
-                f"**Normalized weights:** Distance: {alpha:.2f} | "
-                f"Outbound Referrals: {beta:.2f} | Inbound Referrals: {gamma:.2f} "
-                f"(Total: {alpha + beta + gamma:.2f})"
-            )
-
-            # Show raw values for transparency
+            st.session_state.update({"alpha": alpha, "beta": beta, "gamma": gamma})
             st.caption(
-                f"Raw importance values: Distance({distance_weight:.2f}) + "
-                f"Outbound({outbound_weight:.2f}) + Inbound({inbound_weight:.2f}) = {total_weight:.2f}"
+                f"Normalized: Distance {alpha:.2f} | Outbound {beta:.2f} | Inbound {gamma:.2f} (Total {alpha+beta+gamma:.2f})"
             )
-
         else:
             st.warning("⚠️ No inbound referral data - using two-factor scoring")
-
-            # Use individual sliders for two-factor scoring with proportional weights
-            distance_weight = st.slider(
-                "Distance Importance",
-                min_value=0.0,
-                max_value=1.0,
-                value=st.session_state.get("distance_weight", 0.6),
-                step=0.05,
-                help="Relative importance of provider proximity (0.0 = not important, 1.0 = most important)",
-            )
-
-            outbound_weight = st.slider(
-                "Outbound Referral Importance",
-                min_value=0.0,
-                max_value=1.0,
-                value=st.session_state.get("outbound_weight", 0.4),
-                step=0.05,
-                help="Relative importance of load balancing (fewer recent referrals preferred)",
-            )
-
-            # Normalize weights to sum to 1.0
+            distance_weight = st.slider("Distance Importance", 0.0, 1.0, distance_weight, 0.05)
+            outbound_weight = st.slider("Outbound Referral Importance", 0.0, 1.0, outbound_weight, 0.05)
             total_weight = distance_weight + outbound_weight
             if total_weight > 0:
                 alpha = distance_weight / total_weight
                 beta = outbound_weight / total_weight
             else:
-                # Default equal weights if both are zero
                 alpha = beta = 0.5
+            gamma = 0.0
+            st.session_state.update({"alpha": alpha, "beta": beta, "gamma": gamma})
+            st.caption(f"Normalized: Distance {alpha:.2f} | Outbound {beta:.2f} (Total {alpha+beta:.2f})")
 
-            gamma = 0.0  # No inbound weight
-
-            # Persist normalized weights immediately
-            st.session_state["alpha"] = alpha
-            st.session_state["beta"] = beta
-            st.session_state["gamma"] = gamma
-
-            st.markdown(
-                f"**Normalized weights:** Distance: {alpha:.2f} | "
-                f"Outbound Referrals: {beta:.2f} (Total: {alpha + beta:.2f})"
-            )
-
-            # Show raw values for transparency
-            st.caption(
-                f"Raw importance values: Distance({distance_weight:.2f}) + "
-                f"Outbound({outbound_weight:.2f}) = {total_weight:.2f}"
-            )
-
-        # --- Referral Count Filter ---
         min_referrals = st.number_input(
             "Minimum Outbound Referral Count",
             min_value=0,
-            value=st.session_state.get("min_referrals", 1),
+            value=min_referrals,
             help=(
                 "Only show providers with at least this many outbound referrals. "
                 "Lower values show more providers; higher values show only established providers."
             ),
         )
 
-        # --- Time Period Filter
         time_period = st.date_input(
             "Time Period for Referral Count",
-            value=[dt.date.today() - dt.timedelta(days=365), dt.date.today()],
+            value=time_period,
             max_value=dt.date.today() + dt.timedelta(days=1),
-            help=("Calculate referral counts only for this time period. " "Defaults to a rolling one-year window."),
+            help=("Calculate referral counts only for this time period. Defaults to a rolling one-year window."),
         )
 
         use_time_filter = st.checkbox(
             "Enable time-based filtering",
-            value=True,
+            value=use_time_filter,
             help=(
-                "When enabled, referral counts will be calculated only for the "
-                "selected time period. Applies to both inbound and outbound referrals."
+                "When enabled, referral counts will be calculated only for the selected time period. Applies to both inbound and outbound referrals."
             ),
         )
 
-        submit = st.form_submit_button("Find Best Provider")
-
-        # --- Maximum radius (miles) ---
         max_radius_miles = st.slider(
             "Maximum Search Radius (miles)",
             min_value=1,
@@ -488,60 +426,41 @@ with st.sidebar:
             step=1,
             help="Exclude providers beyond this radius from the recommendation (in miles).",
         )
-
-        # Persist radius
         st.session_state["max_radius_miles"] = max_radius_miles
 
-        # Real-time address validation
+        # Structured validation
         if street or city or state or zipcode:
             addr_valid, addr_message = validate_address_input(street or "", city or "", state or "", zipcode or "")
             if addr_message:
-                if addr_valid:
-                    st.info(addr_message)
-                else:
-                    st.warning(addr_message)
+                st.info(addr_message) if addr_valid else st.warning(addr_message)
+
+        submit = st.form_submit_button("Find Best Provider")
 
     if submit:
-        # Validate address before processing
         addr_valid, addr_message = validate_address_input(street or "", city or "", state or "", zipcode or "")
-
         if not addr_valid:
             st.error("Please correct the address issues before proceeding.")
             st.markdown(addr_message)
         else:
-            # Save input values to session_state
-            st.session_state["street"] = street
-            st.session_state["city"] = city
-            st.session_state["state"] = state
-            st.session_state["zipcode"] = zipcode
+            st.session_state.update(
+                {
+                    "street": street,
+                    "city": city,
+                    "state": state,
+                    "zipcode": zipcode,
+                    "distance_weight": distance_weight,
+                    "outbound_weight": outbound_weight,
+                    "inbound_weight": inbound_weight if ("Inbound Referral Count" in provider_df.columns) else 0.0,
+                    "alpha": alpha,
+                    "beta": beta,
+                    "gamma": gamma,
+                    "scoring_type": "three_factor" if ("Inbound Referral Count" in provider_df.columns) else "two_factor",
+                    "min_referrals": min_referrals,
+                    "time_period": time_period,
+                    "use_time_filter": use_time_filter,
+                }
+            )
 
-            # Save weight values to session state
-            if has_inbound_data:
-                st.session_state["distance_weight"] = distance_weight
-                st.session_state["outbound_weight"] = outbound_weight
-                st.session_state["inbound_weight"] = inbound_weight
-                st.session_state["alpha"] = alpha
-                st.session_state["beta"] = beta
-                st.session_state["gamma"] = gamma
-                st.session_state["scoring_type"] = "three_factor"
-            else:
-                st.session_state["distance_weight"] = distance_weight
-                st.session_state["outbound_weight"] = outbound_weight
-                st.session_state["alpha"] = alpha
-                st.session_state["beta"] = beta
-                st.session_state["gamma"] = gamma
-                st.session_state["scoring_type"] = "two_factor"
-
-            st.session_state["min_referrals"] = min_referrals
-            st.session_state["time_period"] = time_period
-            st.session_state["use_time_filter"] = use_time_filter
-
-
-# --- Tabs for Main Content ---
-tabs = st.tabs(["Find Provider", "How Selection Works", "Data Quality", "Update Data"])
-
-
-with tabs[0]:
     # --- Content for Results ---
     # Always show results if present in session state
     best = st.session_state.get("last_best")
@@ -761,8 +680,7 @@ with tabs[0]:
             st.dataframe(
                 display_df,
                 hide_index=True,
-                # use_container_width=True,
-                width="stretch",
+                width='stretch',
             )
         else:
             st.error("Unable to display results: required columns not found in data.")
@@ -848,322 +766,6 @@ with tabs[0]:
             )
         )
 
-with tabs[1]:
-    st.markdown("### How Provider Selection Works")
 
-    st.markdown(
-        """
-    Our provider recommendation system uses a sophisticated algorithm that balances multiple key factors:
-    **geographic proximity**, **outbound referral load balancing**, and **inbound referral patterns**
-    to ensure optimal client care and fair distribution across our provider network.
-    """
-    )
 
-    # Algorithm Steps
-    st.markdown("#### 🔄 Algorithm Steps")
 
-    col1, col2 = st.columns([1, 1])
-
-    with col1:
-        st.markdown(
-            """
-        **1. Address Geocoding**
-        - Converts client address to latitude/longitude coordinates
-        - Uses OpenStreetMap's Nominatim service
-        - Implements fallback strategies for partial addresses
-
-        **2. Distance Calculation**
-        - Uses Haversine formula for accurate geographic distances
-        - Accounts for Earth's curvature
-        - Results in miles for easy interpretation
-
-        **3. Data Normalization**
-        - Distance: Min-max normalization to [0,1] scale
-        - Outbound Referral Count: Min-max normalization to [0,1] scale
-        - Inbound Referral Count: Min-max normalization to [0,1] scale (when available)
-        - Ensures fair comparison between different metrics
-        """
-        )
-
-    with col2:
-        st.markdown(
-            """
-        **4. Weighted Scoring**
-        - Combines normalized distance, outbound referrals, and inbound referrals
-        - Three-factor formula: `Score = α × Distance + β × Outbound_Referrals + γ × Inbound_Referrals`
-        - Two-factor fallback: `Score = α × Distance + β × Referral_Count`
-        - Lower scores indicate better recommendations
-
-        **5. Ranking & Selection**
-        - Sorts providers by composite score (ascending)
-        - Applies deterministic tie-breaking rules
-        - Returns top recommendation with rationale
-
-        **6. Load Balancing**
-        - Prefers providers with fewer recent referrals
-        - Helps distribute workload evenly across network
-        - Maintains quality while optimizing capacity
-        """
-        )
-
-    # Scoring Formula Explanation
-    st.markdown("#### 📊 Scoring Formulas")
-
-    st.markdown("**Three-Factor Scoring (when inbound data is available):**")
-    st.latex(r"Score = \alpha \times Distance_{norm} + \beta \times (1-Outbound_{norm}) + \gamma \times Inbound_{norm}")
-
-    st.markdown("**Two-Factor Scoring (fallback):**")
-    st.latex(r"Score = \alpha \times Distance_{norm} + \beta \times (1-Outbound_{norm})")
-
-    st.markdown(
-        """
-    Where:
-    - **α (alpha)**: Distance weight (normalized to 0.0-1.0, with all weights summing to 1.0)
-    - **β (beta)**: Outbound referral count weight (normalized to 0.0-1.0)
-    - **γ (gamma)**: Inbound referral count weight (normalized to 0.0-1.0, three-factor only)
-    - **α + β + γ = 1.0** for three-factor scoring
-    - **α + β = 1.0** for two-factor scoring
-    - Weights represent relative importance/priority of each factor
-    - Lower outbound referrals are preferred (load balancing)
-    - Higher inbound referrals are preferred (mutual referral relationships)
-    """
-    )
-
-    # Weight Selection Guide
-    st.markdown("#### ⚖️ Weight Selection Guide")
-
-    st.markdown("**Three-Factor Scoring Options:**")
-    st.markdown(
-        """
-    Set the relative importance of each factor (weights will be automatically normalized to sum to 1.0):
-
-    - **Distance-Priority**: Distance(0.6) + Outbound(0.3) + Inbound(0.1) → (60%, 30%, 10%)
-    - **Balanced**: Distance(0.4) + Outbound(0.4) + Inbound(0.2) → (40%, 40%, 20%)
-    - **Relationship-Focus**: Distance(0.2) + Outbound(0.3) + Inbound(0.5) → (20%, 30%, 50%)
-    - **Load-Balancing**: Distance(0.2) + Outbound(0.6) + Inbound(0.2) → (20%, 60%, 20%)
-    - **Equal Weight**: Distance(0.33) + Outbound(0.33) + Inbound(0.33) → (33%, 33%, 33%)
-
-    💡 **Tip**: Higher raw values = more importance. The system automatically normalizes to percentages.
-    """
-    )
-
-    st.markdown("**Two-Factor Scoring Options:**")
-    st.markdown(
-        """
-    For two-factor scoring, set the relative importance (automatically normalized):
-
-    - **Distance Priority**: Distance(0.8) + Outbound(0.2) → (80%, 20%)
-    - **Balanced**: Distance(0.5) + Outbound(0.5) → (50%, 50%)
-    - **Load Balancing Priority**: Distance(0.2) + Outbound(0.8) → (20%, 80%)
-    - **Distance Only**: Distance(1.0) + Outbound(0.0) → (100%, 0%)
-    - **Load Balancing Only**: Distance(0.0) + Outbound(1.0) → (0%, 100%)
-
-    💡 **Tip**: The final weights always sum to 100% for consistent, interpretable scoring.
-    """
-    )
-
-    # Quality Assurance
-    st.markdown("#### ✅ Quality Assurance Features")
-
-    qa_col1, qa_col2 = st.columns([1, 1])
-
-    with qa_col1:
-        st.markdown(
-            """
-        **Data Validation**
-        - Minimum referral thresholds ensure provider experience
-        - Geographic coordinate validation
-        - Address standardization and cleaning
-        """
-        )
-
-    with qa_col2:
-        st.markdown(
-            """
-        **Consistent Results**
-        - Deterministic tie-breaking for reproducible outcomes
-        - Cached geocoding for performance and consistency
-        - Session state preservation during user interaction
-        """
-        )
-
-    # Technical Implementation
-    with st.expander("🔧 Technical Implementation Details", expanded=False):
-        st.markdown(
-            """
-        **Geocoding Service**: OpenStreetMap Nominatim API
-        - Free, reliable geocoding service
-        - Rate-limited to respect service terms
-        - 24-hour caching for performance optimization
-
-        **Distance Calculation**: Haversine Formula
-        ```python
-        # Simplified version of our distance calculation
-        def haversine_distance(lat1, lon1, lat2, lon2):
-            R = 3958.8  # Earth's radius in miles
-            dlat = radians(lat2 - lat1)
-            dlon = radians(lon2 - lon1)
-            a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
-            c = 2 * arcsin(sqrt(a))
-            return R * c
-        ```
-
-        **Performance Optimizations**:
-        - Vectorized distance calculations using NumPy
-        - Streamlit caching for data loading and geocoding
-        - Efficient pandas operations for data processing
-
-        **Data Pipeline**:
-        1. Raw referral data from Lead Docket exports
-        2. Data cleaning and provider aggregation
-        3. Geocoding and coordinate enrichment
-        4. Runtime filtering and scoring
-        """
-        )
-
-    st.markdown("---")
-    st.markdown("*For technical questions or suggestions, contact the Data Operations team.*")
-
-with tabs[2]:
-    st.markdown("### 📊 Data Quality Monitoring")
-
-    st.markdown(
-        """
-    Monitor the quality and completeness of provider data used in recommendations.
-    Use this dashboard to identify data issues and track system health.
-    """
-    )
-
-    st.info("💡 **Tip**: Run the standalone data dashboard for detailed analytics: `streamlit run data_dashboard.py`")
-
-    # Quick data quality summary
-    try:
-        from data_dashboard import display_data_quality_dashboard  # noqa: F401
-
-        if st.button("🚀 Launch Full Data Dashboard", help="Open comprehensive data quality dashboard"):
-            st.markdown(
-                """
-            To launch the full data quality dashboard, run this command in your terminal:
-
-            ```bash
-            streamlit run data_dashboard.py
-            ```
-
-            The dashboard provides:
-            - Geographic coverage maps
-            - Referral trend analysis
-            - Data completeness metrics
-            - Quality issue identification
-            - Performance monitoring
-            """
-            )
-
-        # Show basic quality summary inline
-        st.markdown("#### Quick Quality Check")
-
-        if not provider_df.empty:
-            data_valid, data_message = validate_provider_data(provider_df)
-
-            if data_valid:
-                st.success("✅ Provider data quality is good!")
-            else:
-                st.warning("⚠️ Provider data has some quality issues.")
-
-            # Show key metrics
-            col1, col2, col3 = st.columns(3)
-
-            with col1:
-                total_providers = len(provider_df)
-                st.metric("Total Providers", total_providers)
-
-            with col2:
-                if "Referral Count" in provider_df.columns:
-                    avg_referrals = provider_df["Referral Count"].mean()
-                    st.metric("Avg Referrals per Provider", f"{avg_referrals:.1f}")
-
-            with col3:
-                if "Latitude" in provider_df.columns and "Longitude" in provider_df.columns:
-                    valid_coords = provider_df.dropna(subset=["Latitude", "Longitude"])
-                    coord_completeness = len(valid_coords) / len(provider_df) * 100
-                    st.metric("Coordinate Completeness", f"{coord_completeness:.1f}%")
-
-            # Show recent issues if any
-            with st.expander("📋 Data Quality Details", expanded=False):
-                st.markdown(data_message)
-        else:
-            st.error("❌ No provider data available. Please check data files.")
-
-    except ImportError:
-        st.warning("Data dashboard module not available. Install plotly for full dashboard functionality.")
-
-with tabs[3]:
-    st.markdown("### 🔄 Update Referral Data")
-
-    st.markdown(
-        """
-        Use this tab to upload new referral data and update the provider database.
-        This process will clean, validate, and integrate new referral information.
-        """
-    )
-
-    # Note: Data preparation interface would go here
-    # TODO: Implement data preparation interface
-    st.info("📝 Data preparation interface - coming soon!")
-    st.markdown(
-        """
-        **Alternative: Manual Data Update**
-
-        If the automated data preparation module is not available, you can manually update data by:
-
-        1. **Place new Excel file** in the `data/raw/` directory
-        2. **Run data preparation script** in terminal:
-           ```bash
-           python -m src.data.preparation_enhanced
-           ```
-        3. **Refresh the app** to load updated data
-
-        **Expected file format:**
-        - Excel file (.xlsx or .xls)
-        - Contains referral data with provider information
-        - Should include columns for provider names, addresses, and referral dates
-        """
-    )
-
-    # Provide basic file upload as fallback
-    st.markdown("#### Basic File Upload")
-    uploaded_file = st.file_uploader(
-        "Upload new referral data (Excel format)",
-        type=["xlsx", "xls"],
-        help="Upload Excel file containing updated referral data",
-    )
-
-    if uploaded_file is not None:
-        # Save to raw data directory
-        raw_data_path = Path("data/raw")
-        raw_data_path.mkdir(exist_ok=True)
-
-        file_path = raw_data_path / uploaded_file.name
-
-        with open(file_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-
-        st.success(f"✅ File uploaded successfully to: {file_path}")
-        st.info("💡 Run the data preparation script manually to process this file.")
-
-        # Show file info
-        st.markdown("**File Information:**")
-        st.markdown(f"- **Name**: {uploaded_file.name}")
-        st.markdown(f"- **Size**: {uploaded_file.size:,} bytes")
-        st.markdown(f"- **Saved to**: {file_path}")
-
-        # Provide refresh option
-        if st.button("🔄 Clear Cache and Refresh Data"):
-            # Clear cache and time filter message flags
-            st.cache_data.clear()
-            # Clear time filter message flags
-            keys_to_remove = [
-                key for key in st.session_state.keys() if isinstance(key, str) and key.startswith("time_filter_msg_")
-            ]
-            for key in keys_to_remove:
-                del st.session_state[key]
-            st.rerun()

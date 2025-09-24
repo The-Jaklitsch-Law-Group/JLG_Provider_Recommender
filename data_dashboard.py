@@ -114,7 +114,7 @@ def display_data_quality_dashboard():
                 height=500,
             )
             fig.update_layout(mapbox=dict(center=dict(lat=39.2904, lon=-76.6122), zoom=8))
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
             # Geographic stats
             col1, col2 = st.columns(2)
@@ -142,7 +142,7 @@ def display_data_quality_dashboard():
                     ]
                 )
                 coord_quality_fig.update_layout(title="Coordinate Completeness")
-                st.plotly_chart(coord_quality_fig, use_container_width=True)
+                st.plotly_chart(coord_quality_fig, width='stretch')
         else:
             st.warning("No valid coordinates found in provider data.")
 
@@ -161,7 +161,7 @@ def display_data_quality_dashboard():
                 title="Distribution of Referral Counts",
                 labels={"count": "Number of Providers", "Referral Count": "Referral Count"},
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
         with col2:
             # Top providers by referral count
@@ -174,7 +174,7 @@ def display_data_quality_dashboard():
                 title="Top 10 Providers by Referral Count",
             )
             fig.update_layout(yaxis={"categoryorder": "total ascending"})
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
     # Time-based Analysis
     if not detailed_df.empty and "Referral Date" in detailed_df.columns:
@@ -192,7 +192,7 @@ def display_data_quality_dashboard():
                 monthly_referrals, x="Month", y="Referral Count", title="Monthly Referral Trends", markers=True
             )
             fig.update_xaxes(tickangle=45)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
         # Recent activity
         st.markdown("### Recent Activity")

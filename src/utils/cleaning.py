@@ -127,15 +127,46 @@ def clean_address_data(df: pd.DataFrame) -> pd.DataFrame:
 def build_full_address(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
-    def _safe(row):
+    def _construct(row):
         parts = []
         for c in ("Street", "City", "State", "Zip"):
             if c in row and pd.notna(row[c]) and str(row[c]).strip():
                 parts.append(str(row[c]).strip())
         return ", ".join(parts) if parts else ""
 
-    if "Full Address" not in df.columns:
-        df["Full Address"] = df.apply(_safe, axis=1)
+    # Build the constructed address for every row
+    constructed = df.apply(_construct, axis=1)
+
+    # Helper to detect empty-like values
+    def _is_empty_series(s: pd.Series) -> pd.Series:
+        return s.astype(str).fillna("").str.strip().isin(["", "nan", "None", "NaN"]) | s.isna()
+
+    if "Full Address" in df.columns:
+        df["Full Address"] = df["Full Address"].astype(str).fillna("").str.strip()
+        empty_mask = _is_empty_series(df["Full Address"])
+    else:
+        df["Full Address"] = ""
+        empty_mask = pd.Series(True, index=df.index)
+
+    # If Work Address exists, use it to fill empty Full Address entries
+    if "Work Address" in df.columns:
+        work_empty_mask = _is_empty_series(df["Work Address"]) == False
+        use_work_mask = empty_mask & work_empty_mask
+        if use_work_mask.any():
+            df.loc[use_work_mask, "Full Address"] = df.loc[use_work_mask, "Work Address"].astype(str).str.strip()
+            # Update empty mask after filling
+            empty_mask = _is_empty_series(df["Full Address"]) 
+
+    # Fill any remaining empty Full Address entries with constructed components
+    if empty_mask.any():
+        df.loc[empty_mask, "Full Address"] = constructed.loc[empty_mask]
+
+    # Cleanup possible duplicate commas or trailing commas
+    df["Full Address"] = (
+        df["Full Address"].astype(str)
+        .str.replace(r",\s*,", ",", regex=True)
+        .str.replace(r",\s*$", "", regex=True)
+    )
 
     return df
 

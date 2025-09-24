@@ -10,4 +10,4 @@ python-docx>=0.8.11
 openpyxl>=3.0.10
 pyarrow>=8.0.0
 plotly>=5.0.0
-cachetools>=5.0.0
+cachetools>=5.0.07
