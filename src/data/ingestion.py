@@ -214,12 +214,12 @@ class DataIngestionManager:
                 st.warning(f"⚠️ No data loaded from {file_path.name}")
             return df
 
-        # Show status based on file type used
-        if show_status:
-            if file_type == "cleaned":
-                st.success(f"🚀 Using optimized {source.value} data ({len(df):,} records)")
-            elif file_type.startswith("raw"):
-                st.info(f"📊 Using raw {source.value} data ({len(df):,} records)")
+        # # Show status based on file type used
+        # if show_status:
+        #     if file_type == "cleaned":
+        #         st.success(f"🚀 Using optimized {source.value} data ({len(df):,} records)")
+        #     elif file_type.startswith("raw"):
+        #         st.info(f"📊 Using raw {source.value} data ({len(df):,} records)")
 
         # Apply source-specific post-processing
         df = self._post_process_data(df, source, file_type)

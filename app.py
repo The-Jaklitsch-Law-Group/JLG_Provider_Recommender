@@ -155,7 +155,7 @@ def load_application_data():
                 else:
                     provider_df["Inbound Referral Count"] = 0
 
-                st.success(f"✅ Merged inbound referral data for {len(inbound_counts_df)} providers")
+                # st.success(f"✅ Merged inbound referral data for {len(inbound_counts_df)} providers")
             else:
                 # Add default inbound referral count column
                 provider_df["Inbound Referral Count"] = 0
@@ -263,8 +263,10 @@ if not provider_df.empty:
     data_valid, data_message = validate_provider_data(provider_df)
     if data_message:
         if data_valid:
-            with st.expander("📊 Data Quality Summary", expanded=False):
-                st.success(data_message)
+            # with st.expander("📊 Data Quality Summary", expanded=False):
+            #     st.success(data_message)
+            # st.markdown('📊 Data Present and Available.')
+            pass
         else:
             st.error(data_message)
 else:
@@ -273,16 +275,21 @@ else:
 # --- Set random seed for reproducibility ---
 np.random.seed(42)  # Ensures consistent placeholder data and recommendations across runs
 
-# --- Company Logo and Title at Top ---
-st.image("assets/JaklitschLaw_NewLogo_withDogsRed.jpg", width=100)
-st.markdown("<h1>Medical Provider Recommender for New Clients</h1>", unsafe_allow_html=True)
+col1, col2 = st.columns([.075, .925], gap="small")
+
+with col1:
+    # --- Company Logo and Title at Top ---
+    st.image("assets/JaklitschLaw_NewLogo_withDogsRed.jpg", width=100)
+with col2:
+    st.markdown("# Medical Provider Recommender for New Clients", unsafe_allow_html=True)
 
 # Sidebar: move instructions here so they’re always visible
 st.sidebar.markdown(
     "<h2 style='font-weight: bold; margin-bottom: 0.5em;'>Instructions</h2>",
     unsafe_allow_html=True,
 )
-with st.sidebar.expander("INSTRUCTIONS (Click to collapse)", expanded=True):
+# with st.sidebar.expander("INSTRUCTIONS (Click to collapse)", expanded=True):
+with st.sidebar:
     st.write(
         """
         1. Enter the client's address and preferences.
@@ -294,478 +301,466 @@ with st.sidebar.expander("INSTRUCTIONS (Click to collapse)", expanded=True):
         """
     )
 
-# --- Sidebar form removed; search moved to main tab ---
+# --- Search Form ---
 
+# Preload defaults from session_state so results logic has values even if not submitting
+street = st.session_state.get("street", "14350 Old Marlboro Pike")
+city = st.session_state.get("city", "Upper Marlboro")
+state = st.session_state.get("state", "MD")
+zipcode = st.session_state.get("zipcode", "20772")
+alpha = st.session_state.get("alpha", 0.6)
+beta = st.session_state.get("beta", 0.4)
+gamma = st.session_state.get("gamma", 0.0)
+min_referrals = st.session_state.get("min_referrals", 0)
+time_period = st.session_state.get("time_period", [dt.date.today() - dt.timedelta(days=365), dt.date.today()])
+use_time_filter = st.session_state.get("use_time_filter", True)
 
-# --- Tabs for Main Content ---
-tabs = st.tabs(["Find Provider"])  # Other sections moved to pages/
+st.subheader("Search Parameters")
+with st.form(key="input_form", clear_on_submit=True, enter_to_submit=True, width="content", height='content'):
+    street = st.text_input(
+        "Street Address",
+        value=street,
+        help="e.g., 123 Main St",
+    )
+    city = st.text_input(
+        "City",
+        value=city,
+        help="e.g., Upper Marlboro",
+    )
+    state = st.text_input(
+        "State",
+        value=state,
+        help="e.g., MD"
+    )
+    zipcode = st.text_input(
+        "Zip Code",
+        value=zipcode,
+        help="5-digit ZIP"
+    )
 
-
-with tabs[0]:
-    # --- Search Form (moved from sidebar) ---
-    # Preload defaults from session_state so results logic has values even if not submitting
-    street = st.session_state.get("street", "")
-    city = st.session_state.get("city", "")
-    state = st.session_state.get("state", "")
-    zipcode = st.session_state.get("zipcode", "")
-    alpha = st.session_state.get("alpha", 0.6)
-    beta = st.session_state.get("beta", 0.4)
-    gamma = st.session_state.get("gamma", 0.0)
-    min_referrals = st.session_state.get("min_referrals", 1)
-    time_period = st.session_state.get("time_period", [dt.date.today() - dt.timedelta(days=365), dt.date.today()])
-    use_time_filter = st.session_state.get("use_time_filter", True)
-
-    st.subheader("Search Parameters")
-    with st.form(key="input_form", clear_on_submit=True):
-        street = st.text_input(
-            "Street Address",
-            value=street,
-            help="e.g., 123 Main St",
-            placeholder="14350 Old Marlboro Pike",
-        )
-        city = st.text_input(
-            "City",
-            value=city,
-            help="e.g., Upper Marlboro",
-            placeholder="Upper Marlboro",
-        )
-        state = st.text_input(
-            "State",
-            value=state,
-            help="e.g., MD",
-            placeholder="MD",
-        )
-        zipcode = st.text_input(
-            "Zip Code",
-            value=zipcode,
-            help="5-digit ZIP",
-            placeholder="20772",
-        )
-
-        # Real-time address validation feedback
-        if street or city or state or zipcode:
-            full_address = f"{street}, {city}, {state} {zipcode}".strip(", ")
-            if len(full_address.strip()) > 5:
-                is_valid, validation_message = validate_address(full_address)
-                if is_valid:
-                    if validation_message:
-                        st.info(f"✅ Address looks good. {validation_message}")
-                    else:
-                        st.success("✅ Address format validated.")
+    # Real-time address validation feedback
+    if street or city or state or zipcode:
+        full_address = f"{street}, {city}, {state} {zipcode}".strip(", ")
+        if len(full_address.strip()) > 5:
+            is_valid, validation_message = validate_address(full_address)
+            if is_valid:
+                if validation_message:
+                    st.info(f"✅ Address looks good. {validation_message}")
                 else:
-                    st.warning(f"⚠️ {validation_message}")
-
-        st.markdown("---")
-        st.markdown("### 🎯 Scoring Weights")
-
-        has_inbound_data = "Inbound Referral Count" in provider_df.columns if not provider_df.empty else False
-        distance_weight = st.session_state.get("distance_weight", 0.4 if has_inbound_data else 0.6)
-        outbound_weight = st.session_state.get("outbound_weight", 0.4)
-        inbound_weight = st.session_state.get("inbound_weight", 0.2 if has_inbound_data else 0.0)
-
-        if has_inbound_data:
-            st.info("✅ Inbound referral data available - three-factor scoring enabled")
-            distance_weight = st.slider("Distance Importance", 0.0, 1.0, distance_weight, 0.05)
-            outbound_weight = st.slider("Outbound Referral Importance", 0.0, 1.0, outbound_weight, 0.05)
-            inbound_weight = st.slider("Inbound Referral Importance", 0.0, 1.0, inbound_weight, 0.05)
-            total_weight = distance_weight + outbound_weight + inbound_weight
-            if total_weight > 0:
-                alpha = distance_weight / total_weight
-                beta = outbound_weight / total_weight
-                gamma = inbound_weight / total_weight
+                    st.success("✅ Address format validated.")
             else:
-                alpha = beta = gamma = 1 / 3
-            st.session_state.update({"alpha": alpha, "beta": beta, "gamma": gamma})
-            st.caption(
-                f"Normalized: Distance {alpha:.2f} | Outbound {beta:.2f} | Inbound {gamma:.2f} (Total {alpha+beta+gamma:.2f})"
-            )
+                st.warning(f"⚠️ {validation_message}")
+
+    st.markdown("---")
+    st.markdown("### 🎯 Scoring Weights")
+
+    has_inbound_data = "Inbound Referral Count" in provider_df.columns if not provider_df.empty else False
+    distance_weight = st.session_state.get("distance_weight", 0.4 if has_inbound_data else 0.6)
+    outbound_weight = st.session_state.get("outbound_weight", 0.4)
+    inbound_weight = st.session_state.get("inbound_weight", 0.2 if has_inbound_data else 0.0)
+
+    if has_inbound_data:
+        st.info("✅ Inbound referral data available - three-factor scoring enabled")
+        distance_weight = st.slider("Distance Importance", 0.0, 1.0, distance_weight, 0.05)
+        outbound_weight = st.slider("Outbound Referral Importance", 0.0, 1.0, outbound_weight, 0.05)
+        inbound_weight = st.slider("Inbound Referral Importance", 0.0, 1.0, inbound_weight, 0.05)
+        total_weight = distance_weight + outbound_weight + inbound_weight
+        if total_weight > 0:
+            alpha = distance_weight / total_weight
+            beta = outbound_weight / total_weight
+            gamma = inbound_weight / total_weight
         else:
-            st.warning("⚠️ No inbound referral data - using two-factor scoring")
-            distance_weight = st.slider("Distance Importance", 0.0, 1.0, distance_weight, 0.05)
-            outbound_weight = st.slider("Outbound Referral Importance", 0.0, 1.0, outbound_weight, 0.05)
-            total_weight = distance_weight + outbound_weight
-            if total_weight > 0:
-                alpha = distance_weight / total_weight
-                beta = outbound_weight / total_weight
-            else:
-                alpha = beta = 0.5
-            gamma = 0.0
-            st.session_state.update({"alpha": alpha, "beta": beta, "gamma": gamma})
-            st.caption(f"Normalized: Distance {alpha:.2f} | Outbound {beta:.2f} (Total {alpha+beta:.2f})")
-
-        min_referrals = st.number_input(
-            "Minimum Outbound Referral Count",
-            min_value=0,
-            value=min_referrals,
-            help=(
-                "Only show providers with at least this many outbound referrals. "
-                "Lower values show more providers; higher values show only established providers."
-            ),
+            alpha = beta = gamma = 1 / 3
+        st.session_state.update({"alpha": alpha, "beta": beta, "gamma": gamma})
+        st.caption(
+            f"Normalized: Distance {alpha:.2f} | Outbound {beta:.2f} | Inbound {gamma:.2f} (Total {alpha+beta+gamma:.2f})"
         )
+    else:
+        st.warning("⚠️ No inbound referral data - using two-factor scoring")
+        distance_weight = st.slider("Distance Importance", 0.0, 1.0, distance_weight, 0.05)
+        outbound_weight = st.slider("Outbound Referral Importance", 0.0, 1.0, outbound_weight, 0.05)
+        total_weight = distance_weight + outbound_weight
+        if total_weight > 0:
+            alpha = distance_weight / total_weight
+            beta = outbound_weight / total_weight
+        else:
+            alpha = beta = 0.5
+        gamma = 0.0
+        st.session_state.update({"alpha": alpha, "beta": beta, "gamma": gamma})
+        st.caption(f"Normalized: Distance {alpha:.2f} | Outbound {beta:.2f} (Total {alpha+beta:.2f})")
 
-        time_period = st.date_input(
-            "Time Period for Referral Count",
-            value=time_period,
-            max_value=dt.date.today() + dt.timedelta(days=1),
-            help=("Calculate referral counts only for this time period. Defaults to a rolling one-year window."),
-        )
+    st.markdown("---")
+    st.markdown("### 🔎 Filters and Preferences")
 
-        use_time_filter = st.checkbox(
-            "Enable time-based filtering",
-            value=use_time_filter,
-            help=(
-                "When enabled, referral counts will be calculated only for the selected time period. Applies to both inbound and outbound referrals."
-            ),
-        )
+    min_referrals = st.number_input(
+        "Minimum Outbound Referral Count",
+        min_value=0,
+        value=min_referrals,
+        help=(
+            "Only show providers with at least this many outbound referrals. "
+            "Lower values show more providers; higher values show only established providers."
+        ),
+    )
 
-        max_radius_miles = st.slider(
-            "Maximum Search Radius (miles)",
-            min_value=1,
-            max_value=200,
-            value=st.session_state.get("max_radius_miles", 25),
-            step=1,
-            help="Exclude providers beyond this radius from the recommendation (in miles).",
-        )
-        st.session_state["max_radius_miles"] = max_radius_miles
+    time_period = st.date_input(
+        "Time Period for Referral Count",
+        value=time_period,
+        max_value=dt.date.today() + dt.timedelta(days=1),
+        help=("Calculate referral counts only for this time period. Defaults to a rolling one-year window."),
+    )
 
-        # Structured validation
-        if street or city or state or zipcode:
-            addr_valid, addr_message = validate_address_input(street or "", city or "", state or "", zipcode or "")
-            if addr_message:
-                st.info(addr_message) if addr_valid else st.warning(addr_message)
+    use_time_filter = st.checkbox(
+        "Enable time-based filtering",
+        value=use_time_filter,
+        help=(
+            "When enabled, referral counts will be calculated only for the selected time period. Applies to both inbound and outbound referrals."
+        ),
+    )
 
-        submit = st.form_submit_button("Find Best Provider")
+    max_radius_miles = st.slider(
+        "Maximum Search Radius (miles)",
+        min_value=1,
+        max_value=200,
+        value=st.session_state.get("max_radius_miles", 25),
+        step=1,
+        help="Exclude providers beyond this radius from the recommendation (in miles).",
+    )
+    st.session_state["max_radius_miles"] = max_radius_miles
 
-    if submit:
+    # Structured validation
+    if street or city or state or zipcode:
         addr_valid, addr_message = validate_address_input(street or "", city or "", state or "", zipcode or "")
-        if not addr_valid:
-            st.error("Please correct the address issues before proceeding.")
-            st.markdown(addr_message)
-        else:
-            st.session_state.update(
-                {
-                    "street": street,
-                    "city": city,
-                    "state": state,
-                    "zipcode": zipcode,
-                    "distance_weight": distance_weight,
-                    "outbound_weight": outbound_weight,
-                    "inbound_weight": inbound_weight if ("Inbound Referral Count" in provider_df.columns) else 0.0,
-                    "alpha": alpha,
-                    "beta": beta,
-                    "gamma": gamma,
-                    "scoring_type": "three_factor" if ("Inbound Referral Count" in provider_df.columns) else "two_factor",
-                    "min_referrals": min_referrals,
-                    "time_period": time_period,
-                    "use_time_filter": use_time_filter,
-                }
-            )
+        if addr_message:
+            st.info(addr_message) if addr_valid else st.warning(addr_message)
 
-    # --- Content for Results ---
-    # Always show results if present in session state
-    best = st.session_state.get("last_best")
-    scored_df = st.session_state.get("last_scored_df")
-    params = st.session_state.get("last_params", {})
-    show_results = best is not None and scored_df is not None
+    submit = st.form_submit_button("Find Best Provider")
 
-    def process_address_and_recommend():
-        """Helper function to process address geocoding and provider recommendation."""
-        user_full_address = f"{street}, {city}, {state} {zipcode}".strip(", ")
-        user_lat, user_lon = None, None
+if submit:
+    addr_valid, addr_message = validate_address_input(street or "", city or "", state or "", zipcode or "")
+    if not addr_valid:
+        st.error("Please correct the address issues before proceeding.")
+        st.markdown(addr_message)
+    else:
+        st.session_state.update(
+            {
+                "street": street,
+                "city": city,
+                "state": state,
+                "zipcode": zipcode,
+                "distance_weight": distance_weight,
+                "outbound_weight": outbound_weight,
+                "inbound_weight": inbound_weight if ("Inbound Referral Count" in provider_df.columns) else 0.0,
+                "alpha": alpha,
+                "beta": beta,
+                "gamma": gamma,
+                "scoring_type": "three_factor" if ("Inbound Referral Count" in provider_df.columns) else "two_factor",
+                "min_referrals": min_referrals,
+                "time_period": time_period,
+                "use_time_filter": use_time_filter,
+            }
+        )
 
-        # Enhanced geocoding with better error handling
-        with st.spinner("🔍 Finding your location..."):
-            try:
-                # First, validate the complete address
-                is_valid, validation_msg = validate_address(user_full_address)
-                if not is_valid:
-                    st.error(f"Address validation failed: {validation_msg}")
-                    return None, None
+# --- Content for Results ---
+# Always show results if present in session state
+best = st.session_state.get("last_best")
+scored_df = st.session_state.get("last_scored_df")
+params = st.session_state.get("last_params", {})
+show_results = best is not None and scored_df is not None
 
-                # Try geocoding with the improved function
-                coords = geocode_address_with_cache(user_full_address)
+def process_address_and_recommend():
+    """Helper function to process address geocoding and provider recommendation."""
+    user_full_address = f"{street}, {city}, {state} {zipcode}".strip(", ")
+    user_lat, user_lon = None, None
+
+    # Enhanced geocoding with better error handling
+    with st.spinner("🔍 Finding your location..."):
+        try:
+            # First, validate the complete address
+            is_valid, validation_msg = validate_address(user_full_address)
+            if not is_valid:
+                st.error(f"Address validation failed: {validation_msg}")
+                return None, None
+
+            # Try geocoding with the improved function
+            coords = geocode_address_with_cache(user_full_address)
+
+            if coords:
+                user_lat, user_lon = coords
+                st.session_state["user_lat"] = user_lat
+                st.session_state["user_lon"] = user_lon
+                st.success(f"✅ Successfully located: {user_full_address}")
+            else:
+                # Try fallback strategies
+                if street:
+                    street_simple = street.split(",")[0].split(" Apt")[0].split(" Suite")[0]
+                    coords = geocode_address_with_cache(f"{street_simple}, {city}, {state}")
+
+                if not coords and city and state:
+                    coords = geocode_address_with_cache(f"{city}, {state}")
+
+                if not coords and zipcode:
+                    coords = geocode_address_with_cache(zipcode)
 
                 if coords:
                     user_lat, user_lon = coords
                     st.session_state["user_lat"] = user_lat
                     st.session_state["user_lon"] = user_lon
-                    st.success(f"✅ Successfully located: {user_full_address}")
+                    st.warning("⚠️ Used approximate location based on available address components.")
                 else:
-                    # Try fallback strategies
-                    if street:
-                        street_simple = street.split(",")[0].split(" Apt")[0].split(" Suite")[0]
-                        coords = geocode_address_with_cache(f"{street_simple}, {city}, {state}")
+                    st.error("❌ Could not find coordinates for the provided address. Please verify and try again.")
+                    return None, None
 
-                    if not coords and city and state:
-                        coords = geocode_address_with_cache(f"{city}, {state}")
+        except Exception as e:
+            handle_streamlit_error(e, "geocoding address")
+            return None, None
 
-                    if not coords and zipcode:
-                        coords = geocode_address_with_cache(zipcode)
+    if user_lat is not None and user_lon is not None:
+        # Apply time filtering to both inbound and outbound referrals if enabled
+        if use_time_filter and len(time_period) == 2:
+            start_date, end_date = time_period
+            working_df = apply_time_filtering(
+                provider_df, detailed_referrals_df, start_date, end_date, use_time_filter
+            )
+        else:
+            # Use regular data without time filtering
+            working_df = provider_df
 
-                    if coords:
-                        user_lat, user_lon = coords
-                        st.session_state["user_lat"] = user_lat
-                        st.session_state["user_lon"] = user_lon
-                        st.warning("⚠️ Used approximate location based on available address components.")
-                    else:
-                        st.error("❌ Could not find coordinates for the provided address. Please verify and try again.")
-                        return None, None
+        filtered_df = working_df[working_df["Referral Count"] >= min_referrals].copy()
+        # Calculate distances (miles)
+        filtered_df["Distance (Miles)"] = calculate_distances(user_lat, user_lon, filtered_df)
 
-            except Exception as e:
-                handle_streamlit_error(e, "geocoding address")
-                return None, None
+        # Read max radius (miles) from session state (default 25 miles)
+        max_radius_miles = st.session_state.get("max_radius_miles", 25)
 
-        if user_lat is not None and user_lon is not None:
-            # Apply time filtering to both inbound and outbound referrals if enabled
-            if use_time_filter and len(time_period) == 2:
-                start_date, end_date = time_period
-                working_df = apply_time_filtering(
-                    provider_df, detailed_referrals_df, start_date, end_date, use_time_filter
-                )
-            else:
-                # Use regular data without time filtering
-                working_df = provider_df
+        pre_filter_count = len(filtered_df)
+        filtered_df = filter_providers_by_radius(filtered_df, max_radius_miles)
+        post_filter_count = len(filtered_df)
 
-            filtered_df = working_df[working_df["Referral Count"] >= min_referrals].copy()
-            # Calculate distances (miles)
-            filtered_df["Distance (Miles)"] = calculate_distances(user_lat, user_lon, filtered_df)
-
-            # Read max radius (miles) from session state (default 25 miles)
-            max_radius_miles = st.session_state.get("max_radius_miles", 25)
-
-            pre_filter_count = len(filtered_df)
-            filtered_df = filter_providers_by_radius(filtered_df, max_radius_miles)
-            post_filter_count = len(filtered_df)
-
-            if pre_filter_count != post_filter_count:
-                st.info(
-                    f"Filtered out {pre_filter_count - post_filter_count} providers beyond {max_radius_miles} miles."
-                )
-
-            if filtered_df.empty:
-                st.warning(
-                    f"No providers found within {max_radius_miles} miles. Try increasing the maximum radius, lowering the minimum referral count, or adjusting the address."
-                )
-                return None, None
-            best, scored_df = recommend_provider(
-                filtered_df,
-                distance_weight=alpha,
-                referral_weight=beta,
-                inbound_weight=gamma,
-                min_referrals=min_referrals,
+        if pre_filter_count != post_filter_count:
+            st.info(
+                f"Filtered out {pre_filter_count - post_filter_count} providers beyond {max_radius_miles} miles."
             )
 
-            # Remove duplicates from scored results based on Full Name
-            if scored_df is not None and not scored_df.empty:
-                scored_df = scored_df.drop_duplicates(subset=["Full Name"], keep="first")
-
-            # Store results and params in session state
-            st.session_state["last_best"] = best
-            st.session_state["last_scored_df"] = scored_df
-            st.session_state["last_params"] = {
-                "alpha": alpha,
-                "beta": beta,
-                "gamma": gamma,
-                "min_referrals": min_referrals,
-                "max_radius_miles": st.session_state.get("max_radius_miles", 25),
-            }
-
-            return best, scored_df
-
-        return None, None
-
-    if submit and st.session_state.get("street"):
-        best, scored_df = process_address_and_recommend()
-        show_results = best is not None and isinstance(scored_df, pd.DataFrame)
-
-    # --- Display results if available ---
-    if show_results and best is not None and isinstance(scored_df, pd.DataFrame):
-        # Use params from session state if available
-        alpha_disp = params.get("alpha", alpha)
-        beta_disp = params.get("beta", beta)
-
-        # --- Highlighted Recommended Provider ---
-        st.markdown(
-            "<h3 style='color: #2E86C1;'>🏆 Recommended Provider</h3>",
-            unsafe_allow_html=True,
+        if filtered_df.empty:
+            st.warning(
+                f"No providers found within {max_radius_miles} miles. Try increasing the maximum radius, lowering the minimum referral count, or adjusting the address."
+            )
+            return None, None
+        best, scored_df = recommend_provider(
+            filtered_df,
+            distance_weight=alpha,
+            referral_weight=beta,
+            inbound_weight=gamma,
+            min_referrals=min_referrals,
         )
 
-        # Safely handle provider name display
-        try:
-            provider_name = best["Full Name"] if "Full Name" in best.index else "Unknown Provider"
+        # Remove duplicates from scored results based on Full Name
+        if scored_df is not None and not scored_df.empty:
+            scored_df = scored_df.drop_duplicates(subset=["Full Name"], keep="first")
+
+        # Store results and params in session state
+        st.session_state["last_best"] = best
+        st.session_state["last_scored_df"] = scored_df
+        st.session_state["last_params"] = {
+            "alpha": alpha,
+            "beta": beta,
+            "gamma": gamma,
+            "min_referrals": min_referrals,
+            "max_radius_miles": st.session_state.get("max_radius_miles", 25),
+        }
+
+        return best, scored_df
+
+    return None, None
+
+if submit and st.session_state.get("street"):
+    best, scored_df = process_address_and_recommend()
+    show_results = best is not None and isinstance(scored_df, pd.DataFrame)
+
+# --- Display results if available ---
+if show_results and best is not None and isinstance(scored_df, pd.DataFrame):
+    # Use params from session state if available
+    alpha_disp = params.get("alpha", alpha)
+    beta_disp = params.get("beta", beta)
+
+    # --- Highlighted Recommended Provider ---
+    st.markdown(
+        "<h3 style='color: #2E86C1;'>🏆 Recommended Provider</h3>",
+        unsafe_allow_html=True,
+    )
+
+    # Safely handle provider name display
+    try:
+        provider_name = best["Full Name"] if "Full Name" in best.index else "Unknown Provider"
+        st.markdown(
+            f"<h4>{provider_name}</h4>",
+            unsafe_allow_html=True,
+        )
+    except (KeyError, TypeError, AttributeError) as e:
+        st.error(f"Error displaying provider name: {e}")
+        st.markdown("<h4>Provider information unavailable</h4>", unsafe_allow_html=True)
+
+    # Safely handle address URL creation
+    try:
+        if "Full Address" in best.index and pd.notna(best["Full Address"]) and best["Full Address"]:
+            address_for_url = str(best["Full Address"]).replace(" ", "+")
+            # Use OpenStreetMap search link (Nominatim/OpenStreetMap) instead of Google Maps
+            osm_url = f"https://www.openstreetmap.org/search?query={address_for_url}"
             st.markdown(
-                f"<h4>{provider_name}</h4>",
+                f"🏥 <b>Address:</b> <a href='{osm_url}' target='_blank'>{best['Full Address']}</a>",
                 unsafe_allow_html=True,
             )
-        except (KeyError, TypeError, AttributeError) as e:
-            st.error(f"Error displaying provider name: {e}")
-            st.markdown("<h4>Provider information unavailable</h4>", unsafe_allow_html=True)
+        else:
+            # Try to construct address from components
+            address_parts = []
+            for col in ["Street", "City", "State", "Zip"]:
+                if col in best.index and pd.notna(best[col]) and best[col]:
+                    address_parts.append(str(best[col]))
 
-        # Safely handle address URL creation
-        try:
-            if "Full Address" in best.index and pd.notna(best["Full Address"]) and best["Full Address"]:
-                address_for_url = str(best["Full Address"]).replace(" ", "+")
-                # Use OpenStreetMap search link (Nominatim/OpenStreetMap) instead of Google Maps
-                osm_url = f"https://www.openstreetmap.org/search?query={address_for_url}"
+            if address_parts:
+                full_address = " ".join(address_parts)
                 st.markdown(
-                    f"🏥 <b>Address:</b> <a href='{osm_url}' target='_blank'>{best['Full Address']}</a>",
+                    f"🏥 <b>Address:</b> {full_address}",
                     unsafe_allow_html=True,
                 )
             else:
-                # Try to construct address from components
-                address_parts = []
-                for col in ["Street", "City", "State", "Zip"]:
-                    if col in best.index and pd.notna(best[col]) and best[col]:
-                        address_parts.append(str(best[col]))
+                st.markdown("🏥 <b>Address:</b> Address information unavailable", unsafe_allow_html=True)
+    except (KeyError, TypeError, AttributeError) as e:
+        st.error(f"Error displaying provider address: {e}")
+        st.markdown("🏥 <b>Address:</b> Address information unavailable", unsafe_allow_html=True)
 
-                if address_parts:
-                    full_address = " ".join(address_parts)
-                    st.markdown(
-                        f"🏥 <b>Address:</b> {full_address}",
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    st.markdown("🏥 <b>Address:</b> Address information unavailable", unsafe_allow_html=True)
-        except (KeyError, TypeError, AttributeError) as e:
-            st.error(f"Error displaying provider address: {e}")
-            st.markdown("🏥 <b>Address:</b> Address information unavailable", unsafe_allow_html=True)
+    # Safely handle phone number display
+    try:
+        if "Phone Number" in best.index and pd.notna(best["Phone Number"]) and best["Phone Number"]:
+            st.markdown(f"📞 <b>Phone:</b> {best['Phone Number']}", unsafe_allow_html=True)
+    except (KeyError, TypeError, AttributeError):
+        # Phone number not available or accessible
+        pass
 
-        # Safely handle phone number display
-        try:
-            if "Phone Number" in best.index and pd.notna(best["Phone Number"]) and best["Phone Number"]:
-                st.markdown(f"📞 <b>Phone:</b> {best['Phone Number']}", unsafe_allow_html=True)
-        except (KeyError, TypeError, AttributeError):
-            # Phone number not available or accessible
-            pass
-
-        # Display scoring method used
-        scoring_type = st.session_state.get("scoring_type", "two_factor")
-        if scoring_type == "three_factor":
-            alpha_disp = st.session_state.get("alpha", 0.33)
-            beta_disp = st.session_state.get("beta", 0.33)
-            gamma_disp = st.session_state.get("gamma", 0.33)
-            st.write(
-                (
-                    f"*Three-factor scoring: Distance({alpha_disp:.1%}) + Outbound({beta_disp:.1%}) "
-                    f"+ Inbound({gamma_disp:.1%})*"
-                )
-            )
-        else:
-            alpha_disp = st.session_state.get("alpha", 0.6)
-            beta_disp = st.session_state.get("beta", 0.4)
-            st.write(f"*Two-factor scoring: Distance({alpha_disp:.1%}) + Outbound({beta_disp:.1%})*")
-        mandatory_cols = [
-            "Full Name",
-            "Full Address",
-            "Distance (Miles)",
-            "Referral Count",
-        ]
-
-        # Add inbound referral count if available
-        if "Inbound Referral Count" in scored_df.columns:
-            mandatory_cols.append("Inbound Referral Count")
-
-        mandatory_cols.append("Score")  # Score should be last
-
-        # Check which columns actually exist
-        available_cols = [col for col in mandatory_cols if col in scored_df.columns]
-
-        if available_cols:
-            # Remove any duplicate providers before displaying
-            display_df = (
-                scored_df[available_cols]
-                .drop_duplicates(subset=["Full Name"], keep="first")
-                .sort_values(by="Score" if "Score" in available_cols else available_cols[0], ignore_index=True)
-            )
-            st.dataframe(
-                display_df,
-                hide_index=True,
-                width='stretch',
-            )
-        else:
-            st.error("Unable to display results: required columns not found in data.")
-
-        # --- Export Button ---
-        try:
-            provider_name = sanitize_filename(
-                str(best["Full Name"]) if "Full Name" in best.index else "Unknown_Provider"
-            )
-            base_filename = f"Provider_{provider_name}"
-            word_bytes = get_word_bytes(best)
-            st.download_button(
-                label="Export as Word Document",
-                data=word_bytes,
-                file_name=f"{base_filename}.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            )
-        except (KeyError, TypeError, AttributeError) as e:
-            st.error(f"Error creating export: {e}")
-
-        # --- Rationale for Selection ---
-        with st.expander("Why was this provider selected?", expanded=False):
-            try:
-                rationale = []
-
-                # Distance information
-                if "Distance (Miles)" in best.index and pd.notna(best["Distance (Miles)"]):
-                    rationale.append(f"* **Distance** from the address is **{best['Distance (Miles)']:.2f} miles**.")
-                else:
-                    rationale.append("* **Distance** information not available.")
-
-                rationale.append("")
-
-                # # Referral count information
-                # if "Referral Count" in best.index and pd.notna(best["Referral Count"]):
-                #     rationale.append(
-                #         "* This provider has **{count}** recent referrals from our office."
-                #     )
-                # else:
-                #     rationale.append("* Referral count information not available.")
-
-                rationale.append("")
-                min_referrals_disp = params.get("min_referrals", min_referrals)
-                rationale.append(
-                    f"* Only providers with **{min_referrals_disp} or more referrals** were considered in this search."
-                )
-                rationale.append("")
-
-                # Get current weights from session state
-                scoring_type = st.session_state.get("scoring_type", "two_factor")
-                if scoring_type == "three_factor":
-                    alpha_disp = st.session_state.get("alpha", 0.33)
-                    beta_disp = st.session_state.get("beta", 0.33)
-                    gamma_disp = st.session_state.get("gamma", 0.33)
-                    rationale.append(
-                        (
-                            "The final score combines normalized distance, outbound referrals, "
-                            "and inbound referrals using your chosen weights: "
-                            f"**Distance = {alpha_disp:.1%}**, **Outbound Referrals = {beta_disp:.1%}**, "
-                            f"**Inbound Referrals = {gamma_disp:.1%}**."
-                        )
-                    )
-                else:
-                    alpha_disp = st.session_state.get("alpha", 0.6)
-                    beta_disp = st.session_state.get("beta", 0.4)
-                    rationale.append(
-                        (
-                            "The final score combines normalized distance and outbound referrals "
-                            "using your chosen weights: "
-                            f"**Distance = {alpha_disp:.1%}**, **Outbound Referrals = {beta_disp:.1%}**."
-                        )
-                    )
-                rationale.append("The provider with the lowest composite score was recommended.")
-                st.markdown("<br>".join(rationale), unsafe_allow_html=True)
-            except (KeyError, TypeError, AttributeError) as e:
-                st.error(f"Error displaying rationale: {e}")
-                st.markdown("Rationale information unavailable.", unsafe_allow_html=True)
-    elif submit:
-        st.warning(
+    # Display scoring method used
+    scoring_type = st.session_state.get("scoring_type", "two_factor")
+    if scoring_type == "three_factor":
+        alpha_disp = st.session_state.get("alpha", 0.33)
+        beta_disp = st.session_state.get("beta", 0.33)
+        gamma_disp = st.session_state.get("gamma", 0.33)
+        st.write(
             (
-                f"No providers met the requirements (minimum {min_referrals} referrals). "
-                "Please check the address, lower the minimum referral count, or try again."
+                f"*Three-factor scoring: Distance({alpha_disp:.1%}) + Outbound({beta_disp:.1%}) "
+                f"+ Inbound({gamma_disp:.1%})*"
             )
         )
+    else:
+        alpha_disp = st.session_state.get("alpha", 0.6)
+        beta_disp = st.session_state.get("beta", 0.4)
+        st.write(f"*Two-factor scoring: Distance({alpha_disp:.1%}) + Outbound({beta_disp:.1%})*")
+    mandatory_cols = [
+        "Full Name",
+        "Full Address",
+        "Distance (Miles)",
+        "Referral Count",
+    ]
 
+    # Add inbound referral count if available
+    if "Inbound Referral Count" in scored_df.columns:
+        mandatory_cols.append("Inbound Referral Count")
 
+    mandatory_cols.append("Score")  # Score should be last
 
+    # Check which columns actually exist
+    available_cols = [col for col in mandatory_cols if col in scored_df.columns]
 
+    if available_cols:
+        # Remove any duplicate providers before displaying
+        display_df = (
+            scored_df[available_cols]
+            .drop_duplicates(subset=["Full Name"], keep="first")
+            .sort_values(by="Score" if "Score" in available_cols else available_cols[0], ignore_index=True)
+        )
+        st.dataframe(
+            display_df,
+            hide_index=True,
+            width='stretch',
+        )
+    else:
+        st.error("Unable to display results: required columns not found in data.")
+
+    # --- Export Button ---
+    try:
+        provider_name = sanitize_filename(
+            str(best["Full Name"]) if "Full Name" in best.index else "Unknown_Provider"
+        )
+        base_filename = f"Provider_{provider_name}"
+        word_bytes = get_word_bytes(best)
+        st.download_button(
+            label="Export as Word Document",
+            data=word_bytes,
+            file_name=f"{base_filename}.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+    except (KeyError, TypeError, AttributeError) as e:
+        st.error(f"Error creating export: {e}")
+
+    # --- Rationale for Selection ---
+    with st.expander("Why was this provider selected?", expanded=False):
+        try:
+            rationale = []
+
+            # Distance information
+            if "Distance (Miles)" in best.index and pd.notna(best["Distance (Miles)"]):
+                rationale.append(f"* **Distance** from the address is **{best['Distance (Miles)']:.2f} miles**.")
+            else:
+                rationale.append("* **Distance** information not available.")
+
+            rationale.append("")
+
+            # # Referral count information
+            # if "Referral Count" in best.index and pd.notna(best["Referral Count"]):
+            #     rationale.append(
+            #         "* This provider has **{count}** recent referrals from our office."
+            #     )
+            # else:
+            #     rationale.append("* Referral count information not available.")
+
+            rationale.append("")
+            min_referrals_disp = params.get("min_referrals", min_referrals)
+            rationale.append(
+                f"* Only providers with **{min_referrals_disp} or more referrals** were considered in this search."
+            )
+            rationale.append("")
+
+            # Get current weights from session state
+            scoring_type = st.session_state.get("scoring_type", "two_factor")
+            if scoring_type == "three_factor":
+                alpha_disp = st.session_state.get("alpha", 0.33)
+                beta_disp = st.session_state.get("beta", 0.33)
+                gamma_disp = st.session_state.get("gamma", 0.33)
+                rationale.append(
+                    (
+                        "The final score combines normalized distance, outbound referrals, "
+                        "and inbound referrals using your chosen weights: "
+                        f"**Distance = {alpha_disp:.1%}**, **Outbound Referrals = {beta_disp:.1%}**, "
+                        f"**Inbound Referrals = {gamma_disp:.1%}**."
+                    )
+                )
+            else:
+                alpha_disp = st.session_state.get("alpha", 0.6)
+                beta_disp = st.session_state.get("beta", 0.4)
+                rationale.append(
+                    (
+                        "The final score combines normalized distance and outbound referrals "
+                        "using your chosen weights: "
+                        f"**Distance = {alpha_disp:.1%}**, **Outbound Referrals = {beta_disp:.1%}**."
+                    )
+                )
+            rationale.append("The provider with the lowest composite score was recommended.")
+            st.markdown("<br>".join(rationale), unsafe_allow_html=True)
+        except (KeyError, TypeError, AttributeError) as e:
+            st.error(f"Error displaying rationale: {e}")
+            st.markdown("Rationale information unavailable.", unsafe_allow_html=True)
+elif submit:
+    st.warning(
+        (
+            f"No providers met the requirements (minimum {min_referrals} referrals). "
+            "Please check the address, lower the minimum referral count, or try again."
+        )
+    )
