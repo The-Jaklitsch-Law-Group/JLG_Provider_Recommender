@@ -1,125 +1,68 @@
 import datetime as dt
 import traceback
 from pathlib import Path
+from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 
-# Geopy imports with error handling
+# Streamlit page config must be set before any UI calls (warnings or images).
+st.set_page_config(page_title="Provider Recommender", page_icon=":hospital:", layout="wide")
+
+# Check geopy availability before importing geocoding helpers.
+# geocoding helpers (src.utils.geocoding) import geopy at module level, so
+# we must detect geopy first to avoid import-time failures when it's missing.
 try:
-    from geopy.extra.rate_limiter import RateLimiter
-    from geopy.geocoders import Nominatim
+    import geopy  # noqa: F401
 
     GEOPY_AVAILABLE = True
-except ImportError:
-    st.error("geopy package is required. Please install it with: pip install geopy")
+except Exception:
     GEOPY_AVAILABLE = False
+    st.warning(
+        "geopy package not available. Geocoding features will be disabled. " "Install it with: pip install geopy"
+    )
 
 # Import optimized data ingestion
-from data_ingestion import (
-    get_data_ingestion_status,
-    load_detailed_referrals,
-    load_inbound_referrals,
-    load_provider_data,
-    refresh_data_cache,
-)
-from provider_utils import (  # Import new enhanced functions
-    calculate_distances,
-    calculate_inbound_referral_counts,
-    calculate_time_based_referral_counts,
-    geocode_address_with_cache,
-    get_word_bytes,
-    handle_streamlit_error,
-    load_and_validate_provider_data,
-    recommend_provider,
-    sanitize_filename,
-    validate_address,
-    validate_address_input,
+from src.data.ingestion import load_detailed_referrals, load_inbound_referrals
+from src.utils.addressing import validate_address, validate_address_input
+
+# Import consolidated functions (best versions)
+from src.utils.cleaning import (
+    build_full_address,
+    clean_address_data,
     validate_and_clean_coordinates,
     validate_provider_data,
 )
 
+if GEOPY_AVAILABLE:
+    # Import the real geocoding helper (depends on geopy)
+    from src.utils.geocoding import geocode_address_with_cache
+else:
+    # Provide a lightweight fallback so the app can still load without geopy.
+    def geocode_address_with_cache(address: str) -> Optional[Tuple[float, float]]:
+        """Fallback geocode function used when geopy is not installed.
+
+        Returns None and shows a helpful Streamlit message.
+        """
+        st.error(
+            "Geocoding is unavailable because the 'geopy' package is not installed. "
+            "Install it with: pip install geopy to enable address lookup."
+        )
+        return None
+
+
+from src.utils.io_utils import get_word_bytes, handle_streamlit_error, sanitize_filename
+
+# Import remaining functions from providers that are not consolidated
+from src.utils.providers import (
+    calculate_inbound_referral_counts,
+    calculate_time_based_referral_counts,
+    load_and_validate_provider_data,
+)
+from src.utils.scoring import calculate_distances, recommend_provider
+
 # --- Helper Functions ---
-
-
-# --- Helper Functions ---
-
-
-def clean_address_data(df):
-    """Clean and standardize address data, handling mixed types and missing values."""
-    if df.empty:
-        return df
-
-    df = df.copy()
-
-    # List of potential address-related columns
-    address_columns = [
-        "Street",
-        "City",
-        "State",
-        "Zip",
-        "Full Address",
-        "Address",
-        "Address Line 1",
-        "Address Line 2",
-        "Zip Code",
-        "Postal Code",
-        "Province",
-    ]
-
-    # Clean each address column that exists
-    for col in address_columns:
-        if col in df.columns:
-            # Convert to string and handle various null representations
-            df[col] = df[col].astype(str)
-            df[col] = df[col].replace({"nan": "", "None": "", "NaN": "", "null": "", "NULL": "", "<NA>": ""})
-            df[col] = df[col].fillna("")
-
-            # Strip whitespace
-            df[col] = df[col].str.strip()
-
-    return df
-
-
-def build_full_address(df):
-    """Build Full Address from components, handling missing values safely."""
-    if df.empty:
-        return df
-
-    df = df.copy()
-
-    # Ensure all address columns are strings and handle NaN values
-    address_cols = ["Street", "City", "State", "Zip"]
-    for col in address_cols:
-        if col in df.columns:
-            df[col] = df[col].astype(str).replace(["nan", "None", "NaN"], "").fillna("")
-
-    # Build Full Address from available components
-    def safe_join_address(row):
-        parts = []
-
-        # Add street if available
-        if "Street" in row.index and row["Street"].strip():
-            parts.append(row["Street"].strip())
-
-        # Add city if available
-        if "City" in row.index and row["City"].strip():
-            parts.append(row["City"].strip())
-
-        # Add state if available
-        if "State" in row.index and row["State"].strip():
-            parts.append(row["State"].strip())
-
-        # Add zip if available
-        if "Zip" in row.index and row["Zip"].strip():
-            parts.append(row["Zip"].strip())
-
-        return ", ".join(parts) if parts else ""
-
-    df["Full Address"] = df.apply(safe_join_address, axis=1)
-
-    return df
 
 
 # --- Enhanced Data Loading with Validation ---
@@ -132,7 +75,9 @@ def load_application_data():
 
         if provider_df.empty:
             # Fallback to optimized loading method
-            provider_df = load_provider_data()
+            from src.data.ingestion import load_provider_data as load_provider_data_ingestion
+
+            provider_df = load_provider_data_ingestion()
             provider_df = validate_and_clean_coordinates(provider_df)
 
         # Clean and validate provider data - handle missing values
@@ -195,25 +140,43 @@ def load_application_data():
 
             # Merge inbound referral counts with provider data
             if not inbound_counts_df.empty and not provider_df.empty:
-                # Merge on Person ID first, then try Full Name
-                if "Person ID" in provider_df.columns and "Person ID" in inbound_counts_df.columns:
-                    provider_df = provider_df.merge(
-                        inbound_counts_df[["Person ID", "Inbound Referral Count"]], on="Person ID", how="left"
-                    )
-                else:
-                    # Fallback to name-based matching
+                # Merge on Full Name when possible; otherwise add a default column
+                if "Full Name" in provider_df.columns and "Full Name" in inbound_counts_df.columns:
                     provider_df = provider_df.merge(
                         inbound_counts_df[["Full Name", "Inbound Referral Count"]], on="Full Name", how="left"
                     )
+                else:
+                    provider_df["Inbound Referral Count"] = 0
+                    st.warning("⚠️ Could not merge inbound referral data - column mismatch")
 
                 # Fill missing inbound referral counts with 0
-                provider_df["Inbound Referral Count"] = provider_df["Inbound Referral Count"].fillna(0)
+                if "Inbound Referral Count" in provider_df.columns:
+                    provider_df["Inbound Referral Count"] = provider_df["Inbound Referral Count"].fillna(0)
+                else:
+                    provider_df["Inbound Referral Count"] = 0
 
                 st.success(f"✅ Merged inbound referral data for {len(inbound_counts_df)} providers")
             else:
-                st.warning("⚠️ Could not merge inbound referral data - empty datasets")
+                # Add default inbound referral count column
+                provider_df["Inbound Referral Count"] = 0
+                if inbound_counts_df.empty:
+                    st.info("ℹ️ No inbound referral counts available (empty dataset)")
+                else:
+                    st.warning("⚠️ Could not merge inbound referral data - empty datasets")
         else:
+            # Add default inbound referral count column
+            provider_df["Inbound Referral Count"] = 0
             st.info("ℹ️ No inbound referral data available")
+
+        # Remove any duplicate providers based on Full Name, keeping the first occurrence
+        if not provider_df.empty and "Full Name" in provider_df.columns:
+            initial_provider_count = len(provider_df)
+            provider_df = provider_df.drop_duplicates(subset=["Full Name"], keep="first")
+            final_provider_count = len(provider_df)
+
+            if initial_provider_count != final_provider_count:
+                duplicates_removed = initial_provider_count - final_provider_count
+                st.info(f"ℹ️ Removed {duplicates_removed} duplicate provider records")
 
         return provider_df, detailed_referrals_df
 
@@ -237,23 +200,20 @@ def apply_time_filtering(provider_df, detailed_referrals_df, start_date, end_dat
         time_filtered_outbound = calculate_time_based_referral_counts(detailed_referrals_df, start_date, end_date)
         if not time_filtered_outbound.empty:
             # Update outbound referral counts with time-filtered data
-            # Merge on Person ID or Full Name
-            if "Person ID" in working_df.columns and "Person ID" in time_filtered_outbound.columns:
-                # Remove existing referral count and merge new time-filtered counts
-                working_df = working_df.drop(columns=["Referral Count"], errors="ignore")
-                working_df = working_df.merge(
-                    time_filtered_outbound[["Person ID", "Referral Count"]], on="Person ID", how="left"
-                )
-            else:
-                # Fallback to name-based matching
-                working_df = working_df.drop(columns=["Referral Count"], errors="ignore")
-                working_df = working_df.merge(
-                    time_filtered_outbound[["Full Name", "Referral Count"]], on="Full Name", how="left"
-                )
+            # Merge on Full Name
+            working_df = working_df.drop(columns=["Referral Count"], errors="ignore")
+            working_df = working_df.merge(
+                time_filtered_outbound[["Full Name", "Referral Count"]], on="Full Name", how="left"
+            )
 
             # Fill missing outbound referral counts with 0
             working_df["Referral Count"] = working_df["Referral Count"].fillna(0)
-            st.info(f"📊 Applied time filter to outbound referrals: {start_date} to {end_date}")
+
+            # Only show message once per session for this time period
+            time_filter_key = f"time_filter_msg_{start_date}_{end_date}"
+            if time_filter_key not in st.session_state:
+                st.info(f"📊 Applied time filter to outbound referrals: {start_date} to {end_date}")
+                st.session_state[time_filter_key] = True
         else:
             st.warning("⚠️ No outbound referrals found in selected time period.")
 
@@ -264,14 +224,9 @@ def apply_time_filtering(provider_df, detailed_referrals_df, start_date, end_dat
         if not time_filtered_inbound.empty:
             # Update inbound referral counts with time-filtered data
             working_df = working_df.drop(columns=["Inbound Referral Count"], errors="ignore")
-            if "Person ID" in working_df.columns and "Person ID" in time_filtered_inbound.columns:
-                working_df = working_df.merge(
-                    time_filtered_inbound[["Person ID", "Inbound Referral Count"]], on="Person ID", how="left"
-                )
-            else:
-                working_df = working_df.merge(
-                    time_filtered_inbound[["Full Name", "Inbound Referral Count"]], on="Full Name", how="left"
-                )
+            working_df = working_df.merge(
+                time_filtered_inbound[["Full Name", "Inbound Referral Count"]], on="Full Name", how="left"
+            )
 
             # Fill missing inbound referral counts with 0
             working_df["Inbound Referral Count"] = working_df["Inbound Referral Count"].fillna(0)
@@ -280,6 +235,22 @@ def apply_time_filtering(provider_df, detailed_referrals_df, start_date, end_dat
             st.warning("⚠️ No inbound referrals found in selected time period.")
 
     return working_df
+
+
+def filter_providers_by_radius(df: pd.DataFrame, max_radius_miles: float) -> pd.DataFrame:
+    """Filter providers by maximum radius (in miles).
+
+    Expects the DataFrame to already contain a "Distance (Miles)" column.
+    Returns a new filtered DataFrame (copy).
+    """
+    if df is None or df.empty:
+        return df
+
+    # Avoid KeyError if Distance column missing
+    if "Distance (Miles)" not in df.columns:
+        return df
+
+    return df[df["Distance (Miles)"] <= max_radius_miles].copy()
 
 
 # Load data using enhanced function
@@ -301,9 +272,6 @@ else:
 
 # --- Set random seed for reproducibility ---
 np.random.seed(42)  # Ensures consistent placeholder data and recommendations across runs
-
-# --- Streamlit Page Config ---
-st.set_page_config(page_title="Provider Recommender", page_icon=":hospital:", layout="wide")
 
 # --- Company Logo and Title at Top ---
 st.image("assets/JaklitschLaw_NewLogo_withDogsRed.jpg", width=100)
@@ -415,6 +383,11 @@ with st.sidebar:
                 # Default equal weights if all are zero
                 alpha = beta = gamma = 1 / 3
 
+            # Persist normalized weights so UI and session state remain consistent
+            st.session_state["alpha"] = alpha
+            st.session_state["beta"] = beta
+            st.session_state["gamma"] = gamma
+
             st.markdown(
                 f"**Normalized weights:** Distance: {alpha:.2f} | "
                 f"Outbound Referrals: {beta:.2f} | Inbound Referrals: {gamma:.2f} "
@@ -460,6 +433,11 @@ with st.sidebar:
 
             gamma = 0.0  # No inbound weight
 
+            # Persist normalized weights immediately
+            st.session_state["alpha"] = alpha
+            st.session_state["beta"] = beta
+            st.session_state["gamma"] = gamma
+
             st.markdown(
                 f"**Normalized weights:** Distance: {alpha:.2f} | "
                 f"Outbound Referrals: {beta:.2f} (Total: {alpha + beta:.2f})"
@@ -476,7 +454,10 @@ with st.sidebar:
             "Minimum Outbound Referral Count",
             min_value=0,
             value=st.session_state.get("min_referrals", 1),
-            help="Only show providers with at least this many outbound referrals. Lower values show more providers, higher values show only established providers.",
+            help=(
+                "Only show providers with at least this many outbound referrals. "
+                "Lower values show more providers; higher values show only established providers."
+            ),
         )
 
         # --- Time Period Filter
@@ -484,16 +465,32 @@ with st.sidebar:
             "Time Period for Referral Count",
             value=[dt.date.today() - dt.timedelta(days=365), dt.date.today()],
             max_value=dt.date.today() + dt.timedelta(days=1),
-            help="Calculate referral counts only for this time period. Defaults to rolling last year.",
+            help=("Calculate referral counts only for this time period. " "Defaults to a rolling one-year window."),
         )
 
         use_time_filter = st.checkbox(
             "Enable time-based filtering",
             value=True,
-            help="When enabled, referral counts will be calculated only for the selected time period. Applies to both inbound and outbound referrals.",
+            help=(
+                "When enabled, referral counts will be calculated only for the "
+                "selected time period. Applies to both inbound and outbound referrals."
+            ),
         )
 
         submit = st.form_submit_button("Find Best Provider")
+
+        # --- Maximum radius (miles) ---
+        max_radius_miles = st.slider(
+            "Maximum Search Radius (miles)",
+            min_value=1,
+            max_value=200,
+            value=st.session_state.get("max_radius_miles", 25),
+            step=1,
+            help="Exclude providers beyond this radius from the recommendation (in miles).",
+        )
+
+        # Persist radius
+        st.session_state["max_radius_miles"] = max_radius_miles
 
         # Real-time address validation
         if street or city or state or zipcode:
@@ -541,18 +538,10 @@ with st.sidebar:
 
 
 # --- Tabs for Main Content ---
-tabs = st.tabs(["Find Provider", "How Selection Works", "Data Quality"])
+tabs = st.tabs(["Find Provider", "How Selection Works", "Data Quality", "Update Data"])
 
 
 with tabs[0]:
-    # --- Geocoding Setup ---
-    if GEOPY_AVAILABLE:
-        geolocator = Nominatim(user_agent="provider_recommender")
-        geocode = RateLimiter(geolocator.geocode, min_delay_seconds=2, max_retries=3)
-    else:
-        st.error("Geocoding services are not available. Please install the geopy package.")
-        st.stop()
-
     # --- Content for Results ---
     # Always show results if present in session state
     best = st.session_state.get("last_best")
@@ -619,7 +608,26 @@ with tabs[0]:
                 working_df = provider_df
 
             filtered_df = working_df[working_df["Referral Count"] >= min_referrals].copy()
+            # Calculate distances (miles)
             filtered_df["Distance (Miles)"] = calculate_distances(user_lat, user_lon, filtered_df)
+
+            # Read max radius (miles) from session state (default 25 miles)
+            max_radius_miles = st.session_state.get("max_radius_miles", 25)
+
+            pre_filter_count = len(filtered_df)
+            filtered_df = filter_providers_by_radius(filtered_df, max_radius_miles)
+            post_filter_count = len(filtered_df)
+
+            if pre_filter_count != post_filter_count:
+                st.info(
+                    f"Filtered out {pre_filter_count - post_filter_count} providers beyond {max_radius_miles} miles."
+                )
+
+            if filtered_df.empty:
+                st.warning(
+                    f"No providers found within {max_radius_miles} miles. Try increasing the maximum radius, lowering the minimum referral count, or adjusting the address."
+                )
+                return None, None
             best, scored_df = recommend_provider(
                 filtered_df,
                 distance_weight=alpha,
@@ -627,6 +635,10 @@ with tabs[0]:
                 inbound_weight=gamma,
                 min_referrals=min_referrals,
             )
+
+            # Remove duplicates from scored results based on Full Name
+            if scored_df is not None and not scored_df.empty:
+                scored_df = scored_df.drop_duplicates(subset=["Full Name"], keep="first")
 
             # Store results and params in session state
             st.session_state["last_best"] = best
@@ -636,6 +648,7 @@ with tabs[0]:
                 "beta": beta,
                 "gamma": gamma,
                 "min_referrals": min_referrals,
+                "max_radius_miles": st.session_state.get("max_radius_miles", 25),
             }
 
             return best, scored_df
@@ -673,9 +686,10 @@ with tabs[0]:
         try:
             if "Full Address" in best.index and pd.notna(best["Full Address"]) and best["Full Address"]:
                 address_for_url = str(best["Full Address"]).replace(" ", "+")
-                maps_url = f"https://www.google.com/maps/search/?api=1&query={address_for_url}"
+                # Use OpenStreetMap search link (Nominatim/OpenStreetMap) instead of Google Maps
+                osm_url = f"https://www.openstreetmap.org/search?query={address_for_url}"
                 st.markdown(
-                    f"🏥 <b>Address:</b> <a href='{maps_url}' target='_blank'>{best['Full Address']}</a>",
+                    f"🏥 <b>Address:</b> <a href='{osm_url}' target='_blank'>{best['Full Address']}</a>",
                     unsafe_allow_html=True,
                 )
             else:
@@ -712,7 +726,10 @@ with tabs[0]:
             beta_disp = st.session_state.get("beta", 0.33)
             gamma_disp = st.session_state.get("gamma", 0.33)
             st.write(
-                f"*Three-factor scoring: Distance({alpha_disp:.1%}) + Outbound({beta_disp:.1%}) + Inbound({gamma_disp:.1%})*"
+                (
+                    f"*Three-factor scoring: Distance({alpha_disp:.1%}) + Outbound({beta_disp:.1%}) "
+                    f"+ Inbound({gamma_disp:.1%})*"
+                )
             )
         else:
             alpha_disp = st.session_state.get("alpha", 0.6)
@@ -735,12 +752,17 @@ with tabs[0]:
         available_cols = [col for col in mandatory_cols if col in scored_df.columns]
 
         if available_cols:
+            # Remove any duplicate providers before displaying
+            display_df = (
+                scored_df[available_cols]
+                .drop_duplicates(subset=["Full Name"], keep="first")
+                .sort_values(by="Score" if "Score" in available_cols else available_cols[0], ignore_index=True)
+            )
             st.dataframe(
-                scored_df[available_cols].sort_values(
-                    by="Score" if "Score" in available_cols else available_cols[0], ignore_index=True
-                ),
+                display_df,
                 hide_index=True,
-                use_container_width=True,
+                # use_container_width=True,
+                width="stretch",
             )
         else:
             st.error("Unable to display results: required columns not found in data.")
@@ -774,13 +796,13 @@ with tabs[0]:
 
                 rationale.append("")
 
-                # Referral count information
-                if "Referral Count" in best.index and pd.notna(best["Referral Count"]):
-                    rationale.append(
-                        f"* This provider has **{best['Referral Count']}** recent referrals from our office (fewer are better for load balancing)."
-                    )
-                else:
-                    rationale.append("* Referral count information not available.")
+                # # Referral count information
+                # if "Referral Count" in best.index and pd.notna(best["Referral Count"]):
+                #     rationale.append(
+                #         "* This provider has **{count}** recent referrals from our office."
+                #     )
+                # else:
+                #     rationale.append("* Referral count information not available.")
 
                 rationale.append("")
                 min_referrals_disp = params.get("min_referrals", min_referrals)
@@ -796,15 +818,22 @@ with tabs[0]:
                     beta_disp = st.session_state.get("beta", 0.33)
                     gamma_disp = st.session_state.get("gamma", 0.33)
                     rationale.append(
-                        f"The final score combines normalized distance, outbound referrals, and inbound referrals using your chosen weights: "
-                        f"**Distance = {alpha_disp:.1%}**, **Outbound Referrals = {beta_disp:.1%}**, **Inbound Referrals = {gamma_disp:.1%}**."
+                        (
+                            "The final score combines normalized distance, outbound referrals, "
+                            "and inbound referrals using your chosen weights: "
+                            f"**Distance = {alpha_disp:.1%}**, **Outbound Referrals = {beta_disp:.1%}**, "
+                            f"**Inbound Referrals = {gamma_disp:.1%}**."
+                        )
                     )
                 else:
                     alpha_disp = st.session_state.get("alpha", 0.6)
                     beta_disp = st.session_state.get("beta", 0.4)
                     rationale.append(
-                        f"The final score combines normalized distance and outbound referrals using your chosen weights: "
-                        f"**Distance = {alpha_disp:.1%}**, **Outbound Referrals = {beta_disp:.1%}**."
+                        (
+                            "The final score combines normalized distance and outbound referrals "
+                            "using your chosen weights: "
+                            f"**Distance = {alpha_disp:.1%}**, **Outbound Referrals = {beta_disp:.1%}**."
+                        )
                     )
                 rationale.append("The provider with the lowest composite score was recommended.")
                 st.markdown("<br>".join(rationale), unsafe_allow_html=True)
@@ -813,7 +842,10 @@ with tabs[0]:
                 st.markdown("Rationale information unavailable.", unsafe_allow_html=True)
     elif submit:
         st.warning(
-            f"No providers met the requirements (minimum {min_referrals} referrals). Please check the address, lower the minimum referral count, or try again."
+            (
+                f"No providers met the requirements (minimum {min_referrals} referrals). "
+                "Please check the address, lower the minimum referral count, or try again."
+            )
         )
 
 with tabs[1]:
@@ -1006,7 +1038,7 @@ with tabs[2]:
 
     # Quick data quality summary
     try:
-        from data_dashboard import display_data_quality_dashboard
+        from data_dashboard import display_data_quality_dashboard  # noqa: F401
 
         if st.button("🚀 Launch Full Data Dashboard", help="Open comprehensive data quality dashboard"):
             st.markdown(
@@ -1063,3 +1095,75 @@ with tabs[2]:
 
     except ImportError:
         st.warning("Data dashboard module not available. Install plotly for full dashboard functionality.")
+
+with tabs[3]:
+    st.markdown("### 🔄 Update Referral Data")
+
+    st.markdown(
+        """
+        Use this tab to upload new referral data and update the provider database.
+        This process will clean, validate, and integrate new referral information.
+        """
+    )
+
+    # Note: Data preparation interface would go here
+    # TODO: Implement data preparation interface
+    st.info("📝 Data preparation interface - coming soon!")
+    st.markdown(
+        """
+        **Alternative: Manual Data Update**
+
+        If the automated data preparation module is not available, you can manually update data by:
+
+        1. **Place new Excel file** in the `data/raw/` directory
+        2. **Run data preparation script** in terminal:
+           ```bash
+           python -m src.data.preparation_enhanced
+           ```
+        3. **Refresh the app** to load updated data
+
+        **Expected file format:**
+        - Excel file (.xlsx or .xls)
+        - Contains referral data with provider information
+        - Should include columns for provider names, addresses, and referral dates
+        """
+    )
+
+    # Provide basic file upload as fallback
+    st.markdown("#### Basic File Upload")
+    uploaded_file = st.file_uploader(
+        "Upload new referral data (Excel format)",
+        type=["xlsx", "xls"],
+        help="Upload Excel file containing updated referral data",
+    )
+
+    if uploaded_file is not None:
+        # Save to raw data directory
+        raw_data_path = Path("data/raw")
+        raw_data_path.mkdir(exist_ok=True)
+
+        file_path = raw_data_path / uploaded_file.name
+
+        with open(file_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+
+        st.success(f"✅ File uploaded successfully to: {file_path}")
+        st.info("💡 Run the data preparation script manually to process this file.")
+
+        # Show file info
+        st.markdown("**File Information:**")
+        st.markdown(f"- **Name**: {uploaded_file.name}")
+        st.markdown(f"- **Size**: {uploaded_file.size:,} bytes")
+        st.markdown(f"- **Saved to**: {file_path}")
+
+        # Provide refresh option
+        if st.button("🔄 Clear Cache and Refresh Data"):
+            # Clear cache and time filter message flags
+            st.cache_data.clear()
+            # Clear time filter message flags
+            keys_to_remove = [
+                key for key in st.session_state.keys() if isinstance(key, str) and key.startswith("time_filter_msg_")
+            ]
+            for key in keys_to_remove:
+                del st.session_state[key]
+            st.rerun()
