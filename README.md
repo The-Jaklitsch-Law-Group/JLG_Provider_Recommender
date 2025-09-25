@@ -30,8 +30,8 @@ Run the Streamlit app
 # Primary entry (most common in this repo)
 streamlit run Main_Page.py
 
-# If you have a different entrypoint (some setups use app.py):
-# streamlit run app.py
+# If you have a different entrypoint (some setups use Main_Page.py):
+# streamlit run Main_Page.py
 ```
 
 Run tests

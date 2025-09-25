@@ -58,7 +58,7 @@ def get_logo_bytes():
         print("✅ Successfully created logo_data.py module")
         print("📁 File size:", len(module_content), "bytes")
         print("🎨 Logo encoded length:", len(logo_base64), "characters")
-        print("\n📋 Usage in app.py:")
+        print("\n📋 Usage in Main_Page.py:")
         print("   import logo_data")
         print("   st.image(logo_data.get_logo_data_url(), width=200)")
 

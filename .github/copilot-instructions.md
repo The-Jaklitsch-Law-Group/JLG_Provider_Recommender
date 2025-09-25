@@ -4,13 +4,13 @@ This file gives precise, repo-specific guidance for an AI coding agent working o
 
 Keep edits small and incremental. Core principles:
 
-- High-level: app is a Streamlit frontend (`app.py`, `data_dashboard.py`) that queries cleaned provider data (Parquet in `data/processed/`) and uses `src/utils/providers.py` + `src/utils/scoring.py` to score recommendations.
+- High-level: app is a Streamlit frontend (`Main_Page.py`, `data_dashboard.py`) that queries cleaned provider data (Parquet in `data/processed/`) and uses `src/utils/providers.py` + `src/utils/scoring.py` to score recommendations.
 - Data flow: raw Excel (data/raw/*.xlsx) → cleaning (`prepare_contacts/contact_cleaning.ipynb`, `src/utils/cleaning.py`) → parquet (`data/processed/*.parquet`) → loaded via `src/data/ingestion.py` (use DataIngestionManager and DataSource enums).
 - Geocoding & distance: implemented in `src/utils/geocoding.py` (Nominatim by default; Google Maps optional via env). Distance calculations are vectorized (haversine in NumPy).
 
 Important files to read first:
 
-- `app.py` — streamlit entry; contains session state keys: user_lat/lon, last_best, last_scored_df and UI controls.
+- `Main_Page.py` — streamlit entry; contains session state keys: user_lat/lon, last_best, last_scored_df and UI controls.
 - `src/data/ingestion.py` — canonical data-loading helper. Always prefer DataIngestionManager.load_data(DataSource.X).
 - `src/utils/providers.py` and `src/utils/scoring.py` — recommendation and scoring logic (weighting, tie-breakers).
 - `src/utils/cleaning.py` and `prepare_contacts/contact_cleaning.ipynb` — canonical data-cleaning and deduplication rules.
@@ -20,7 +20,7 @@ Important files to read first:
 Run / test commands (use workspace root):
 
 - Install deps: pip install -r requirements.txt
-- Run app locally: streamlit run app.py
+- Run app locally: streamlit run Main_Page.py
 - Run tests: pytest -q (or python -m pytest)
 
 Patterns & conventions (explicit to this repo):
