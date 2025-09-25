@@ -12,12 +12,12 @@ from src.utils.io_utils import get_word_bytes, sanitize_filename
 st.set_page_config(page_title="Results", page_icon=":bar_chart:", layout="wide")
 
 if st.sidebar.button("🡄 New Search", type="secondary"):
-    st.switch_page("Main_Page.py")
+    st.switch_page("app.py")
 
 required_keys = ["user_lat", "user_lon", "alpha", "beta", "min_referrals", "max_radius_miles"]
 if any(k not in st.session_state for k in required_keys):
     st.warning("No search parameters found. Redirecting to search.")
-    st.switch_page("Main_Page.py")
+    st.switch_page("app.py")
 
 provider_df, detailed_referrals_df = load_application_data()
 

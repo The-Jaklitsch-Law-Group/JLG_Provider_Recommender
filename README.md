@@ -28,10 +28,10 @@ Run the Streamlit app
 
 ```bash
 # Primary entry (most common in this repo)
-streamlit run Main_Page.py
+streamlit run app.py
 
-# If you have a different entrypoint (some setups use Main_Page.py):
-# streamlit run Main_Page.py
+# If you have a different entrypoint (some setups use app.py):
+# streamlit run app.py
 ```
 
 Run tests
@@ -42,7 +42,7 @@ pytest -q
 
 ## Project layout (high level)
 
-- `Main_Page.py` - Streamlit front-end entry used in this repo.
+- `app.py` - Streamlit front-end entry used in this repo.
 - `pages/` - additional Streamlit multi-page views (search, results, data quality, etc.).
 - `src/` - application logic and utilities
   - `src/data/` - ingestion and preparation helpers
