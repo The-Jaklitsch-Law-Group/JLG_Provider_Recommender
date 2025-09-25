@@ -1,44 +1,73 @@
-"""Data validation and quality monitoring dashboard."""
+"""Self-contained Streamlit sub-page: Data Quality Dashboard.
+
+This page uses the repository's centralized ingestion API (DataIngestionManager
+via the compatibility `data_manager` and `DataSource` enums) instead of
+direct helper functions. That follows project conventions:
+`DataIngestionManager.load_data(DataSource.X)`.
+"""
 
 from datetime import datetime, timedelta
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import streamlit as st
 
-from src.data.ingestion import load_detailed_referrals, load_provider_data
+from src.data.ingestion import DataSource, data_manager
 from src.utils.cleaning import validate_provider_data
 
 
-def calculate_referral_counts(provider_df, detailed_df):
+def calculate_referral_counts(provider_df: pd.DataFrame, detailed_df: pd.DataFrame) -> pd.DataFrame:
     """Calculate referral counts if missing from provider data."""
     if not detailed_df.empty and "Full Name" in detailed_df.columns:
         referral_counts = detailed_df.groupby("Full Name").size().reset_index(name="Referral Count")
-        # Merge with provider data
         provider_df = provider_df.merge(referral_counts, on="Full Name", how="left")
         provider_df["Referral Count"] = provider_df["Referral Count"].fillna(0)
     else:
-        # If no detailed referral data, set all counts to 0
         provider_df["Referral Count"] = 0
 
     return provider_df
 
 
-def display_data_quality_dashboard():
-    """Display comprehensive data quality dashboard."""
+def display_data_quality_dashboard() -> None:
+    """Render the dashboard in the multipage app using the ingestion manager.
+
+    This function attempts to import Streamlit and render the interactive
+    dashboard. If Streamlit is not available (for example the module is used
+    in a non-UI context), it falls back to a minimal text summary so the file
+    can safely replace the legacy `data_dashboard.py` shim.
+    """
+
+    # Try to import Streamlit lazily so this module can be imported in
+    # non-Streamlit contexts (tests, CLI tools, or removal of the old shim).
+    try:
+        import streamlit as st  # type: ignore
+    except Exception:
+        # Non-Streamlit fallback: print a compact summary using the
+        # centralized ingestion manager and return.
+        try:
+            provider_df = data_manager.load_data(DataSource.PROVIDER_DATA, show_status=False)
+            detailed_df = data_manager.load_data(DataSource.OUTBOUND_REFERRALS, show_status=False)
+        except Exception as e:
+            summary = f"Failed to load data: {e}"
+            print(summary)
+            return
+
+        total_providers = len(provider_df)
+        total_referrals = len(detailed_df) if detailed_df is not None else "N/A"
+        summary = f"Providers: {total_providers} | Referrals: {total_referrals}"
+        print(summary)
+        return
+
+    # Streamlit is available; render the interactive dashboard.
+    st.set_page_config(page_title="Data Quality Dashboard", page_icon="📊", layout="wide")
 
     st.title("📊 Data Quality Dashboard")
     st.markdown("Monitor provider data quality and system health.")
 
-    # Load data
+    # Load data via the centralized data manager
     try:
-        provider_df = load_provider_data()
-        try:
-            detailed_df = load_detailed_referrals()  # This loads the cleaned outbound referrals
-        except Exception:
-            # Fallback to empty DataFrame if detailed referrals not found
-            detailed_df = pd.DataFrame()
+        provider_df = data_manager.load_data(DataSource.PROVIDER_DATA, show_status=False)
+        detailed_df = data_manager.load_data(DataSource.OUTBOUND_REFERRALS, show_status=False)
     except Exception as e:
         st.error(f"Failed to load data: {e}")
         return
@@ -72,7 +101,6 @@ def display_data_quality_dashboard():
             st.metric("Avg Referrals/Provider", "N/A")
 
     with col4:
-        # Data freshness
         if not detailed_df.empty and "Referral Date" in detailed_df.columns:
             latest_referral = detailed_df["Referral Date"].max()
             days_since = (datetime.now() - latest_referral).days
@@ -99,24 +127,25 @@ def display_data_quality_dashboard():
         valid_coords = provider_df.dropna(subset=["Latitude", "Longitude"])
 
         if not valid_coords.empty:
-            # Create map
+            # Only include hover_data columns that actually exist to avoid plotly errors
+            hover_cols = [c for c in ("City", "State", "Referral Count") if c in valid_coords.columns]
+            # Always include Full Name as hover_name; hover_data may be empty
             fig = px.scatter_mapbox(
                 valid_coords,
                 lat="Latitude",
                 lon="Longitude",
                 hover_name="Full Name",
-                hover_data=["City", "State", "Referral Count"],
-                color="Referral Count",
-                size="Referral Count",
+                hover_data=hover_cols,
+                color="Referral Count" if "Referral Count" in valid_coords.columns else None,
+                size="Referral Count" if "Referral Count" in valid_coords.columns else None,
                 color_continuous_scale="Viridis",
                 mapbox_style="open-street-map",
                 title="Provider Geographic Distribution",
                 height=500,
             )
             fig.update_layout(mapbox=dict(center=dict(lat=39.2904, lon=-76.6122), zoom=8))
-            st.plotly_chart(fig, width='stretch')
+            st.plotly_chart(fig, width="stretch")
 
-            # Geographic stats
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown("### Coverage Statistics")
@@ -142,7 +171,7 @@ def display_data_quality_dashboard():
                     ]
                 )
                 coord_quality_fig.update_layout(title="Coordinate Completeness")
-                st.plotly_chart(coord_quality_fig, width='stretch')
+                st.plotly_chart(coord_quality_fig, width="stretch")
         else:
             st.warning("No valid coordinates found in provider data.")
 
@@ -153,7 +182,6 @@ def display_data_quality_dashboard():
         col1, col2 = st.columns(2)
 
         with col1:
-            # Histogram of referral counts
             fig = px.histogram(
                 provider_df,
                 x="Referral Count",
@@ -161,10 +189,9 @@ def display_data_quality_dashboard():
                 title="Distribution of Referral Counts",
                 labels={"count": "Number of Providers", "Referral Count": "Referral Count"},
             )
-            st.plotly_chart(fig, width='stretch')
+            st.plotly_chart(fig, width="stretch")
 
         with col2:
-            # Top providers by referral count
             top_providers = provider_df.nlargest(10, "Referral Count")[["Full Name", "Referral Count"]]
             fig = px.bar(
                 top_providers,
@@ -174,13 +201,12 @@ def display_data_quality_dashboard():
                 title="Top 10 Providers by Referral Count",
             )
             fig.update_layout(yaxis={"categoryorder": "total ascending"})
-            st.plotly_chart(fig, width='stretch')
+            st.plotly_chart(fig, width="stretch")
 
     # Time-based Analysis
     if not detailed_df.empty and "Referral Date" in detailed_df.columns:
         st.markdown("## ⏰ Referral Trends Over Time")
 
-        # Convert referral date and create monthly aggregation
         detailed_df["Referral Date"] = pd.to_datetime(detailed_df["Referral Date"])
         detailed_df["Month"] = detailed_df["Referral Date"].dt.to_period("M")
 
@@ -192,9 +218,8 @@ def display_data_quality_dashboard():
                 monthly_referrals, x="Month", y="Referral Count", title="Monthly Referral Trends", markers=True
             )
             fig.update_xaxes(tickangle=45)
-            st.plotly_chart(fig, width='stretch')
+            st.plotly_chart(fig, width="stretch")
 
-        # Recent activity
         st.markdown("### Recent Activity")
         recent_cutoff = datetime.now() - timedelta(days=30)
         recent_referrals = detailed_df[detailed_df["Referral Date"] >= recent_cutoff]
@@ -214,28 +239,24 @@ def display_data_quality_dashboard():
     issues = []
     recommendations = []
 
-    # Check for missing coordinates
     if "Latitude" in provider_df.columns and "Longitude" in provider_df.columns:
         missing_coords = provider_df[provider_df["Latitude"].isna() | provider_df["Longitude"].isna()]
         if not missing_coords.empty:
             issues.append(f"{len(missing_coords)} providers missing geographic coordinates")
             recommendations.append("Update provider geocoding to ensure all providers have valid coordinates")
 
-    # Check for providers with zero referrals
     if "Referral Count" in provider_df.columns:
         zero_referrals = provider_df[provider_df["Referral Count"] == 0]
         if not zero_referrals.empty:
             issues.append(f"{len(zero_referrals)} providers have zero referrals")
             recommendations.append("Review providers with zero referrals - consider removing inactive providers")
 
-    # Check for missing contact information
     if "Phone Number" in provider_df.columns:
         missing_phone = provider_df[provider_df["Phone Number"].isna() | (provider_df["Phone Number"] == "")]
         if not missing_phone.empty:
             issues.append(f"{len(missing_phone)} providers missing phone numbers")
             recommendations.append("Update provider contact information to ensure completeness")
 
-    # Check data freshness
     if not detailed_df.empty and "Referral Date" in detailed_df.columns:
         latest_referral = detailed_df["Referral Date"].max()
         days_since = (datetime.now() - latest_referral).days
@@ -254,7 +275,6 @@ def display_data_quality_dashboard():
     else:
         st.success("No major data quality issues detected!")
 
-    # Raw Data Preview
     with st.expander("🔍 Raw Data Preview", expanded=False):
         st.markdown("### Provider Data Sample")
         if not provider_df.empty:
@@ -265,8 +285,5 @@ def display_data_quality_dashboard():
             st.dataframe(detailed_df.head(10))
 
 
-if __name__ == "__main__":
-    # Run as standalone Streamlit app
-    st.set_page_config(page_title="Data Quality Dashboard", page_icon="📊", layout="wide")
-
-    display_data_quality_dashboard()
+# Render the page when Streamlit imports it
+display_data_quality_dashboard()

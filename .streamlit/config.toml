@@ -9,10 +9,6 @@ secondaryBackgroundColor = "#262730" # Sidebar / containers
 textColor = "#FAFAFA"               # High-contrast text
 font = "sans serif"
 
-[server]
-headless = true
-runOnSave = true
-
 [client]
 toolbarMode = "viewer"
 
@@ -26,6 +22,7 @@ fileWatcherType = "none"
 
 # Cloud deployment settings
 headless = true
+runOnSave = true
 enableCORS = false
 enableXsrfProtection = false
 
@@ -52,14 +49,6 @@ level = "info"
 
 # Log message format
 messageFormat = "%(asctime)s %(message)s"
-
-[theme]
-# Professional theme matching JLG branding
-primaryColor = "#1f4e79"           # JLG blue
-backgroundColor = "#ffffff"         # Clean white background
-secondaryBackgroundColor = "#f8f9fa" # Light gray for sections
-textColor = "#212529"              # Dark text for readability
-font = "sans serif"                # Clean, professional font
 
 [client]
 # Optimize for cloud deployment
