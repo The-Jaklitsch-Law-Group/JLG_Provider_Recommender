@@ -60,10 +60,16 @@ st.subheader(provider_name)
 if isinstance(best, pd.Series):
     if "Full Address" in best and best["Full Address"]:
         st.write("Address:", best["Full Address"])
-    if "Phone Number" in best and best["Phone Number"]:
-        st.write("Phone:", best["Phone Number"])
+    phone_value = None
+    for phone_key in ["Work Phone Number", "Work Phone", "Phone Number", "Phone 1"]:
+        candidate = best.get(phone_key)
+        if candidate:
+            phone_value = candidate
+            break
+    if phone_value:
+        st.write("Phone:", phone_value)
 
-cols = ["Full Name", "Full Address", "Distance (Miles)", "Referral Count"]
+cols = ["Full Name", "Work Phone Number", "Full Address", "Distance (Miles)", "Referral Count"]
 if "Inbound Referral Count" in scored_df.columns:
     cols.append("Inbound Referral Count")
 if "Score" in scored_df.columns:
@@ -74,7 +80,9 @@ if available:
         scored_df[available]
         .drop_duplicates(subset=["Full Name"], keep="first")
         .sort_values(by="Score" if "Score" in available else available[0])
+        .reset_index(drop=True)
     )
+    display_df.insert(0, "Rank", range(1, len(display_df) + 1))
     st.dataframe(display_df, hide_index=True, width='stretch')
 else:
     st.error("No displayable columns in results.")

@@ -52,6 +52,18 @@ def load_application_data():
             provider_df = build_full_address(provider_df)
         if "Full Name" in provider_df.columns:
             provider_df = provider_df.drop_duplicates(subset=["Full Name"], keep="first")
+        phone_candidates = [
+            col
+            for col in ["Work Phone Number", "Work Phone", "Phone Number", "Phone 1"]
+            if col in provider_df.columns
+        ]
+        if phone_candidates:
+            phone_source = phone_candidates[0]
+            provider_df["Work Phone Number"] = provider_df[phone_source]
+            if "Work Phone" not in provider_df.columns:
+                provider_df["Work Phone"] = provider_df["Work Phone Number"]
+            if "Phone Number" not in provider_df.columns:
+                provider_df["Phone Number"] = provider_df["Work Phone Number"]
 
     detailed_referrals_df = load_detailed_referrals()
     inbound_referrals_df = load_inbound_referrals()

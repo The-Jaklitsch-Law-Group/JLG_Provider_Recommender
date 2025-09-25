@@ -12,7 +12,12 @@ def get_word_bytes(best_provider: pd.Series) -> bytes:
     doc.add_heading("Recommended Provider", 0)
     doc.add_paragraph(f"Name: {best_provider.get('Full Name', '')}")
     doc.add_paragraph(f"Address: {best_provider.get('Full Address', '')}")
-    phone = best_provider.get("Phone Number") or best_provider.get("Phone 1")
+    phone = None
+    for phone_key in ["Work Phone Number", "Work Phone", "Phone Number", "Phone 1"]:
+        candidate = best_provider.get(phone_key)
+        if candidate:
+            phone = candidate
+            break
     if phone:
         doc.add_paragraph(f"Phone: {phone}")
     buffer = io.BytesIO()
