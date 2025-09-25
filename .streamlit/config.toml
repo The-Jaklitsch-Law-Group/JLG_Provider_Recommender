@@ -1,4 +1,19 @@
-# Streamlit Cloud Configuration
+[theme]
+# Force dark base theme for the entire application.
+base = "dark"
+
+# Brand-aligned accents (adjust as desired).
+primaryColor = "#C72C2C"            # Accent / brand red
+backgroundColor = "#0E1117"         # Main background
+secondaryBackgroundColor = "#262730" # Sidebar / containers
+textColor = "#FAFAFA"               # High-contrast text
+font = "sans serif"
+
+[client]
+toolbarMode = "viewer"
+
+# Users can still manually switch themes in their personal settings, but
+# this file ensures the default loads in dark mode.# Streamlit Cloud Configuration
 # Official configuration for professional deployment
 
 [server]
@@ -7,6 +22,7 @@ fileWatcherType = "none"
 
 # Cloud deployment settings
 headless = true
+runOnSave = true
 enableCORS = false
 enableXsrfProtection = false
 
@@ -33,14 +49,6 @@ level = "info"
 
 # Log message format
 messageFormat = "%(asctime)s %(message)s"
-
-[theme]
-# Professional theme matching JLG branding
-primaryColor = "#1f4e79"           # JLG blue
-backgroundColor = "#ffffff"         # Clean white background
-secondaryBackgroundColor = "#f8f9fa" # Light gray for sections
-textColor = "#212529"              # Dark text for readability
-font = "sans serif"                # Clean, professional font
 
 [client]
 # Optimize for cloud deployment
