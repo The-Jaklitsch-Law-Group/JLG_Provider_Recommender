@@ -14,7 +14,7 @@ Use this dashboard to identify data issues and track system health.
 """
 )
 
-st.info("💡 Tip: For detailed analytics, run: `streamlit run data_dashboard.py`")
+# st.info("💡 Tip: For detailed analytics, run: `streamlit run data_dashboard.py`")
 
 # We avoid re-loading heavy data here; rely on app cache if available
 from src.data.ingestion import load_provider_data  # noqa: E402

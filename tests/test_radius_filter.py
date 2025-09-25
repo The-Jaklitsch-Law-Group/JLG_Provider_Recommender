@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from app import filter_providers_by_radius
+from Main_Page import filter_providers_by_radius
 
 
 def make_df(distances_miles):
