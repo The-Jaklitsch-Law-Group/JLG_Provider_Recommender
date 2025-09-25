@@ -59,7 +59,7 @@ with col1:
 with col2:
     st.subheader("Data Dashboard")
     st.write("Explore cleaned provider and referral data.")
-    st.page_link("pages/21_Data_Dashboard.py", label="Open Dashboard", icon="📊")
+    st.page_link("pages/20_Data_Dashboard.py", label="Open Dashboard", icon="📊")
 
 with col3:
     st.subheader("Update Data")
@@ -68,4 +68,4 @@ with col3:
 
 st.divider()
 st.page_link("pages/10_How_It_Works.py", label="How it works", icon="📘")
-st.page_link("pages/20_Data_Quality.py", label="Data quality notes", icon="🧪")
+    # Deprecated: Data quality page removed (duplicate). Previously: "pages/20_Data_Quality.py"
