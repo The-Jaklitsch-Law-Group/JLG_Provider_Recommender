@@ -6,7 +6,7 @@ Streamlit multipage app. It provides clear navigation to the core pages:
 Search, Data Dashboard, and Update Data. Heavy logic (data loading,
 geocoding, scoring) lives in the dedicated pages and utils.
 
-Note: We still expose a few symbols for tests that import from `app.py`.
+Note: We still expose a few symbols for tests that import from `Main_Page.py`.
 """
 
 from __future__ import annotations
