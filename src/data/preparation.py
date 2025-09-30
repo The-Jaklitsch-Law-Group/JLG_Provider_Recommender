@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, MutableMapping, Optional, Sequence, cast
+from typing import Any, Callable, Dict, List, Mapping, MutableMapping, Optional, Sequence, Union, cast, overload, BinaryIO
+from io import BytesIO
 
 import numpy as np
 import pandas as pd
@@ -271,24 +272,92 @@ def _collect_dataset_issues(df: pd.DataFrame, checks: Sequence[tuple[str, str]])
     return issues
 
 
+@overload
 def process_and_save_cleaned_referrals(
-    raw_excel_path: Path | str,
+    raw_input: Union[Path, str],
     processed_dir: Path | str,
-) -> PreparationSummary:
-    """Generate cleaned parquet datasets from a raw referral Excel export."""
+    *,
+    filename: Optional[str] = None,
+) -> PreparationSummary: ...
 
-    raw_path = Path(raw_excel_path)
-    if not raw_path.exists():
-        raise FileNotFoundError(f"Raw referral file not found: {raw_path}")
+@overload
+def process_and_save_cleaned_referrals(
+    raw_input: Any,  # For all other types (bytes, BytesIO, DataFrame, buffers)
+    processed_dir: Path | str,
+    *,
+    filename: Optional[str] = None,
+) -> PreparationSummary: ...
+
+def process_and_save_cleaned_referrals(
+    raw_input: Union[Path, str, BytesIO, bytes, BinaryIO, pd.DataFrame, Any],  # Any for Streamlit buffers
+    processed_dir: Path | str,
+    *,
+    filename: Optional[str] = None,
+) -> PreparationSummary:
+    """Generate cleaned parquet datasets from raw referral data.
+    
+    Args:
+        raw_input: Can be:
+            - Path/str: Path to Excel file (existing behavior)
+            - BytesIO/bytes: Raw Excel file data in memory
+            - pd.DataFrame: Already loaded DataFrame
+        processed_dir: Directory to save processed Parquet files
+        filename: Optional filename for logging (used with BytesIO/bytes/DataFrame inputs)
+    
+    Returns:
+        PreparationSummary with processing results and file locations
+    """
 
     processed_path = Path(processed_dir)
     processed_path.mkdir(parents=True, exist_ok=True)
 
-    logger.info("Loading raw referrals from %s", raw_path)
-    try:
-        df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts")
-    except ValueError:
-        df_all = pd.read_excel(raw_path)
+    # Handle different input types
+    if isinstance(raw_input, pd.DataFrame):
+        logger.info("Processing DataFrame with %d rows (source: %s)", len(raw_input), filename or "unknown")
+        df_all = raw_input.copy()
+    elif not isinstance(raw_input, (Path, str, pd.DataFrame)):
+        # Handle any buffer-like object (BytesIO, bytes, Streamlit buffer, etc.)
+        logger.info("Loading raw referrals from memory (source: %s)", filename or "uploaded file")
+        
+        # Convert buffer types to BytesIO for pandas compatibility
+        excel_buffer: BytesIO
+        
+        if isinstance(raw_input, BytesIO):
+            excel_buffer = raw_input
+        elif isinstance(raw_input, bytes):
+            excel_buffer = BytesIO(raw_input)
+        elif type(raw_input).__name__ == 'memoryview':
+            # Handle memoryview objects (from Streamlit getbuffer())
+            excel_buffer = BytesIO(bytes(raw_input))  # type: ignore
+        elif isinstance(raw_input, bytearray):
+            excel_buffer = BytesIO(raw_input)
+        else:
+            # Last resort: assume it's some kind of buffer
+            try:
+                excel_buffer = BytesIO(bytes(raw_input))  # type: ignore
+            except Exception as e:
+                raise TypeError(f"Cannot convert {type(raw_input)} to BytesIO for Excel processing: {e}")
+        
+        try:
+            df_all = pd.read_excel(excel_buffer, sheet_name="Referrals_App_Full_Contacts")
+        except ValueError:
+            # Reset position and try again
+            excel_buffer.seek(0)
+            df_all = pd.read_excel(excel_buffer)
+    else:
+        # Handle Path/str (existing behavior)
+        if isinstance(raw_input, (Path, str)):
+            raw_path = Path(raw_input)
+            if not raw_path.exists():
+                raise FileNotFoundError(f"Raw referral file not found: {raw_path}")
+            logger.info("Loading raw referrals from %s", raw_path)
+            try:
+                df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts")
+            except ValueError:
+                df_all = pd.read_excel(raw_path)
+        else:
+            raise TypeError(f"Unsupported input type: {type(raw_input)}")
+    
     df_all = _normalize_input_dataframe(df_all)
 
     skipped_configs: List[str] = []
@@ -376,4 +445,148 @@ def process_and_save_cleaned_referrals(
     return summary
 
 
-__all__ = ["PreparationSummary", "process_and_save_cleaned_referrals"]
+def process_referral_data(
+    raw_input: Union[Path, str, BytesIO, bytes, BinaryIO, pd.DataFrame, Any],
+    *,
+    filename: Optional[str] = None,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, PreparationSummary]:
+    """Process referral data and return DataFrames without saving to disk.
+    
+    This function is useful for data validation, preview, or analysis
+    without creating files on disk.
+    
+    Args:
+        raw_input: Same input types as process_and_save_cleaned_referrals
+        filename: Optional filename for logging (used with BytesIO/bytes/DataFrame inputs)
+        
+    Returns:
+        Tuple of (inbound_df, outbound_df, combined_df, summary) containing processed data
+    """
+    import tempfile
+    
+    # Use a temporary directory that we won't actually write to
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Process the data but capture DataFrames before they're saved
+        if isinstance(raw_input, pd.DataFrame):
+            logger.info("Processing DataFrame with %d rows (source: %s)", len(raw_input), filename or "unknown")
+            df_all = raw_input.copy()
+        elif not isinstance(raw_input, (Path, str, pd.DataFrame)):
+            # Handle any buffer-like object (BytesIO, bytes, Streamlit buffer, etc.)
+            logger.info("Loading raw referrals from memory (source: %s)", filename or "uploaded file")
+            
+            # Convert buffer types to BytesIO for pandas compatibility
+            excel_buffer: BytesIO
+            
+            if isinstance(raw_input, BytesIO):
+                excel_buffer = raw_input
+            elif isinstance(raw_input, bytes):
+                excel_buffer = BytesIO(raw_input)
+            elif type(raw_input).__name__ == 'memoryview':
+                # Handle memoryview objects (from Streamlit getbuffer())
+                excel_buffer = BytesIO(bytes(raw_input))  # type: ignore
+            elif isinstance(raw_input, bytearray):
+                excel_buffer = BytesIO(raw_input)
+            else:
+                # Last resort: assume it's some kind of buffer
+                try:
+                    excel_buffer = BytesIO(bytes(raw_input))  # type: ignore
+                except Exception as e:
+                    raise TypeError(f"Cannot convert {type(raw_input)} to BytesIO for Excel processing: {e}")
+            
+            try:
+                df_all = pd.read_excel(excel_buffer, sheet_name="Referrals_App_Full_Contacts")
+            except ValueError:
+                # Reset position and try again
+                excel_buffer.seek(0)
+                df_all = pd.read_excel(excel_buffer)
+        else:
+            # Handle Path/str
+            if isinstance(raw_input, (Path, str)):
+                raw_path = Path(raw_input)
+                if not raw_path.exists():
+                    raise FileNotFoundError(f"Raw referral file not found: {raw_path}")
+                logger.info("Loading raw referrals from %s", raw_path)
+                try:
+                    df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts")
+                except ValueError:
+                    df_all = pd.read_excel(raw_path)
+            else:
+                raise TypeError(f"Unsupported input type: {type(raw_input)}")
+        
+        df_all = _normalize_input_dataframe(df_all)
+        
+        # Process the data using the same logic as the main function
+        skipped_configs: List[str] = []
+        results: Dict[str, pd.DataFrame] = {}
+        column_warnings: List[str] = []
+
+        for key, config in _REFERRAL_CONFIGS.items():
+            try:
+                columns_map = cast(Mapping[str, str], config["columns"])
+                filter_seq = cast(Optional[Sequence[Callable[[pd.DataFrame], pd.Series]]], config.get("filters"))
+                processed, missing_columns = _process_referral_data(df_all, columns_map, filter_seq)
+                if missing_columns:
+                    message = f"{key} missing columns: {', '.join(missing_columns)}"
+                    logger.warning(message)
+                    column_warnings.append(message)
+            except KeyError as exc:
+                logger.error("Skipping %s due to missing data: %s", key, exc)
+                skipped_configs.append(key)
+                processed = pd.DataFrame()
+            results[key] = processed
+
+        inbound_combined = _combine_inbound(
+            results.get("primary_inbound", pd.DataFrame()), 
+            results.get("secondary_inbound", pd.DataFrame())
+        )
+        outbound = _prepare_outbound(results.get("outbound", pd.DataFrame()))
+        combined = pd.concat([inbound_combined, outbound], ignore_index=False).sort_index()
+        
+        if "Project ID" in combined.columns:
+            combined["Project ID"] = combined["Project ID"].astype("Int64")
+
+        # Create summary without saved_files
+        warnings = []
+        warnings.extend(column_warnings)
+        warnings.extend(_validate_output(inbound_combined, "Inbound referrals"))
+        warnings.extend(_validate_output(outbound, "Outbound referrals"))
+        warnings.extend(_validate_output(combined, "Combined referrals"))
+
+        checks = [
+            ("Full Name", "Missing provider name"),
+            ("Work Address", "Missing work address"),
+            ("Latitude", "Missing latitude"),
+            ("Longitude", "Missing longitude"),
+        ]
+
+        issue_records = {
+            key: issues
+            for key, issues in (
+                ("inbound", _collect_dataset_issues(inbound_combined, checks)),
+                ("outbound", _collect_dataset_issues(outbound, checks)),
+                ("all", _collect_dataset_issues(combined, checks)),
+            )
+            if not issues.empty
+        }
+
+        summary = PreparationSummary(
+            inbound_count=len(inbound_combined),
+            outbound_count=len(outbound),
+            all_count=len(combined),
+            saved_files={},  # No files saved
+            skipped_configs=skipped_configs,
+            warnings=warnings,
+            issue_records=issue_records,
+        )
+        
+        logger.info(
+            "Processed datasets (not saved): inbound=%d, outbound=%d, all=%d",
+            summary.inbound_count,
+            summary.outbound_count,
+            summary.all_count,
+        )
+        
+        return inbound_combined, outbound, combined, summary
+
+
+__all__ = ["PreparationSummary", "process_and_save_cleaned_referrals", "process_referral_data"]

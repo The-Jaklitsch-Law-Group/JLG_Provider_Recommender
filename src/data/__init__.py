@@ -8,7 +8,7 @@ from .ingestion import (
     load_provider_data,
     refresh_data_cache,
 )
-from .preparation import PreparationSummary, process_and_save_cleaned_referrals
+from .preparation import PreparationSummary, process_and_save_cleaned_referrals, process_referral_data
 
 __all__ = [
     "get_data_ingestion_status",
@@ -18,4 +18,5 @@ __all__ = [
     "refresh_data_cache",
     "PreparationSummary",
     "process_and_save_cleaned_referrals",
+    "process_referral_data",
 ]

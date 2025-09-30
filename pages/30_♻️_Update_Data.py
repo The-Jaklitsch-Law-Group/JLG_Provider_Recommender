@@ -28,19 +28,18 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file is not None:
     try:
-        raw_data_path = Path("data/raw")
-        raw_data_path.mkdir(exist_ok=True, parents=True)
-
-        file_path = raw_data_path / uploaded_file.name
-        with open(file_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-
-        with st.spinner("Cleaning data and regenerating optimized Parquet files…"):
-            summary = process_and_save_cleaned_referrals(file_path, Path("data/processed"))
+        with st.spinner("Processing uploaded file and generating optimized Parquet files…"):
+            # Process directly from memory without saving raw file to disk
+            file_bytes = uploaded_file.getbuffer()
+            summary = process_and_save_cleaned_referrals(
+                file_bytes, 
+                Path("data/processed"), 
+                filename=uploaded_file.name
+            )
             refresh_data_cache()
 
         st.success("✅ Upload complete and cleaned datasets refreshed.")
-        st.caption(f"Raw file saved to `{file_path}` ({uploaded_file.size:,} bytes)")
+        st.caption(f"Processed file: `{uploaded_file.name}` ({uploaded_file.size:,} bytes)")
 
         metrics = st.columns(3)
         metrics[0].metric(label="Inbound rows", value=f"{summary.inbound_count:,}")
