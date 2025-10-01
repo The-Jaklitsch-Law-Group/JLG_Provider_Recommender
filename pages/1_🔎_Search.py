@@ -22,25 +22,12 @@ st.caption("Specify the starting address (including street, city, state, and zip
 with st.spinner("Loading provider data..."):
     provider_df, detailed_referrals_df = load_application_data()
 
-if provider_df.empty:
-    st.warning("No provider data loaded. Please verify data files.")
-
-data_valid, data_msg = validate_provider_data(provider_df) if not provider_df.empty else (False, "")
-if data_msg and not data_valid:
-    st.warning(data_msg)
-
 street = str(st.text_input("Street", st.session_state.get("street", "14350 Old Marlboro Pike") or ""))
 city = str(st.text_input("City", st.session_state.get("city", "Upper Marlboro") or ""))
 state = str(st.text_input("State", st.session_state.get("state", "MD") or ""))
 zipcode = str(st.text_input("Zip", st.session_state.get("zipcode", "20772") or ""))
 
 full_address = f"{street}, {city}, {state} {zipcode}".strip(", ")
-if len(full_address) > 5:
-    ok, msg = validate_address(full_address)
-    if ok:
-        st.caption("Address format OK.")
-    elif msg:
-        st.warning(msg)
 
 has_inbound = ("Inbound Referral Count" in provider_df.columns) if not provider_df.empty else False
 

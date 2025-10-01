@@ -168,6 +168,8 @@ _REFERRAL_CONFIGS: Dict[str, Dict[str, Any]] = {
             lambda df: df["Referral Source"] == "Referral - Doctor's Office",
             lambda df: df["Full Name"].notna(),
             lambda df: df["Work Address"].notna(),
+            lambda df: df["Latitude"].notna(),
+            lambda df: df["Longitude"].notna(),
         ],
     },
     "secondary_inbound": {
@@ -185,6 +187,8 @@ _REFERRAL_CONFIGS: Dict[str, Dict[str, Any]] = {
             lambda df: df["Referral Source"] == "Referral - Doctor's Office",
             lambda df: df["Full Name"].notna(),
             lambda df: df["Work Address"].notna(),
+            lambda df: df["Latitude"].notna(),
+            lambda df: df["Longitude"].notna(),
         ],
     },
     "outbound": {
@@ -197,7 +201,11 @@ _REFERRAL_CONFIGS: Dict[str, Dict[str, Any]] = {
             "Dr/Facility Referred To's Details: Latitude": "Latitude",
             "Dr/Facility Referred To's Details: Longitude": "Longitude",
         },
-        "filters": [lambda df: df["Full Name"].notna()],
+        "filters": [
+            lambda df: df["Full Name"].notna(),
+            lambda df: df["Latitude"].notna(),
+            lambda df: df["Longitude"].notna(),
+        ],
     },
 }
 
