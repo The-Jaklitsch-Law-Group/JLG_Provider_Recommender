@@ -327,6 +327,8 @@ def process_and_save_cleaned_referrals(
     if isinstance(raw_input, pd.DataFrame):
         logger.info("Processing DataFrame with %d rows (source: %s)", len(raw_input), filename or "unknown")
         df_all = raw_input.copy()
+        # Normalize column names (strip whitespace)
+        df_all.columns = df_all.columns.str.strip()
     elif not isinstance(raw_input, (Path, str, pd.DataFrame)):
         # Handle any buffer-like object (BytesIO, bytes, Streamlit buffer, etc.)
         logger.info("Loading raw referrals from memory (source: %s)", filename or "uploaded file")
@@ -356,6 +358,8 @@ def process_and_save_cleaned_referrals(
             # Reset position and try again
             excel_buffer.seek(0)
             df_all = pd.read_excel(excel_buffer)
+        # Normalize column names (strip whitespace)
+        df_all.columns = df_all.columns.str.strip()
     else:
         # Handle Path/str (existing behavior)
         if isinstance(raw_input, (Path, str)):
@@ -367,6 +371,8 @@ def process_and_save_cleaned_referrals(
                 df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts")
             except ValueError:
                 df_all = pd.read_excel(raw_path)
+            # Normalize column names (strip whitespace)
+            df_all.columns = df_all.columns.str.strip()
         else:
             raise TypeError(f"Unsupported input type: {type(raw_input)}")
     
@@ -482,6 +488,8 @@ def process_referral_data(
         if isinstance(raw_input, pd.DataFrame):
             logger.info("Processing DataFrame with %d rows (source: %s)", len(raw_input), filename or "unknown")
             df_all = raw_input.copy()
+            # Normalize column names (strip whitespace)
+            df_all.columns = df_all.columns.str.strip()
         elif not isinstance(raw_input, (Path, str, pd.DataFrame)):
             # Handle any buffer-like object (BytesIO, bytes, Streamlit buffer, etc.)
             logger.info("Loading raw referrals from memory (source: %s)", filename or "uploaded file")
@@ -511,6 +519,8 @@ def process_referral_data(
                 # Reset position and try again
                 excel_buffer.seek(0)
                 df_all = pd.read_excel(excel_buffer)
+            # Normalize column names (strip whitespace)
+            df_all.columns = df_all.columns.str.strip()
         else:
             # Handle Path/str
             if isinstance(raw_input, (Path, str)):
@@ -522,6 +532,8 @@ def process_referral_data(
                     df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts")
                 except ValueError:
                     df_all = pd.read_excel(raw_path)
+                # Normalize column names (strip whitespace)
+                df_all.columns = df_all.columns.str.strip()
             else:
                 raise TypeError(f"Unsupported input type: {type(raw_input)}")
         
@@ -605,13 +617,19 @@ def _load_excel(raw_input: Any, filename: Optional[str] = None) -> pd.DataFrame:
     """Load Excel data from various input types."""
     if isinstance(raw_input, pd.DataFrame):
         logger.info("Processing DataFrame with %d rows (source: %s)", len(raw_input), filename or "unknown")
-        return raw_input.copy()
+        df = raw_input.copy()
+        # Normalize column names (strip whitespace)
+        df.columns = df.columns.str.strip()
+        return df
     elif isinstance(raw_input, (Path, str)):
         raw_path = Path(raw_input)
         if not raw_path.exists():
             raise FileNotFoundError(f"File not found: {raw_path}")
         logger.info("Loading Excel file from %s", raw_path)
-        return pd.read_excel(raw_path)
+        df = pd.read_excel(raw_path)
+        # Normalize column names (strip whitespace)
+        df.columns = df.columns.str.strip()
+        return df
     else:
         # Handle buffer-like objects
         logger.info("Loading Excel data from memory (source: %s)", filename or "uploaded file")
@@ -623,7 +641,10 @@ def _load_excel(raw_input: Any, filename: Optional[str] = None) -> pd.DataFrame:
             excel_buffer = BytesIO(bytes(raw_input))
         else:
             raise TypeError(f"Unsupported input type: {type(raw_input)}")
-        return pd.read_excel(excel_buffer)
+        df = pd.read_excel(excel_buffer)
+        # Normalize column names (strip whitespace)
+        df.columns = df.columns.str.strip()
+        return df
 
 
 def process_and_save_preferred_providers(
@@ -651,6 +672,9 @@ def process_and_save_preferred_providers(
 
     # Use the helper function to load the data
     df = _load_excel(raw_input, filename)
+
+    # Normalize column names (strip whitespace)
+    df.columns = df.columns.str.strip()
 
     # Process the data following the notebook logic
     total_count = len(df)

@@ -27,6 +27,7 @@ def recommend_provider(
     distance_weight: float = 0.5,
     referral_weight: float = 0.5,
     inbound_weight: float = 0.0,
+    preferred_weight: float = 0.0,
     min_referrals: Optional[int] = None,
 ) -> Tuple[Optional[pd.Series], Optional[pd.DataFrame]]:
     df = provider_df.copy(deep=True)
@@ -44,6 +45,36 @@ def recommend_provider(
     df["norm_dist"] = (df["Distance (Miles)"] - df["Distance (Miles)"].min()) / dist_range if dist_range != 0 else 0
 
     df["Score"] = distance_weight * df["norm_dist"] + referral_weight * df["norm_rank"]
+
+    # Preferred provider handling: compute normalized pref flag and subtract contribution (reduce score)
+    if preferred_weight > 0 and "Preferred Provider" in df.columns:
+        # Map various representations to numeric (True/"Yes"/1 -> 1, else 0), fill missing with 0
+        def _pref_to_int(v):
+            if pd.isna(v):
+                return 0
+            # If it's already boolean
+            if isinstance(v, bool):
+                return 1 if v else 0
+            # Numeric values: treat non-zero as True
+            try:
+                if isinstance(v, (int, float)):
+                    return 1 if v != 0 else 0
+            except Exception:
+                pass
+            s = str(v).strip().lower()
+            if s in ("yes", "y", "true", "t", "1"):
+                return 1
+            return 0
+
+        df["_pref_flag"] = df["Preferred Provider"].apply(_pref_to_int)
+        pref_range = df["_pref_flag"].max() - df["_pref_flag"].min()
+        if pref_range != 0:
+            df["norm_pref"] = (df["_pref_flag"] - df["_pref_flag"].min()) / pref_range
+        else:
+            df["norm_pref"] = 0
+        # Preferred should give a small edge (reduce score) so subtract its contribution
+        df["Score"] = df["Score"] - preferred_weight * df["norm_pref"]
+
 
     if inbound_weight > 0 and "Inbound Referral Count" in df.columns:
         inbound_df = df[df["Inbound Referral Count"].notnull()].copy()
@@ -79,4 +110,8 @@ def recommend_provider(
 
     df_sorted = df.sort_values(by=sort_keys_final, ascending=ascending).reset_index(drop=True)
     best = df_sorted.iloc[0]
+    # Clean up temporary columns if present
+    for tmp in ("_pref_flag", "norm_pref"):
+        if tmp in df_sorted.columns:
+            df_sorted = df_sorted.drop(columns=[tmp])
     return best, df_sorted

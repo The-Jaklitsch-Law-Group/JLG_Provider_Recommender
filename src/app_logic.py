@@ -84,8 +84,36 @@ def load_application_data():
                 provider_df["Inbound Referral Count"] = provider_df["Inbound Referral Count"].fillna(0)
             else:
                 provider_df["Inbound Referral Count"] = 0
+    # --- Preferred providers: include the preferred list and mark providers ---
+    try:
+        from src.data.ingestion import load_preferred_providers
+
+        preferred_df = load_preferred_providers()
+        if preferred_df is not None and not preferred_df.empty and "Full Name" in preferred_df.columns:
+            pref_names = preferred_df[["Full Name"]].drop_duplicates()
+            # Merge outer so preferred-only providers are included
+            provider_df = provider_df.merge(pref_names, on="Full Name", how="outer", indicator=True)
+            # Mark preferred where the merge shows presence in preferred list (boolean)
+            provider_df["Preferred Provider"] = provider_df["_merge"].apply(lambda v: True if v in ("both", "right_only") else False)
+            provider_df = provider_df.drop(columns=["_merge"])
         else:
-            provider_df["Inbound Referral Count"] = 0
+            # No preferred list available or no Full Name column
+            # Ensure the column exists as boolean; default to False when missing
+            provider_df["Preferred Provider"] = provider_df.get("Preferred Provider", False)
+    except Exception:
+        provider_df["Preferred Provider"] = provider_df.get("Preferred Provider", False)
+
+    # Ensure referral counts are numeric and fill missing with zero (important when preferred list added new rows)
+    if "Referral Count" in provider_df.columns:
+        provider_df["Referral Count"] = pd.to_numeric(provider_df["Referral Count"], errors="coerce").fillna(0)
+    else:
+        provider_df["Referral Count"] = 0
+
+    # Ensure inbound referral count exists
+    if "Inbound Referral Count" in provider_df.columns:
+        provider_df["Inbound Referral Count"] = pd.to_numeric(provider_df["Inbound Referral Count"], errors="coerce").fillna(0)
+    else:
+        provider_df["Inbound Referral Count"] = 0
 
     return provider_df, detailed_referrals_df
 
@@ -133,6 +161,7 @@ def run_recommendation(
     alpha: float,
     beta: float,
     gamma: float,
+    preferred_weight: float = 0.1,
 ):
     """Run distance calculation, radius filter and composite recommendation."""
     working = provider_df[provider_df["Referral Count"] >= min_referrals].copy()
@@ -147,6 +176,7 @@ def run_recommendation(
         distance_weight=alpha,
         referral_weight=beta,
         inbound_weight=gamma,
+        preferred_weight=preferred_weight,
         min_referrals=min_referrals,
     )
     if scored_df is not None and not scored_df.empty and "Full Name" in scored_df.columns:

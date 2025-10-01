@@ -13,8 +13,11 @@ except Exception:
 
 st.set_page_config(page_title="Search", page_icon=":mag:", layout="wide")
 
-st.title("Provider Search")
+st.title("🔎 Provider Search")
 st.caption("Enter client address and preferences, then run search.")
+
+st.subheader("🏡 Starting Address")
+st.caption("Specify the starting address (including street, city, state, and zip).")
 
 with st.spinner("Loading provider data..."):
     provider_df, detailed_referrals_df = load_application_data()
@@ -41,7 +44,9 @@ if len(full_address) > 5:
 
 has_inbound = ("Inbound Referral Count" in provider_df.columns) if not provider_df.empty else False
 
-st.subheader("Scoring Weights")
+st.subheader("⚖️ Scoring Weights")
+st.caption("Use these weights to adjust the importance of each factor in the provider recommendation.")
+
 distance_weight = st.slider(
     "Distance Importance",
     0.0,
@@ -65,16 +70,29 @@ if has_inbound:
         st.session_state.get("inbound_weight", 0.2),
         0.05,
     )
-total = distance_weight + outbound_weight + (inbound_weight if has_inbound else 0)
+# Preferred provider importance (small edge)
+preferred_weight = st.slider(
+    "Preferred Provider Importance",
+    0.0,
+    1.0,
+    st.session_state.get("preferred_weight", 0.1),
+    0.1,
+)
+total = distance_weight + outbound_weight + (inbound_weight if has_inbound else 0) + preferred_weight
 if total == 0:
     st.error("At least one weight must be > 0.")
 alpha = distance_weight / total if total else 0.5
 beta = outbound_weight / total if total else 0.5
 gamma = inbound_weight / total if has_inbound and total else 0.0
+pref_norm = preferred_weight / total if total else 0.0
 st.caption(
     f"Normalized Weights: Distance {alpha:.2f} | Outbound {beta:.2f}"
     + (f" | Inbound {gamma:.2f}" if has_inbound else "")
+    + f" | Preferred {pref_norm:.2f}"
 )
+
+st.subheader("⚙️ Filtering Options")
+st.caption("Use these options to filter the provider recommendations.")
 
 min_referrals = st.number_input(
     "Minimum Outbound Referral Count", 0, value=st.session_state.get("min_referrals", 0)
@@ -116,6 +134,9 @@ if st.button("Search", type="primary"):
     st.session_state["alpha"] = float(alpha)
     st.session_state["beta"] = float(beta)
     st.session_state["gamma"] = float(gamma)
+    st.session_state["preferred_weight"] = float(preferred_weight)
+    # store normalized preferred weight for scoring
+    st.session_state["preferred_norm"] = float(pref_norm)
     st.session_state["distance_weight"] = float(distance_weight)
     st.session_state["outbound_weight"] = float(outbound_weight)
     st.session_state["inbound_weight"] = float(inbound_weight)

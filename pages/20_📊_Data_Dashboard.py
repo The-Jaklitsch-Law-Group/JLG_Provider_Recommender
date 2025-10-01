@@ -278,7 +278,11 @@ def display_data_quality_dashboard() -> None:
     with st.expander("🔍 Raw Data Preview", expanded=False):
         st.markdown("### Provider Data Sample")
         if not provider_df.empty:
-            st.dataframe(provider_df.head(10))
+            preview_df = provider_df.head(10).copy()
+            # Format boolean Preferred Provider column for better display
+            if "Preferred Provider" in preview_df.columns:
+                preview_df["Preferred Provider"] = preview_df["Preferred Provider"].map({True: "Yes", False: "No"})
+            st.dataframe(preview_df)
 
         if not detailed_df.empty:
             st.markdown("### Detailed Referrals Sample")
