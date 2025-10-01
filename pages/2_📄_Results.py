@@ -12,12 +12,17 @@ from src.utils.io_utils import get_word_bytes, sanitize_filename
 st.set_page_config(page_title="Results", page_icon=":bar_chart:", layout="wide")
 
 if st.sidebar.button("🡄 New Search", type="secondary"):
-    st.switch_page("app.py")
+    # Switch back to the Search page. Using the main `app.py` filename here
+    # won't work because `app.py` is not registered as a pages entry in
+    # Streamlit's page registry (we intentionally excluded it to avoid
+    # a recursion/import loop). Pointing at the actual page file ensures
+    # `st.switch_page` can find and navigate to it.
+    st.switch_page("pages/1_🔎_Search.py")
 
 required_keys = ["user_lat", "user_lon", "alpha", "beta", "min_referrals", "max_radius_miles"]
 if any(k not in st.session_state for k in required_keys):
     st.warning("No search parameters found. Redirecting to search.")
-    st.switch_page("app.py")
+    st.switch_page("pages/1_🔎_Search.py")
 
 provider_df, detailed_referrals_df = load_application_data()
 
