@@ -54,12 +54,12 @@ if best is None or scored_df is None or (isinstance(scored_df, pd.DataFrame) and
     st.warning("No providers met the criteria.")
     st.stop()
 
-provider_name = best.get("Full Name", "Unknown Provider") if isinstance(best, pd.Series) else "Unknown Provider"
+provider_name = "".join(["🧑‍⚕️ ", (best.get("Full Name", "Unknown Provider") if isinstance(best, pd.Series) else "Unknown Provider")])
 st.subheader(provider_name)
 
 if isinstance(best, pd.Series):
     if "Full Address" in best and best["Full Address"]:
-        st.write("Address:", best["Full Address"])
+        st.write("🏥 Address:", best["Full Address"])
     phone_value = None
     for phone_key in ["Work Phone Number", "Work Phone", "Phone Number", "Phone 1"]:
         candidate = best.get(phone_key)
@@ -67,7 +67,7 @@ if isinstance(best, pd.Series):
             phone_value = candidate
             break
     if phone_value:
-        st.write("Phone:", phone_value)
+        st.write("📞 Phone:", phone_value)
 
 cols = ["Full Name", "Work Phone Number", "Full Address", "Distance (Miles)", "Referral Count"]
 if "Inbound Referral Count" in scored_df.columns:

@@ -14,6 +14,12 @@ from __future__ import annotations
 from typing import Optional, Tuple
 import streamlit as st
 
+st.set_page_config(
+    page_title="JLG Provider Recommender",  # This appears in browser tab
+    page_icon="🏥",  # Optional: adds an icon in the browser tab
+    layout="wide"  # Optional: makes the layout wider
+)
+
 from src.app_logic import filter_providers_by_radius  # re-exported for tests
 
 # Try to import the real geocoding helper. Tests expect a fallback
@@ -40,7 +46,7 @@ except Exception as exc:  # pragma: no cover - environment dependent
         return None
 
 
-st.set_page_config(page_title="Provider Recommender", page_icon=":hospital:", layout="wide")
+# st.set_page_config(page_title="Provider Recommender", page_icon=":hospital:", layout="wide")
 
 # Symbols exported when this module is imported elsewhere (tests)
 __all__ = ["filter_providers_by_radius", "geocode_address_with_cache", "GEOPY_AVAILABLE"]
