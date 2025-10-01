@@ -27,6 +27,18 @@ class PreparationSummary:
     issue_records: MutableMapping[str, pd.DataFrame] = field(default_factory=dict)
 
 
+@dataclass(slots=True)
+class PreferredProvidersSummary:
+    """Summary metadata returned after processing preferred providers data."""
+
+    total_count: int
+    cleaned_count: int
+    missing_geo_count: int
+    saved_file: Optional[Path] = None
+    missing_records: Optional[pd.DataFrame] = None
+    warnings: List[str] = field(default_factory=list)
+
+
 _PHONE_DIGITS = 10
 _EXCEL_ORIGIN = "1899-12-30"
 
@@ -589,4 +601,102 @@ def process_referral_data(
         return inbound_combined, outbound, combined, summary
 
 
-__all__ = ["PreparationSummary", "process_and_save_cleaned_referrals", "process_referral_data"]
+def _load_excel(raw_input: Any, filename: Optional[str] = None) -> pd.DataFrame:
+    """Load Excel data from various input types."""
+    if isinstance(raw_input, pd.DataFrame):
+        logger.info("Processing DataFrame with %d rows (source: %s)", len(raw_input), filename or "unknown")
+        return raw_input.copy()
+    elif isinstance(raw_input, (Path, str)):
+        raw_path = Path(raw_input)
+        if not raw_path.exists():
+            raise FileNotFoundError(f"File not found: {raw_path}")
+        logger.info("Loading Excel file from %s", raw_path)
+        return pd.read_excel(raw_path)
+    else:
+        # Handle buffer-like objects
+        logger.info("Loading Excel data from memory (source: %s)", filename or "uploaded file")
+        if isinstance(raw_input, BytesIO):
+            excel_buffer = raw_input
+        elif isinstance(raw_input, bytes):
+            excel_buffer = BytesIO(raw_input)
+        elif isinstance(raw_input, (memoryview, bytearray)):
+            excel_buffer = BytesIO(bytes(raw_input))
+        else:
+            raise TypeError(f"Unsupported input type: {type(raw_input)}")
+        return pd.read_excel(excel_buffer)
+
+
+def process_and_save_preferred_providers(
+    raw_input: Union[Path, str, BytesIO, bytes, BinaryIO, pd.DataFrame, Any],
+    processed_dir: Path | str,
+    *,
+    filename: Optional[str] = None,
+) -> PreferredProvidersSummary:
+    """Process preferred providers data and save cleaned Parquet file.
+    
+    Args:
+        raw_input: Can be:
+            - Path/str: Path to Excel file
+            - BytesIO/bytes: Raw Excel file data in memory
+            - pd.DataFrame: Already loaded DataFrame
+        processed_dir: Directory to save processed Parquet file
+        filename: Optional filename for logging (used with BytesIO/bytes/DataFrame inputs)
+    
+    Returns:
+        PreferredProvidersSummary with processing results and file location
+    """
+    
+    processed_path = Path(processed_dir).resolve()
+    processed_path.mkdir(parents=True, exist_ok=True)
+
+    # Use the helper function to load the data
+    df = _load_excel(raw_input, filename)
+
+    # Process the data following the notebook logic
+    total_count = len(df)
+    
+    # Remove duplicates
+    df = df.drop_duplicates(ignore_index=True)
+    
+    # Identify records missing latitude/longitude
+    lat_col = "Contact's Details: Latitude"
+    lon_col = "Contact's Details: Longitude"
+    
+    warnings = []
+    missing_records = None
+    
+    if {lat_col, lon_col}.issubset(df.columns):
+        missing_records = df[df[[lat_col, lon_col]].isna().any(axis=1)]
+        df_cleaned = df.dropna(subset=[lat_col, lon_col])
+    else:
+        warnings.append(f"Missing expected geo columns: {lat_col}, {lon_col}")
+        missing_records = pd.DataFrame()
+        df_cleaned = df.copy()
+
+    missing_geo_count = len(missing_records) if missing_records is not None else 0
+    cleaned_count = len(df_cleaned)
+    
+    # Save cleaned data to parquet
+    output_path = processed_path / "cleaned_preferred_providers.parquet"
+    if output_path.exists():
+        output_path.unlink()
+    
+    df_cleaned.to_parquet(output_path, index=False, compression="snappy")
+    
+    logger.info(
+        "Saved cleaned preferred providers: %d records (dropped %d missing geo data)",
+        cleaned_count,
+        missing_geo_count,
+    )
+    
+    return PreferredProvidersSummary(
+        total_count=total_count,
+        cleaned_count=cleaned_count,
+        missing_geo_count=missing_geo_count,
+        saved_file=output_path,
+        missing_records=missing_records,
+        warnings=warnings,
+    )
+
+
+__all__ = ["PreparationSummary", "PreferredProvidersSummary", "process_and_save_cleaned_referrals", "process_referral_data", "process_and_save_preferred_providers"]

@@ -54,18 +54,18 @@ col1, col2, col3 = st.columns(3)
 with col1:
     st.subheader("Search")
     st.write("Find the best provider based on address and referral data.")
-    st.page_link("pages/1_Search.py", label="Open Search", icon="🔎")
+    st.page_link("pages/1_🔎_Search.py", label="Open Search", icon="🔎")
 
 with col2:
     st.subheader("Data Dashboard")
     st.write("Explore cleaned provider and referral data.")
-    st.page_link("pages/20_Data_Dashboard.py", label="Open Dashboard", icon="📊")
+    st.page_link("pages/20_📊_Data_Dashboard.py", label="Open Dashboard", icon="📊")
 
 with col3:
     st.subheader("Update Data")
     st.write("Refresh processed data using the current pipeline.")
-    st.page_link("pages/30_Update_Data.py", label="Open Update Data", icon="🔄")
+    st.page_link("pages/30_♻️_Update_Data.py", label="Open Update Data", icon="🔄")
 
 st.divider()
-st.page_link("pages/10_How_It_Works.py", label="How it works", icon="📘")
+st.page_link("pages/10_🛠️_How_It_Works.py", label="How it works", icon="📘")
     # Deprecated: Data quality page removed (duplicate). Previously: "pages/20_Data_Quality.py"

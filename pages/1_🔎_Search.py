@@ -123,4 +123,4 @@ if st.button("Search", type="primary"):
     st.session_state["time_period"] = time_period
     st.session_state["use_time_filter"] = bool(use_time_filter)
     st.session_state["max_radius_miles"] = int(max_radius_miles)
-    st.switch_page("pages/2_Results.py")
+    st.switch_page("pages/2_📄_Results.py")
