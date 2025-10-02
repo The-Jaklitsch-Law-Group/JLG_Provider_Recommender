@@ -1,4 +1,5 @@
 import datetime as dt
+
 import streamlit as st
 
 from src.app_logic import load_application_data
@@ -6,6 +7,7 @@ from src.utils.addressing import validate_address_input
 
 try:
     from src.utils.geocoding import geocode_address_with_cache
+
     GEOCODE_AVAILABLE = True
 except Exception:
     GEOCODE_AVAILABLE = False
@@ -24,27 +26,23 @@ has_inbound = ("Inbound Referral Count" in provider_df.columns) if not provider_
 st.subheader("📍 Client Address")
 col1, col2 = st.columns([3, 1])
 with col1:
-    street = str(st.text_input(
-        "Street Address",
-        st.session_state.get("street", "14350 Old Marlboro Pike") or "",
-        help="Enter the client's street address"
-    ))
+    street = str(
+        st.text_input(
+            "Street Address",
+            st.session_state.get("street", "14350 Old Marlboro Pike") or "",
+            help="Enter the client's street address",
+        )
+    )
 with col2:
-    zipcode = str(st.text_input(
-        "ZIP Code",
-        st.session_state.get("zipcode", "20772") or "",
-        help="5-digit ZIP code"
-    ))
+    zipcode = str(st.text_input("ZIP Code", st.session_state.get("zipcode", "20772") or "", help="5-digit ZIP code"))
 
 col3, col4 = st.columns(2)
 with col3:
     city = str(st.text_input("City", st.session_state.get("city", "Upper Marlboro") or ""))
 with col4:
-    state = str(st.text_input(
-        "State",
-        st.session_state.get("state", "MD") or "",
-        help="Two-letter state code (e.g., MD, VA)"
-    ))
+    state = str(
+        st.text_input("State", st.session_state.get("state", "MD") or "", help="Two-letter state code (e.g., MD, VA)")
+    )
 
 full_address = f"{street}, {city}, {state} {zipcode}".strip(", ")
 
@@ -54,22 +52,22 @@ st.subheader("🎯 Search Preferences")
 
 preset_choice = st.radio(
     "Choose a search profile:",
-    ["Balanced (Recommended)", "Prioritize Proximity", "Balance Workload", "Custom Settings"],
+    ["Prioritize Proximity (Recommended)", "Balanced", "Balance Workload", "Custom Settings"],
     horizontal=True,
-    help="Select a preset to automatically configure search weights, or choose Custom to set your own"
+    help="Select a preset to automatically configure search weights, or choose Custom to set your own",
 )
 
 # Set weights based on preset
-if preset_choice == "Balanced (Recommended)":
-    distance_weight = 0.4
-    outbound_weight = 0.4
-    inbound_weight = 0.1 if has_inbound else 0.0
-    preferred_weight = 0.1
-elif preset_choice == "Prioritize Proximity":
+if preset_choice == "Prioritize Proximity (Recommended)":
     distance_weight = 0.7
     outbound_weight = 0.2
     inbound_weight = 0.05 if has_inbound else 0.0
     preferred_weight = 0.05
+elif preset_choice == "Balanced":
+    distance_weight = 0.4
+    outbound_weight = 0.4
+    inbound_weight = 0.1 if has_inbound else 0.0
+    preferred_weight = 0.1
 elif preset_choice == "Balance Workload":
     distance_weight = 0.2
     outbound_weight = 0.6
@@ -85,15 +83,15 @@ else:  # Custom Settings
             1.0,
             st.session_state.get("distance_weight", 0.4 if has_inbound else 0.6),
             0.05,
-            help="Higher values prioritize providers closer to the client"
+            help="Higher values prioritize providers closer to the client",
         )
         outbound_weight = st.slider(
             "📊 Outbound Referral Importance",
             0.0,
             1.0,
-            st.session_state.get("outbound_weight", 0.4),
+            st.session_state.get("outbound_weight", 0.0),
             0.05,
-            help="Higher values favor providers with fewer active cases"
+            help="Higher values favor providers with MORE outbound referrals (more experienced)",
         )
         if has_inbound:
             inbound_weight = st.slider(
@@ -102,7 +100,7 @@ else:  # Custom Settings
                 1.0,
                 st.session_state.get("inbound_weight", 0.2),
                 0.05,
-                help="Higher values favor providers who refer cases to us"
+                help="Higher values favor providers with MORE inbound referrals (refer more cases to us)",
             )
         else:
             inbound_weight = 0.0
@@ -112,7 +110,7 @@ else:  # Custom Settings
             1.0,
             st.session_state.get("preferred_weight", 0.1),
             0.05,
-            help="Higher values favor designated preferred providers"
+            help="Higher values favor designated preferred providers",
         )
 
 # Calculate normalized weights
@@ -147,7 +145,7 @@ with st.expander("⚙️ Advanced Filters (Optional)"):
         200,
         st.session_state.get("max_radius_miles", 25),
         5,
-        help="Only show providers within this distance"
+        help="Only show providers within this distance",
     )
 
     min_referrals = st.number_input(
@@ -155,23 +153,19 @@ with st.expander("⚙️ Advanced Filters (Optional)"):
         0,
         100,
         value=st.session_state.get("min_referrals", 0),
-        help="Require providers to have handled at least this many cases"
+        help="Require providers to have handled at least this many cases",
     )
 
     col_time1, col_time2 = st.columns([3, 1])
     with col_time1:
         time_period = st.date_input(
             "Referral Time Period",
-            value=st.session_state.get(
-                "time_period", [dt.date.today() - dt.timedelta(days=365), dt.date.today()]
-            ),
-            help="Consider only referrals within this date range"
+            value=st.session_state.get("time_period", [dt.date.today() - dt.timedelta(days=365), dt.date.today()]),
+            help="Consider only referrals within this date range",
         )
     with col_time2:
         use_time_filter = st.checkbox(
-            "Enable",
-            value=st.session_state.get("use_time_filter", True),
-            help="Apply time period filter"
+            "Enable", value=st.session_state.get("use_time_filter", True), help="Apply time period filter"
         )
 
 st.divider()
@@ -179,7 +173,7 @@ st.divider()
 # Prominent search button
 col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 2])
 with col_btn2:
-    search_clicked = st.button("🔍 Find Providers", type="primary", use_container_width=True)
+    search_clicked = st.button("🔍 Find Providers", type="primary", width="stretch")
 
 if search_clicked:
     # Validate address
@@ -232,7 +226,8 @@ if search_clicked:
 
 # Help section at bottom
 with st.expander("❓ Need Help?"):
-    st.markdown("""
+    st.markdown(
+        """
     **How to use this search:**
     1. Enter the client's complete address
     2. Choose a search profile or customize your own weights
@@ -246,4 +241,5 @@ with st.expander("❓ Need Help?"):
     - Advanced filters help narrow results for specific needs
 
     For more information, visit the [How It Works](/10_🛠️_How_It_Works) page.
-    """)
+    """
+    )

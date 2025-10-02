@@ -1,18 +1,13 @@
-import streamlit as st
 import pandas as pd
+import streamlit as st
 
-from src.app_logic import (
-    load_application_data,
-    apply_time_filtering,
-    run_recommendation,
-    validate_provider_data,
-)
+from src.app_logic import apply_time_filtering, load_application_data, run_recommendation, validate_provider_data
 from src.utils.io_utils import get_word_bytes, sanitize_filename
 
 st.set_page_config(page_title="Results", page_icon=":bar_chart:", layout="wide")
 
 # Sidebar navigation
-if st.sidebar.button("← New Search", type="secondary", use_container_width=True):
+if st.sidebar.button("← New Search", type="secondary", width="stretch"):
     st.switch_page("pages/1_🔎_Search.py")
 
 st.sidebar.divider()
@@ -31,15 +26,18 @@ if any(k not in st.session_state for k in required_keys):
 
 provider_df, detailed_referrals_df = load_application_data()
 
-if st.session_state.get("use_time_filter") and isinstance(
-    st.session_state.get("time_period"), list
-) and len(st.session_state["time_period"]) == 2:
+if (
+    st.session_state.get("use_time_filter")
+    and isinstance(st.session_state.get("time_period"), list)
+    and len(st.session_state["time_period"]) == 2
+):
     start_date, end_date = st.session_state["time_period"]
     provider_df = apply_time_filtering(provider_df, detailed_referrals_df, start_date, end_date)
 
 valid, msg = validate_provider_data(provider_df)
 if not valid and msg:
-    st.warning(msg)
+    # st.warning(msg)
+    pass
 
 best = st.session_state.get("last_best")
 scored_df = st.session_state.get("last_scored_df")
@@ -128,7 +126,7 @@ try:
         file_name=f"{base_filename}.docx",
         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         use_container_width=False,
-        type="primary"
+        type="primary",
     )
 except Exception as e:
     st.error(f"❌ Export failed: {e}")
@@ -136,8 +134,6 @@ except Exception as e:
 st.divider()
 
 # All results in a clean table
-st.subheader("📋 All Matching Providers")
-
 st.subheader("📋 All Matching Providers")
 
 cols = ["Full Name", "Work Phone Number", "Full Address", "Distance (Miles)", "Referral Count"]
@@ -172,12 +168,7 @@ if available:
     display_df.insert(0, "Rank", range(1, len(display_df) + 1))
 
     st.caption(f"Showing {len(display_df)} provider(s) matching your criteria")
-    st.dataframe(
-        display_df,
-        hide_index=True,
-        use_container_width=True,
-        height=400
-    )
+    st.dataframe(display_df, hide_index=True, width="stretch", height=400)
 else:
     st.error("❌ No displayable columns in results.")
 
@@ -188,25 +179,26 @@ with st.expander("📊 How Scoring Works"):
     gamma = st.session_state.get("gamma", 0.0)
     pref = st.session_state.get("preferred_norm", st.session_state.get("preferred_weight", 0.1))
 
-    st.markdown("""
+    st.markdown(
+        """
     **Scoring Formula:**
 
     Providers are scored using a weighted combination of factors. **Lower scores indicate better matches.**
-    """)
+    """
+    )
 
-    formula_parts = [
-        f"**Distance** × {alpha:.2f}",
-        f"**Outbound Referrals** × {beta:.2f}"
-    ]
+    formula_parts = [f"**Distance** × {alpha:.2f}", f"**Outbound Referrals** × {beta:.2f}"]
     if gamma > 0:
         formula_parts.append(f"**Inbound Referrals** × {gamma:.2f}")
     formula_parts.append(f"**Preferred Status** × {pref:.2f}")
 
     st.markdown("Score = " + " + ".join(formula_parts))
 
-    st.markdown("""
+    st.markdown(
+        """
     **What this means:**
     - Each factor is normalized to a 0-1 scale
     - Weights are automatically adjusted to total 100%
     - The provider with the lowest score is your best match
-    """)
+    """
+    )
