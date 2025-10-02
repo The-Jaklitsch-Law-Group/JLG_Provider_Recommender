@@ -290,8 +290,6 @@ def load_and_validate_provider_data(
             logger.debug("Time filtering requested but should be performed during data preparation")
 
         is_valid, issues = validate_provider_data(df)
-        if not is_valid and isinstance(issues, str):
-            st.warning(issues)
 
         # Normalize coordinates
         if "Latitude" in df.columns:

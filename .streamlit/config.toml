@@ -10,7 +10,12 @@ textColor = "#FAFAFA"               # High-contrast text
 font = "sans serif"
 
 [client]
-toolbarMode = "viewer"
+# Optimize for cloud deployment
+# caching = true
+# displayEnabled = true
+
+# Toolbar configuration for professional appearance
+# toolbarMode = "minimal"
 
 # Users can still manually switch themes in their personal settings, but
 # this file ensures the default loads in dark mode.# Streamlit Cloud Configuration
@@ -49,14 +54,6 @@ level = "info"
 
 # Log message format
 messageFormat = "%(asctime)s %(message)s"
-
-[client]
-# Optimize for cloud deployment
-# caching = true
-# displayEnabled = true
-
-# Toolbar configuration for professional appearance
-toolbarMode = "minimal"
 
 [global]
 # Development vs Production settings

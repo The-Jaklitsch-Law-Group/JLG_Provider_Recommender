@@ -51,6 +51,9 @@ class DataSource(Enum):
 
     # Provider-specific data (aggregated from outbound referrals)
     PROVIDER_DATA = "provider"  # Unique providers with referral counts
+    
+    # Preferred providers contact list
+    PREFERRED_PROVIDERS = "preferred_providers"  # Firm's preferred provider contacts
 
 
 class DataFormat(Enum):
@@ -122,6 +125,10 @@ class DataIngestionManager:
                 # Provider data is derived from outbound referrals
                 "cleaned": processed_dir / "cleaned_outbound_referrals.parquet",
                 "raw_combined": raw_dir / "Referrals_App_Full_Contacts.xlsx",
+            },
+            DataSource.PREFERRED_PROVIDERS: {
+                "cleaned": processed_dir / "cleaned_preferred_providers.parquet",
+                "raw": raw_dir / "Referral_App_Preferred_Providers.xlsx",
             },
         }
         return registry
@@ -620,6 +627,20 @@ def load_all_referrals(filepath: Optional[str] = None) -> pd.DataFrame:
         DataFrame with all referral data combined
     """
     return data_manager.load_data(DataSource.ALL_REFERRALS, show_status=False)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_preferred_providers(filepath: Optional[str] = None) -> pd.DataFrame:
+    """
+    Load preferred providers contact data.
+
+    Args:
+        filepath: Ignored - automatic file selection is used
+
+    Returns:
+        DataFrame with preferred provider contact information
+    """
+    return data_manager.load_data(DataSource.PREFERRED_PROVIDERS, show_status=False)
 
 
 # ============================================================================

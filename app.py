@@ -13,6 +13,13 @@ from __future__ import annotations
 
 from typing import Optional, Tuple
 import streamlit as st
+from pathlib import Path
+
+st.set_page_config(
+    page_title="JLG Provider Recommender",
+    page_icon=":hospital:",
+    layout="wide"
+)
 
 from src.app_logic import filter_providers_by_radius  # re-exported for tests
 
@@ -39,33 +46,24 @@ except Exception as exc:  # pragma: no cover - environment dependent
         st.warning("geopy package not available. Geocoding disabled (returns None). " "Install with: pip install geopy")
         return None
 
-
-st.set_page_config(page_title="Provider Recommender", page_icon=":hospital:", layout="wide")
-
 # Symbols exported when this module is imported elsewhere (tests)
 __all__ = ["filter_providers_by_radius", "geocode_address_with_cache", "GEOPY_AVAILABLE"]
 
-st.title("Provider Recommender")
-st.caption("Choose where to start.")
+# Build navigation pages but exclude this module (app.py) to avoid
+# re-importing and creating an import/recursion loop when Streamlit
+# loads the selected page.
+_current_file = Path(__file__).name
+_nav_items = [
+    ("pages/0_🏠_home.py", "Home", "🏠"),
+    ("pages/1_🔎_Search.py", "Search", "🔎"),
+    ("pages/2_📄_Results.py", "Results", "📄"),
+    ("pages/10_🛠️_How_It_Works.py", "How It Works", "🛠️"),
+    ("pages/20_📊_Data_Dashboard.py", "Data Dashboard", "📊"),
+    ("pages/30_🔄_Update_Data.py", "Update Data", "🔄"),
+]
 
-st.divider()
+# Only include pages whose path does not point to this module file.
+nav_pages = [st.Page(path, title=title, icon=icon) for path, title, icon in _nav_items if path != _current_file]
 
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.subheader("Search")
-    st.write("Find the best provider based on address and referral data.")
-    st.page_link("pages/1_Search.py", label="Open Search", icon="🔎")
-
-with col2:
-    st.subheader("Data Dashboard")
-    st.write("Explore cleaned provider and referral data.")
-    st.page_link("pages/21_Data_Dashboard.py", label="Open Dashboard", icon="📊")
-
-with col3:
-    st.subheader("Update Data")
-    st.write("Refresh processed data using the current pipeline.")
-    st.page_link("pages/30_Update_Data.py", label="Open Update Data", icon="🔄")
-
-st.divider()
-st.page_link("pages/10_How_It_Works.py", label="How it works", icon="📘")
-st.page_link("pages/20_Data_Quality.py", label="Data quality notes", icon="🧪")
+pg = st.navigation(nav_pages)
+pg.run()

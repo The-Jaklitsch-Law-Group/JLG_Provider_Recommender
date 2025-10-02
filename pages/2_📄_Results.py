@@ -12,12 +12,17 @@ from src.utils.io_utils import get_word_bytes, sanitize_filename
 st.set_page_config(page_title="Results", page_icon=":bar_chart:", layout="wide")
 
 if st.sidebar.button("🡄 New Search", type="secondary"):
-    st.switch_page("app.py")
+    # Switch back to the Search page. Using the main `app.py` filename here
+    # won't work because `app.py` is not registered as a pages entry in
+    # Streamlit's page registry (we intentionally excluded it to avoid
+    # a recursion/import loop). Pointing at the actual page file ensures
+    # `st.switch_page` can find and navigate to it.
+    st.switch_page("pages/1_🔎_Search.py")
 
 required_keys = ["user_lat", "user_lon", "alpha", "beta", "min_referrals", "max_radius_miles"]
 if any(k not in st.session_state for k in required_keys):
     st.warning("No search parameters found. Redirecting to search.")
-    st.switch_page("app.py")
+    st.switch_page("pages/1_🔎_Search.py")
 
 provider_df, detailed_referrals_df = load_application_data()
 
@@ -44,6 +49,8 @@ if best is None or scored_df is None or (isinstance(scored_df, pd.DataFrame) and
         alpha=st.session_state["alpha"],
         beta=st.session_state["beta"],
         gamma=st.session_state.get("gamma", 0.0),
+        # Prefer normalized preferred weight when available (preferred_norm); fall back to preferred_weight
+        preferred_weight=st.session_state.get("preferred_norm", st.session_state.get("preferred_weight", 0.1)),
     )
     st.session_state["last_best"] = best
     st.session_state["last_scored_df"] = scored_df
@@ -54,12 +61,12 @@ if best is None or scored_df is None or (isinstance(scored_df, pd.DataFrame) and
     st.warning("No providers met the criteria.")
     st.stop()
 
-provider_name = best.get("Full Name", "Unknown Provider") if isinstance(best, pd.Series) else "Unknown Provider"
+provider_name = "".join(["🧑‍⚕️ ", (best.get("Full Name", "Unknown Provider") if isinstance(best, pd.Series) else "Unknown Provider")])
 st.subheader(provider_name)
 
 if isinstance(best, pd.Series):
     if "Full Address" in best and best["Full Address"]:
-        st.write("Address:", best["Full Address"])
+        st.write("🏥 Address:", best["Full Address"])
     phone_value = None
     for phone_key in ["Work Phone Number", "Work Phone", "Phone Number", "Phone 1"]:
         candidate = best.get(phone_key)
@@ -67,9 +74,11 @@ if isinstance(best, pd.Series):
             phone_value = candidate
             break
     if phone_value:
-        st.write("Phone:", phone_value)
+        st.write("📞 Phone:", phone_value)
 
 cols = ["Full Name", "Work Phone Number", "Full Address", "Distance (Miles)", "Referral Count"]
+# Include preferred provider flag in displayed columns when available
+cols.append("Preferred Provider")
 if "Inbound Referral Count" in scored_df.columns:
     cols.append("Inbound Referral Count")
 if "Score" in scored_df.columns:
@@ -82,6 +91,12 @@ if available:
         .sort_values(by="Score" if "Score" in available else available[0])
         .reset_index(drop=True)
     )
+    
+    # Format boolean Preferred Provider column for better display
+    if "Preferred Provider" in display_df.columns:
+        display_df = display_df.copy()
+        display_df["Preferred Provider"] = display_df["Preferred Provider"].map({True: "Yes", False: "No"})
+    
     display_df.insert(0, "Rank", range(1, len(display_df) + 1))
     st.dataframe(display_df, hide_index=True, width='stretch')
 else:
@@ -102,6 +117,8 @@ with st.expander("Scoring Details"):
     alpha = st.session_state.get("alpha", 0.5)
     beta = st.session_state.get("beta", 0.5)
     gamma = st.session_state.get("gamma", 0.0)
+    pref = st.session_state.get("preferred_norm", st.session_state.get("preferred_weight", 0.1))
     st.markdown(
         f"Weighted score = Distance*{alpha:.2f} + Outbound*{beta:.2f}" + (f" + Inbound*{gamma:.2f}" if gamma > 0 else "")
+        + f" + Preferred*{pref:.2f}"
     )
