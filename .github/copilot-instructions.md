@@ -4,7 +4,7 @@ This file gives precise, repo-specific guidance for an AI coding agent working o
 
 Keep edits small and incremental. Core principles:
 
-- High-level: app is a Streamlit frontend (`app.py`, `data_dashboard.py`) that queries cleaned provider data (Parquet in `data/processed/`) and uses `src/utils/providers.py` + `src/utils/scoring.py` to score recommendations.
+- High-level: app is a Streamlit frontend (`app.py`, `pages/20_📊_Data_Dashboard.py`) that queries cleaned provider data (Parquet in `data/processed/`) and uses `src/utils/providers.py` + `src/utils/scoring.py` to score recommendations.
 - Data flow: raw Excel (data/raw/*.xlsx) → cleaning (`prepare_contacts/contact_cleaning.ipynb`, `src/utils/cleaning.py`) → parquet (`data/processed/*.parquet`) → loaded via `src/data/ingestion.py` (use DataIngestionManager and DataSource enums).
 - Geocoding & distance: implemented in `src/utils/geocoding.py` (Nominatim by default; Google Maps optional via env). Distance calculations are vectorized (haversine in NumPy).
 
@@ -15,13 +15,16 @@ Important files to read first:
 - `src/utils/providers.py` and `src/utils/scoring.py` — recommendation and scoring logic (weighting, tie-breakers).
 - `src/utils/cleaning.py` and `prepare_contacts/contact_cleaning.ipynb` — canonical data-cleaning and deduplication rules.
 - `src/utils/geocoding.py` — geocoder interface and caching behavior.
-- `tests/` and top-level `test_*.py` — unit and integration test examples and fixtures.
+- `tests/` — unit and integration test suite (test_*.py files).
 
 Run / test commands (use workspace root):
 
 - Install deps: pip install -r requirements.txt
 - Run app locally: streamlit run app.py
 - Run tests: pytest -q (or python -m pytest)
+- Lint code: flake8 (configured via .flake8)
+- Format code: black . --line-length=120 && isort . --profile=black --line-length=120
+- Pre-commit hooks: pre-commit run --all-files (black, isort, trailing whitespace, etc.)
 
 Patterns & conventions (explicit to this repo):
 
