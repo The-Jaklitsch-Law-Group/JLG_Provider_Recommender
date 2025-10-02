@@ -1,17 +1,22 @@
+"""Test suite for data preparation and cleaning pipeline.
+
+Tests verify that:
+- Raw Excel data is correctly cleaned and split into inbound/outbound referrals
+- Duplicate providers are removed
+- Phone numbers are formatted correctly
+- Coordinates are parsed properly
+- Legacy/stale files are replaced
+"""
 import pandas as pd
+import pytest
 
 from src.data.preparation import process_and_save_cleaned_referrals
 
 
-def test_process_and_save_cleaned_referrals(tmp_path):
-    raw_path = tmp_path / "Referrals_App_Full_Contacts.xlsx"
-    processed_dir = tmp_path / "processed"
-
-    processed_dir.mkdir(parents=True, exist_ok=True)
-    stale_file = processed_dir / "cleaned_inbound_referrals.parquet"
-    pd.DataFrame({"Full Name": ["Legacy Provider"], "referral_type": ["legacy"]}).to_parquet(stale_file)
-
-    df = pd.DataFrame(
+@pytest.fixture
+def sample_raw_excel_data():
+    """Create sample raw Excel data matching the expected input format."""
+    return pd.DataFrame(
         [
             {
                 "Project ID": 1001,
@@ -58,26 +63,64 @@ def test_process_and_save_cleaned_referrals(tmp_path):
         ]
     )
 
-    df.to_excel(raw_path, index=False)
 
+def test_process_and_save_cleaned_referrals(tmp_path, sample_raw_excel_data):
+    """Test the complete data cleaning and saving pipeline."""
+    # Setup paths
+    raw_path = tmp_path / "Referrals_App_Full_Contacts.xlsx"
+    processed_dir = tmp_path / "processed"
+    processed_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create a stale file to ensure it gets replaced
+    stale_file = processed_dir / "cleaned_inbound_referrals.parquet"
+    pd.DataFrame({"Full Name": ["Legacy Provider"], "referral_type": ["legacy"]}).to_parquet(stale_file)
+
+    # Save sample data to Excel
+    sample_raw_excel_data.to_excel(raw_path, index=False)
+
+    # Run the processing pipeline
     summary = process_and_save_cleaned_referrals(raw_path, processed_dir)
 
-    assert summary.inbound_count == 3  # two primary + one secondary inbound
-    assert summary.outbound_count == 2
-    assert summary.all_count == 5
-    assert summary.issue_records == {}
+    # Verify summary counts
+    assert summary.inbound_count == 3, "Should have 3 inbound referrals (2 primary + 1 secondary)"
+    assert summary.outbound_count == 2, "Should have 2 outbound referrals"
+    assert summary.all_count == 5, "Should have 5 total referrals"
+    assert summary.issue_records == {}, "Should have no data issues"
 
+    # Load and verify the output files
     inbound = pd.read_parquet(processed_dir / "cleaned_inbound_referrals.parquet")
     outbound = pd.read_parquet(processed_dir / "cleaned_outbound_referrals.parquet")
     combined = pd.read_parquet(processed_dir / "cleaned_all_referrals.parquet")
 
-    assert set(outbound["referral_type"].unique()) == {"outbound"}
-    assert set(inbound["referral_type"].unique()) == {"inbound"}
-    assert set(combined["referral_type"].unique()) == {"inbound", "outbound"}
-    assert "Legacy Provider" not in inbound["Full Name"].values
+    # Verify referral types
+    assert set(inbound["referral_type"].unique()) == {"inbound"}, "Inbound file should only have inbound referrals"
+    assert set(outbound["referral_type"].unique()) == {"outbound"}, "Outbound file should only have outbound referrals"
+    assert set(combined["referral_type"].unique()) == {"inbound", "outbound"}, "Combined file should have both types"
 
+    # Verify stale data was replaced
+    assert "Legacy Provider" not in inbound["Full Name"].values, "Stale data should be removed"
+
+    # Verify phone number formatting
     formatted_phone = inbound.loc[inbound["Full Name"] == "Dr. Primary", "Work Phone"].iloc[0]
-    assert formatted_phone == "(301) 555-1234"
+    assert formatted_phone == "(301) 555-1234", "Phone should be formatted with parentheses and dashes"
 
+    # Verify coordinate parsing
     lat = float(outbound.loc[outbound["Full Name"] == "Clinic Destination", "Latitude"].iloc[0])
-    assert lat == 38.9072
+    assert lat == 38.9072, "Latitude should be parsed as float"
+
+
+def test_process_handles_empty_excel(tmp_path):
+    """Test handling of empty Excel file."""
+    raw_path = tmp_path / "empty.xlsx"
+    processed_dir = tmp_path / "processed"
+    processed_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create minimal empty Excel
+    empty_df = pd.DataFrame(columns=["Project ID", "Date of Intake"])
+    empty_df.to_excel(raw_path, index=False)
+
+    summary = process_and_save_cleaned_referrals(raw_path, processed_dir)
+
+    # Should handle empty data gracefully
+    assert summary.inbound_count == 0, "Empty file should yield 0 inbound referrals"
+    assert summary.outbound_count == 0, "Empty file should yield 0 outbound referrals"

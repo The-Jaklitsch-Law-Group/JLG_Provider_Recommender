@@ -139,7 +139,7 @@ def display_data_quality_dashboard() -> None:
                 color="Referral Count" if "Referral Count" in valid_coords.columns else None,
                 size="Referral Count" if "Referral Count" in valid_coords.columns else None,
                 color_continuous_scale="Viridis",
-                map_style ="open-street-map",
+                map_style="open-street-map",
                 title="Provider Geographic Distribution",
                 height=500,
             )
@@ -171,7 +171,7 @@ def display_data_quality_dashboard() -> None:
                     ]
                 )
                 coord_quality_fig.update_layout(title="Coordinate Completeness")
-                st.plotly_chart(coord_quality_fig, use_container_width=True, config={"displayModeBar": True})
+                st.plotly_chart(coord_quality_fig, width="stretch", config={"displayModeBar": True})
         else:
             st.warning("No valid coordinates found in provider data.")
 
@@ -189,7 +189,7 @@ def display_data_quality_dashboard() -> None:
                 title="Distribution of Referral Counts",
                 labels={"count": "Number of Providers", "Referral Count": "Referral Count"},
             )
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True})
+            st.plotly_chart(fig, width="stretch", config={"displayModeBar": True})
 
         with col2:
             top_providers = provider_df.nlargest(10, "Referral Count")[["Full Name", "Referral Count"]]
@@ -201,7 +201,7 @@ def display_data_quality_dashboard() -> None:
                 title="Top 10 Providers by Referral Count",
             )
             fig.update_layout(yaxis={"categoryorder": "total ascending"})
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True})
+            st.plotly_chart(fig, width="stretch", config={"displayModeBar": True})
 
     # Time-based Analysis
     if not detailed_df.empty and "Referral Date" in detailed_df.columns:
@@ -218,7 +218,7 @@ def display_data_quality_dashboard() -> None:
                 monthly_referrals, x="Month", y="Referral Count", title="Monthly Referral Trends", markers=True
             )
             fig.update_xaxes(tickangle=45)
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True})
+            st.plotly_chart(fig, width="stretch", config={"displayModeBar": True})
 
         st.markdown("### Recent Activity")
         recent_cutoff = datetime.now() - timedelta(days=30)
