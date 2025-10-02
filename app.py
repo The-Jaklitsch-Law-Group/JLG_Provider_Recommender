@@ -45,74 +45,27 @@ st.set_page_config(page_title="Provider Recommender", page_icon=":hospital:", la
 # Symbols exported when this module is imported elsewhere (tests)
 __all__ = ["filter_providers_by_radius", "geocode_address_with_cache", "GEOPY_AVAILABLE"]
 
-st.title("🏥 Provider Recommender")
-st.markdown(
-    """
-    **Smart provider recommendations for optimal client care**
-    
-    This system helps you find the best legal service provider for your clients by intelligently 
-    balancing proximity, workload distribution, and referral relationships.
-    """
-)
+st.title("Provider Recommender")
+st.caption("Choose where to start.")
 
 st.divider()
-
-st.subheader("🚀 Getting Started")
 
 col1, col2, col3 = st.columns(3)
-
 with col1:
-    st.markdown("### 🔍 Search")
-    st.write(
-        """
-        Find the best provider based on your client's address and your preferences.
-        
-        **Quick and easy:**
-        - Enter client address
-        - Set search radius
-        - Get instant recommendations
-        """
-    )
-    st.page_link("pages/1_Search.py", label="Start Searching", icon="🔎")
+    st.subheader("Search")
+    st.write("Find the best provider based on address and referral data.")
+    st.page_link("pages/1_Search.py", label="Open Search", icon="🔎")
 
 with col2:
-    st.markdown("### 📊 Dashboard")
-    st.write(
-        """
-        Explore provider and referral data with interactive visualizations.
-        
-        **Data insights:**
-        - View all providers
-        - Analyze referral patterns
-        - Check data quality
-        """
-    )
-    st.page_link("pages/21_Data_Dashboard.py", label="View Dashboard", icon="📊")
+    st.subheader("Data Dashboard")
+    st.write("Explore cleaned provider and referral data.")
+    st.page_link("pages/21_Data_Dashboard.py", label="Open Dashboard", icon="📊")
 
 with col3:
-    st.markdown("### 🔄 Update Data")
-    st.write(
-        """
-        Keep your provider database current with the latest information.
-        
-        **Data management:**
-        - Refresh provider data
-        - Update referral counts
-        - Maintain accuracy
-        """
-    )
-    st.page_link("pages/30_Update_Data.py", label="Update Data", icon="🔄")
+    st.subheader("Update Data")
+    st.write("Refresh processed data using the current pipeline.")
+    st.page_link("pages/30_Update_Data.py", label="Open Update Data", icon="🔄")
 
 st.divider()
-
-st.subheader("📚 Learn More")
-
-info_col1, info_col2 = st.columns(2)
-
-with info_col1:
-    st.page_link("pages/10_How_It_Works.py", label="📘 How It Works", icon="📘")
-    st.caption("Learn about the recommendation algorithm and scoring system")
-
-with info_col2:
-    st.page_link("pages/20_Data_Quality.py", label="🧪 Data Quality", icon="🧪")
-    st.caption("Monitor data quality and system health")
+st.page_link("pages/10_How_It_Works.py", label="How it works", icon="📘")
+st.page_link("pages/20_Data_Quality.py", label="Data quality notes", icon="🧪")
