@@ -10,10 +10,6 @@ textColor = "#FAFAFA"               # High-contrast text
 font = "sans serif"
 
 [client]
-# Optimize for cloud deployment
-# caching = true
-# displayEnabled = true
-
 # Toolbar configuration for professional appearance
 # toolbarMode = "minimal"
 

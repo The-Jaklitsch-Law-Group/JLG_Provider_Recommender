@@ -223,3 +223,6 @@ data/backup/
 data/raw/
 *.csv.bak
 *.xlsx.bak
+
+# Ignore secrets file
+.streamlit/secrets.toml
