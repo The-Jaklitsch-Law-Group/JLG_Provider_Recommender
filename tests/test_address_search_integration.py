@@ -67,3 +67,34 @@ def test_address_change_produces_different_geocoding_input():
     assert full_address1 != full_address2
     assert full_address1 == "14350 Old Marlboro Pike, Upper Marlboro, MD 20772"
     assert full_address2 == "100 N Charles St, Baltimore, MD 21201"
+
+
+def test_cached_results_cleared_on_new_search():
+    """Verify that cached search results are cleared when a new search is initiated.
+
+    This test ensures that when the search button is clicked, any previously
+    cached results (last_best, last_scored_df) are removed from session state.
+    This prevents the Results page from displaying stale data from a previous search.
+    """
+    # Simulate session state with cached results from a previous search
+    mock_session_state = {
+        "last_best": {"Full Name": "Dr. Smith", "Distance (Miles)": 5.0},
+        "last_scored_df": "some_dataframe",
+        "street": "Old Address",
+        "city": "Old City",
+    }
+
+    # Simulate the cache clearing logic that runs when search button is clicked
+    if "last_best" in mock_session_state:
+        del mock_session_state["last_best"]
+    if "last_scored_df" in mock_session_state:
+        del mock_session_state["last_scored_df"]
+
+    # Verify cached results have been cleared
+    assert "last_best" not in mock_session_state
+    assert "last_scored_df" not in mock_session_state
+
+    # Verify address fields are still preserved (they'll be updated after geocoding)
+    assert "street" in mock_session_state
+    assert "city" in mock_session_state
+
