@@ -44,8 +44,6 @@ with col4:
         st.text_input("State", st.session_state.get("state", "MD") or "", help="Two-letter state code (e.g., MD, VA)")
     )
 
-full_address = f"{street}, {city}, {state} {zipcode}".strip(", ")
-
 # Quick search presets
 st.divider()
 st.subheader("🎯 Search Preferences")
@@ -176,6 +174,15 @@ with col_btn2:
     search_clicked = st.button("🔍 Find Providers", type="primary", width="stretch")
 
 if search_clicked:
+    # Clear cached results from any previous search
+    if "last_best" in st.session_state:
+        del st.session_state["last_best"]
+    if "last_scored_df" in st.session_state:
+        del st.session_state["last_scored_df"]
+
+    # Construct full address from current form values
+    full_address = f"{street}, {city}, {state} {zipcode}".strip(", ")
+
     # Validate address
     addr_valid, addr_msg = validate_address_input(street, city, state, zipcode)
     if not addr_valid:
