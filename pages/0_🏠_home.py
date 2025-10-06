@@ -1,6 +1,10 @@
 import streamlit as st
+from src.utils.responsive import resp_columns, responsive_sidebar_toggle
 
-st.set_page_config(page_title="Home", page_icon="🏠", layout="wide")
+st.set_page_config(page_title="Home", page_icon="🏠", layout="centered")
+
+# small sidebar toggle to force mobile stacked layout during development/testing
+responsive_sidebar_toggle()
 
 # Hero section
 st.title("🏥 JLG Provider Recommender")
@@ -9,7 +13,7 @@ st.markdown("### Find the right healthcare provider for your client — quickly 
 st.divider()
 
 # Main value proposition
-col1, col2 = st.columns([2, 1])
+col1, col2 = resp_columns([2, 1])
 with col1:
     st.markdown("""
     **Smart provider matching made simple:**
@@ -27,7 +31,7 @@ st.divider()
 # Main action cards
 st.subheader("🚀 What would you like to do?")
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3 = resp_columns([1, 1, 1])
 
 with col1:
     with st.container():

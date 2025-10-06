@@ -15,6 +15,11 @@ import plotly.graph_objects as go
 from src.data.ingestion import DataSource, data_manager
 from src.utils.cleaning import validate_provider_data
 
+# Centralized Plotly configuration used by Streamlit plotly charts in this page.
+# Using a single variable instead of repeating inline config dicts improves
+# maintainability and makes it easier to adjust display options in one place.
+PLOTLY_CONFIG = {"displayModeBar": True}
+
 
 def calculate_referral_counts(provider_df: pd.DataFrame, detailed_df: pd.DataFrame) -> pd.DataFrame:
     """Calculate referral counts if missing from provider data."""
@@ -59,8 +64,15 @@ def display_data_quality_dashboard() -> None:
         return
 
     # Streamlit is available; render the interactive dashboard.
-    st.set_page_config(page_title="Data Quality Dashboard", page_icon="📊", layout="wide")
+    st.set_page_config(page_title="Data Quality Dashboard", page_icon="📊", layout="centered")
+    # Allow forcing mobile layout for testing. Import inside function so non-Streamlit
+    # imports (tests/CLI) remain lightweight.
+    try:
+        from src.utils.responsive import resp_columns, responsive_sidebar_toggle
 
+        responsive_sidebar_toggle()
+    except Exception:
+        resp_columns = None
     st.title("📊 Data Quality Dashboard")
     st.markdown("Monitor provider data quality and system health.")
 
@@ -80,7 +92,10 @@ def display_data_quality_dashboard() -> None:
     # Overview metrics
     st.markdown("## 🎯 Overview Metrics")
 
-    col1, col2, col3, col4 = st.columns(4)
+    if resp_columns:
+        col1, col2, col3, col4 = resp_columns([1, 1, 1, 1])
+    else:
+        col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         total_providers = len(provider_df)
@@ -144,9 +159,12 @@ def display_data_quality_dashboard() -> None:
                 height=500,
             )
             fig.update_layout(mapbox=dict(center=dict(lat=39.2904, lon=-76.6122), zoom=8))
-            st.plotly_chart(fig, config={"displayModeBar": True})
+            st.plotly_chart(fig, config=PLOTLY_CONFIG)
 
-            col1, col2 = st.columns(2)
+            if resp_columns:
+                col1, col2 = resp_columns([1, 1])
+            else:
+                col1, col2 = st.columns(2)
             with col1:
                 st.markdown("### Coverage Statistics")
                 if "State" in provider_df.columns:
@@ -171,7 +189,7 @@ def display_data_quality_dashboard() -> None:
                     ]
                 )
                 coord_quality_fig.update_layout(title="Coordinate Completeness")
-                st.plotly_chart(coord_quality_fig, width="stretch", config={"displayModeBar": True})
+                st.plotly_chart(coord_quality_fig, use_container_width=True, config=PLOTLY_CONFIG)
         else:
             st.warning("No valid coordinates found in provider data.")
 
@@ -179,7 +197,10 @@ def display_data_quality_dashboard() -> None:
     st.markdown("## 📈 Referral Distribution Analysis")
 
     if "Referral Count" in provider_df.columns:
-        col1, col2 = st.columns(2)
+        if resp_columns:
+            col1, col2 = resp_columns([1, 1])
+        else:
+            col1, col2 = st.columns(2)
 
         with col1:
             fig = px.histogram(
@@ -189,7 +210,7 @@ def display_data_quality_dashboard() -> None:
                 title="Distribution of Referral Counts",
                 labels={"count": "Number of Providers", "Referral Count": "Referral Count"},
             )
-            st.plotly_chart(fig, width="stretch", config={"displayModeBar": True})
+            st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 
         with col2:
             top_providers = provider_df.nlargest(10, "Referral Count")[["Full Name", "Referral Count"]]
@@ -201,7 +222,7 @@ def display_data_quality_dashboard() -> None:
                 title="Top 10 Providers by Referral Count",
             )
             fig.update_layout(yaxis={"categoryorder": "total ascending"})
-            st.plotly_chart(fig, width="stretch", config={"displayModeBar": True})
+            st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 
     # Time-based Analysis
     if not detailed_df.empty and "Referral Date" in detailed_df.columns:
@@ -218,13 +239,16 @@ def display_data_quality_dashboard() -> None:
                 monthly_referrals, x="Month", y="Referral Count", title="Monthly Referral Trends", markers=True
             )
             fig.update_xaxes(tickangle=45)
-            st.plotly_chart(fig, width="stretch", config={"displayModeBar": True})
+            st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 
         st.markdown("### Recent Activity")
         recent_cutoff = datetime.now() - timedelta(days=30)
         recent_referrals = detailed_df[detailed_df["Referral Date"] >= recent_cutoff]
 
-        col1, col2 = st.columns(2)
+        if resp_columns:
+            col1, col2 = resp_columns([1, 1])
+        else:
+            col1, col2 = st.columns(2)
         with col1:
             st.metric("Referrals (Last 30 Days)", len(recent_referrals))
 

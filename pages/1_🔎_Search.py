@@ -4,15 +4,17 @@ import streamlit as st
 
 from src.app_logic import load_application_data
 from src.utils.addressing import validate_address_input
+from src.utils.responsive import resp_columns, responsive_sidebar_toggle
 
 try:
     from src.utils.geocoding import geocode_address_with_cache
 
     GEOCODE_AVAILABLE = True
 except Exception:
+    geocode_address_with_cache = None
     GEOCODE_AVAILABLE = False
 
-st.set_page_config(page_title="Search", page_icon=":mag:", layout="wide")
+st.set_page_config(page_title="Search", page_icon=":mag:", layout="centered")
 
 st.title("🔎 Provider Search")
 st.caption("Find the best provider for your client — just enter an address and click Search!")
@@ -24,7 +26,9 @@ has_inbound = ("Inbound Referral Count" in provider_df.columns) if not provider_
 
 # Address input section with improved layout
 st.subheader("📍 Client Address")
-col1, col2 = st.columns([3, 1])
+# small dev toggle to force stacked/mobile layout for testing
+responsive_sidebar_toggle()
+col1, col2 = resp_columns([1, 1])
 with col1:
     street = str(
         st.text_input(
@@ -34,15 +38,38 @@ with col1:
         )
     )
 with col2:
-    zipcode = str(st.text_input("ZIP Code", st.session_state.get("zipcode", "20772") or "", help="5-digit ZIP code"))
-
-col3, col4 = st.columns(2)
-with col3:
     city = str(st.text_input("City", st.session_state.get("city", "Upper Marlboro") or ""))
-with col4:
-    state = str(
-        st.text_input("State", st.session_state.get("state", "MD") or "", help="Two-letter state code (e.g., MD, VA)")
+    
+
+col3, col4 = resp_columns([1, 1])
+with col3:
+    # Two-letter US state abbreviations (includes DC). "None" is provided as the first option
+    US_STATES = [
+        "MD","AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA",
+        "ME","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK",
+        "OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC",
+    ]
+
+    # options = [None] + US_STATES
+    options = US_STATES
+    prev_state = st.session_state.get("state", None)
+    try:
+        default_index = options.index(prev_state) if prev_state in options else 0
+    except Exception:
+        default_index = 0
+
+    state = st.selectbox(
+        "State",
+        options=options,
+        index=default_index,
+        help="Two-letter state code (e.g., MD, VA). Select None to leave blank.",
     )
+
+    # Ensure state is an uppercase string or None
+    state = state.upper() if isinstance(state, str) else None
+    
+with col4:
+    zipcode = str(st.text_input("ZIP Code", st.session_state.get("zipcode", "20772") or "", help="5-digit ZIP code"))
 
 # Quick search presets
 st.divider()
@@ -50,7 +77,7 @@ st.subheader("🎯 Search Preferences")
 
 preset_choice = st.radio(
     "Choose a search profile:",
-    ["Prioritize Proximity (Recommended)", "Balanced", "Balance Workload", "Custom Settings"],
+    ["Prioritize Proximity (Recommended)", "Balanced", "Prioritize Referrals", "Custom Settings"],
     horizontal=True,
     help="Select a preset to automatically configure search weights, or choose Custom to set your own",
 )
@@ -66,7 +93,7 @@ elif preset_choice == "Balanced":
     outbound_weight = 0.4
     inbound_weight = 0.1 if has_inbound else 0.0
     preferred_weight = 0.1
-elif preset_choice == "Balance Workload":
+elif preset_choice == "Prioritize Referrals":
     distance_weight = 0.2
     outbound_weight = 0.6
     inbound_weight = 0.1 if has_inbound else 0.0
@@ -154,7 +181,7 @@ with st.expander("⚙️ Advanced Filters (Optional)"):
         help="Require providers to have handled at least this many cases",
     )
 
-    col_time1, col_time2 = st.columns([3, 1])
+    col_time1, col_time2 = resp_columns([3, 1])
     with col_time1:
         time_period = st.date_input(
             "Referral Time Period",
@@ -169,7 +196,7 @@ with st.expander("⚙️ Advanced Filters (Optional)"):
 st.divider()
 
 # Prominent search button
-col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 2])
+col_btn1, col_btn2, col_btn3 = resp_columns([2, 1, 2])
 with col_btn2:
     search_clicked = st.button("🔍 Find Providers", type="primary", width="stretch")
 
@@ -180,11 +207,12 @@ if search_clicked:
     if "last_scored_df" in st.session_state:
         del st.session_state["last_scored_df"]
 
-    # Construct full address from current form values
-    full_address = f"{street}, {city}, {state} {zipcode}".strip(", ")
+    # Construct full address from current form values. Use empty string when state is None
+    state_for_addr = state or ""
+    full_address = f"{street}, {city}, {state_for_addr} {zipcode}".strip(", ")
 
-    # Validate address
-    addr_valid, addr_msg = validate_address_input(street, city, state, zipcode)
+    # Validate address (validation expects strings, so pass empty string when state is None)
+    addr_valid, addr_msg = validate_address_input(street, city, state_for_addr, zipcode)
     if not addr_valid:
         st.error("⚠️ Please fix the following address issues:")
         if addr_msg:
@@ -199,7 +227,7 @@ if search_clicked:
 
     # Geocode the address
     with st.spinner("🌍 Looking up address coordinates..."):
-        coords = geocode_address_with_cache(full_address) if GEOCODE_AVAILABLE else None
+        coords = geocode_address_with_cache(full_address) if (GEOCODE_AVAILABLE and callable(geocode_address_with_cache)) else None
 
     if not coords:
         st.error("❌ Unable to find the address. Please check and try again.")
@@ -210,7 +238,8 @@ if search_clicked:
     user_lat, user_lon = coords
     st.session_state["street"] = street
     st.session_state["city"] = city
-    st.session_state["state"] = state
+    # store empty string instead of None for backward compatibility with other code
+    st.session_state["state"] = state or ""
     st.session_state["zipcode"] = zipcode
     st.session_state["user_lat"] = float(user_lat)
     st.session_state["user_lon"] = float(user_lon)

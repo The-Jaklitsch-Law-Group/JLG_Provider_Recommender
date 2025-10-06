@@ -3,8 +3,9 @@ import streamlit as st
 
 from src.app_logic import apply_time_filtering, load_application_data, run_recommendation, validate_provider_data
 from src.utils.io_utils import get_word_bytes, sanitize_filename
+from src.utils.responsive import resp_columns, responsive_sidebar_toggle
 
-st.set_page_config(page_title="Results", page_icon=":bar_chart:", layout="wide")
+st.set_page_config(page_title="Results", page_icon=":bar_chart:", layout="centered")
 
 # Sidebar navigation
 if st.sidebar.button("← New Search", type="secondary", width="stretch"):
@@ -65,6 +66,9 @@ if best is None or scored_df is None or (isinstance(scored_df, pd.DataFrame) and
     st.info("💡 Try adjusting your filters or expanding the search radius.")
     st.stop()
 
+# Add responsive toggle early so pages can be forced into mobile/stacked layout
+responsive_sidebar_toggle()
+
 # Top recommendation in a prominent card
 st.subheader("✨ Best Match")
 
@@ -72,7 +76,7 @@ provider_name = best.get("Full Name", "Unknown Provider") if isinstance(best, pd
 
 # Create a nice card-like display for the top provider
 with st.container():
-    col1, col2 = st.columns([2, 1])
+    col1, col2 = resp_columns([2, 1])
 
     with col1:
         st.markdown(f"### 🧑‍⚕️ {provider_name}")
