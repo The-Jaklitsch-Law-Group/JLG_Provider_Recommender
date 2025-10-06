@@ -5,7 +5,7 @@ import streamlit as st
 
 from src.data import process_and_save_cleaned_referrals, process_and_save_preferred_providers, refresh_data_cache
 
-st.set_page_config(page_title="Update Data", page_icon="🗂️", layout="wide")
+st.set_page_config(page_title="Update Data", page_icon="🗂️", layout="centered")
 
 st.markdown("### 🔄 Update Referral Data")
 
