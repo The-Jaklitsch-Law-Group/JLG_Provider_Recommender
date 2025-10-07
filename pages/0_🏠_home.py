@@ -12,11 +12,40 @@ st.markdown("### Find the right healthcare provider for your client — quickly 
 
 st.divider()
 
+# Main action cards
+st.subheader("🚀 What would you like to do?")
+
+# col1, col2, col3 = resp_columns([1, 1, 1])
+col1, col2 = resp_columns([1, 1])
+
+with col1:
+    with st.container():
+        st.markdown("#### 🔎 Search")
+        st.markdown("Find the best provider based on your client's address and your preferences.")
+        st.markdown("**Perfect for:** Daily case assignments")
+        st.page_link("pages/1_🔎_Search.py", label="Start Search →", icon="🔎")
+
+with col2:
+    with st.container():
+        st.markdown("#### 📊 Dashboard")
+        st.markdown("Explore provider data, referral patterns, and system insights.")
+        st.markdown("**Perfect for:** Understanding trends")
+        st.page_link("pages/20_📊_Data_Dashboard.py", label="View Dashboard →", icon="📊")
+
+# with col3:
+#     with st.container():
+#         st.markdown("#### 🔄 Update Data")
+#         st.markdown("Refresh the system with the latest referral information.")
+#         st.markdown("**Perfect for:** Monthly data updates")
+#         st.page_link("pages/30_🔄_Update_Data.py", label="Update Data →", icon="🔄")
+st.divider()
+
 # Main value proposition
+st.subheader("Smart provider matching made simple:")
+
 col1, col2 = resp_columns([2, 1])
 with col1:
     st.markdown("""
-    **Smart provider matching made simple:**
     - 🎯 **Intelligent Scoring** — Balances proximity, workload, and relationships
     - ⚡ **Fast Results** — Get recommendations in seconds
     - 🎨 **Flexible Options** — Customize search or use preset profiles
@@ -26,33 +55,6 @@ with col1:
 with col2:
     st.info("💡 **New to this tool?** Check out our [How It Works](/10_🛠️_How_It_Works) guide to get started!")
 
-st.divider()
-
-# Main action cards
-st.subheader("🚀 What would you like to do?")
-
-col1, col2, col3 = resp_columns([1, 1, 1])
-
-with col1:
-    with st.container():
-        st.markdown("### 🔎 Search")
-        st.markdown("Find the best provider based on your client's address and your preferences.")
-        st.markdown("**Perfect for:** Daily case assignments")
-        st.page_link("pages/1_🔎_Search.py", label="Start Search →", icon="🔎")
-
-with col2:
-    with st.container():
-        st.markdown("### 📊 Dashboard")
-        st.markdown("Explore provider data, referral patterns, and system insights.")
-        st.markdown("**Perfect for:** Understanding trends")
-        st.page_link("pages/20_📊_Data_Dashboard.py", label="View Dashboard →", icon="📊")
-
-with col3:
-    with st.container():
-        st.markdown("### 🔄 Update Data")
-        st.markdown("Refresh the system with the latest referral information.")
-        st.markdown("**Perfect for:** Monthly data updates")
-        st.page_link("pages/30_🔄_Update_Data.py", label="Update Data →", icon="🔄")
 
 st.divider()
 
