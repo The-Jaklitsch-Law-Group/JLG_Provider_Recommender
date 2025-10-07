@@ -36,9 +36,14 @@ git clone https://github.com/The-Jaklitsch-Law-Group/JLG_Provider_Recommender.gi
 cd JLG_Provider_Recommender
 ```
 
-2. Install dependencies:
+2. Install dependencies (runtime):
 ```bash
 pip install -r requirements.txt
+```
+
+For development and running tests, also install dev dependencies:
+```bash
+pip install -r requirements-dev.txt
 ```
 
 ### Running the Application
