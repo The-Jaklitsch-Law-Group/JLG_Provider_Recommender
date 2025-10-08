@@ -15,11 +15,12 @@ The system processes raw Excel exports from Filevine, cleans and geocodes provid
 ## Features
 
 - **Smart Data Loading** - Prioritizes optimized Parquet files (10x faster than Excel) with automatic fallback
+- **AWS S3 Integration** - Automatic data pulls from S3 buckets for cloud-native data workflows
 - **Accurate Distance Calculation** - Vectorized haversine formula for Earth-curvature-aware measurements
 - **Flexible Scoring** - Configurable weights for distance, outbound referrals, inbound referrals, and preferred status
 - **Interactive UI** - Multi-page Streamlit app with search, results visualization, and data dashboards
 - **Data Quality Tools** - Built-in validation, missing geocode detection, and data freshness monitoring
-- **Comprehensive Testing** - 70+ pytest tests covering scoring, distance calculation, validation, and data cleaning
+- **Comprehensive Testing** - 79+ pytest tests covering scoring, distance calculation, validation, data cleaning, and S3 operations
 
 ## Quick Start
 
@@ -186,17 +187,36 @@ The app uses Streamlit's session state to preserve:
 - Last search results (`last_best`, `last_scored_df`)
 - Search preferences (weights, filters)
 
+Configure secrets in `.streamlit/secrets.toml` (see `docs/API_SECRETS_GUIDE.md` for details):
+- AWS S3 credentials for automatic data pulls
+- Google Maps API key for enhanced geocoding
+- Database connection strings (if needed)
+
 ### Data Refresh
 
 To update provider data:
-1. Export latest referral data from Filevine to `data/raw/Referrals_App_Full_Contacts.xlsx`
+
+**Option 1: AWS S3 (Recommended for Cloud Deployments)**
+1. Upload latest referral files to your S3 bucket
 2. Navigate to **🔄 Update Data** page in the app
-3. Click "Regenerate Cleaned Data" to re-process and geocode
+3. Click "Pull Latest Referrals from S3" or "Pull Latest Providers from S3"
+4. Data is automatically downloaded, cleaned, and cached
+
+**Option 2: Manual Upload**
+1. Export latest referral data from Filevine to Excel
+2. Navigate to **🔄 Update Data** page in the app
+3. Upload the file using the file uploader
+4. Data is automatically processed and cached
+
+**Option 3: Local File Processing**
+1. Export latest referral data from Filevine to `data/raw/Referrals_App_Full_Contacts.xlsx`
+2. Navigate to **🔄 Update Data** page
+3. Upload the file to trigger processing
 4. Or run manually: `python -c "from src.data.preparation import process_and_save_cleaned_referrals; process_and_save_cleaned_referrals()"`
 
 ## Testing
 
-The project includes a comprehensive test suite with 70+ tests:
+The project includes a comprehensive test suite with 79+ tests:
 
 ### Test Coverage
 - **Scoring Algorithm** (`test_scoring.py`) - Core recommendation logic, edge cases
@@ -206,6 +226,7 @@ The project includes a comprehensive test suite with 70+ tests:
 - **Geocoding** (`test_geocode_fallback.py`) - Fallback behavior when geopy unavailable
 - **Data Preparation** (`test_data_preparation.py`) - Full pipeline processing
 - **Radius Filtering** (`test_radius_filter.py`) - Geographic filtering logic
+- **S3 Integration** (`test_s3_client.py`) - AWS S3 data access, mocking, error handling
 
 ### Running Tests
 
