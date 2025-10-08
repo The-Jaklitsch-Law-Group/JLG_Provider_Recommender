@@ -90,6 +90,16 @@ def get_api_config(api_name: str) -> Dict[str, Any]:
             'smtp_password': get_secret('apis.smtp_password', ''),
             'from_email': get_secret('apis.from_email', ''),
         }
+    elif api_name == 's3':
+        return {
+            'aws_access_key_id': get_secret('s3.aws_access_key_id', ''),
+            'aws_secret_access_key': get_secret('s3.aws_secret_access_key', ''),
+            'bucket_name': get_secret('s3.bucket_name', ''),
+            'region_name': get_secret('s3.region_name', 'us-east-1'),
+            'referrals_folder': get_secret('s3.referrals_folder', 'referrals'),
+            'preferred_providers_folder': get_secret('s3.preferred_providers_folder', 'preferred_providers'),
+            'use_latest_file': get_secret('s3.use_latest_file', True),
+        }
     else:
         return {}
 
@@ -179,6 +189,9 @@ def is_api_enabled(api_name: str) -> bool:
     elif api_name == 'email':
         config = get_api_config('email')
         return bool(config['smtp_server']) and bool(config['smtp_username'])
+    elif api_name == 's3':
+        config = get_api_config('s3')
+        return bool(config['aws_access_key_id']) and bool(config['aws_secret_access_key']) and bool(config['bucket_name'])
     else:
         return False
 
