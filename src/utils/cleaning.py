@@ -67,7 +67,9 @@ def load_provider_data(filepath: str) -> pd.DataFrame:
         raise FileNotFoundError(f"File {filepath} does not exist")
 
     suffix = path.suffix.lower()
-    if suffix == ".xlsx":
+    if suffix == ".csv":
+        df = pd.read_csv(path)
+    elif suffix == ".xlsx":
         df = pd.read_excel(path)
     elif suffix == ".csv":
         df = pd.read_csv(path)

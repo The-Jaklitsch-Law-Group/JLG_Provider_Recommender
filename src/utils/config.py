@@ -41,16 +41,18 @@ def get_secret(key_path: str, default: Any = None) -> Any:
         >>> get_secret('app.debug_mode', False)
     """
     try:
-        # Split the key path to navigate nested dictionaries
+        # Split the key path to navigate nested mappings
         keys = key_path.split('.')
         value = st.secrets
-        
+
         for key in keys:
-            if isinstance(value, dict) and key in value:
+            try:
+                # Try mapping-style access (works for dict-like and Streamlit secrets)
                 value = value[key]
-            else:
+            except Exception:
+                # If any access fails, return the provided default
                 return default
-                
+
         return value
     except Exception as e:
         logger.warning(f"Failed to retrieve secret '{key_path}': {e}")

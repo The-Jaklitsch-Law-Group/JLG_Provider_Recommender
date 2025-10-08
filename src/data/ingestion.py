@@ -111,24 +111,25 @@ class DataIngestionManager:
         registry = {
             DataSource.INBOUND_REFERRALS: {
                 "cleaned": processed_dir / "cleaned_inbound_referrals.parquet",
-                "raw_combined": raw_dir / "Referrals_App_Full_Contacts.xlsx",
+                # prefer CSV raw exports for S3/raw
+                "raw_combined": raw_dir / "Referrals_App_Full_Contacts.csv",
             },
             DataSource.OUTBOUND_REFERRALS: {
                 "cleaned": processed_dir / "cleaned_outbound_referrals.parquet",
-                "raw_combined": raw_dir / "Referrals_App_Full_Contacts.xlsx",
+                "raw_combined": raw_dir / "Referrals_App_Full_Contacts.csv",
             },
             DataSource.ALL_REFERRALS: {
                 "cleaned": processed_dir / "cleaned_all_referrals.parquet",
-                "raw_combined": raw_dir / "Referrals_App_Full_Contacts.xlsx",
+                "raw_combined": raw_dir / "Referrals_App_Full_Contacts.csv",
             },
             DataSource.PROVIDER_DATA: {
                 # Provider data is derived from outbound referrals
                 "cleaned": processed_dir / "cleaned_outbound_referrals.parquet",
-                "raw_combined": raw_dir / "Referrals_App_Full_Contacts.xlsx",
+                "raw_combined": raw_dir / "Referrals_App_Full_Contacts.csv",
             },
             DataSource.PREFERRED_PROVIDERS: {
                 "cleaned": processed_dir / "cleaned_preferred_providers.parquet",
-                "raw": raw_dir / "Referral_App_Preferred_Providers.xlsx",
+                "raw": raw_dir / "Referral_App_Preferred_Providers.csv",
             },
         }
         return registry
@@ -188,50 +189,6 @@ class DataIngestionManager:
         except Exception as e:
             logger.error(f"Failed to load {file_path}: {str(e)}")
             return pd.DataFrame()
-
-    def load_data(self, source: DataSource, show_status: bool = True) -> pd.DataFrame:
-        """
-        Load data for specified source with automatic format optimization.
-
-        This is the main entry point for data loading. It automatically selects
-        the best available file format and applies appropriate post-processing.
-
-        Args:
-            source: The data source to load (INBOUND_REFERRALS, OUTBOUND_REFERRALS, etc.)
-            show_status: Whether to show loading status in Streamlit UI
-
-        Returns:
-            Processed DataFrame ready for use in the application
-
-        Note:
-            Results are cached for 1 hour for optimal performance
-        """
-        file_path, file_type = self._get_best_available_file(source)
-
-        if file_path is None:
-            if show_status:
-                st.error(f"❌ No data files found for {source.value}")
-            return pd.DataFrame()
-
-        # Load the data using cached method
-        df = self._load_dataframe(file_path, file_type)
-
-        if df.empty:
-            if show_status:
-                st.warning(f"⚠️ No data loaded from {file_path.name}")
-            return df
-
-        # # Show status based on file type used
-        # if show_status:
-        #     if file_type == "cleaned":
-        #         st.success(f"🚀 Using optimized {source.value} data ({len(df):,} records)")
-        #     elif file_type.startswith("raw"):
-        #         st.info(f"📊 Using raw {source.value} data ({len(df):,} records)")
-
-        # Apply source-specific post-processing
-        df = self._post_process_data(df, source, file_type)
-
-        return df
 
     def _post_process_data(self, df: pd.DataFrame, source: DataSource, file_type: str) -> pd.DataFrame:
         """
@@ -480,6 +437,44 @@ class DataIngestionManager:
 
         return status
 
+    def load_data(self, source: DataSource, show_status: bool = True) -> pd.DataFrame:
+        """
+        Public method to load data for a given DataSource.
+
+        This is the compatibility entrypoint expected by the rest of the
+        application. It chooses the best available file, loads it (with
+        Streamlit caching) and applies any necessary post-processing.
+
+        Args:
+            source: DataSource enum value identifying which dataset to load
+            show_status: If True, logs or displays the data source selection
+
+        Returns:
+            pd.DataFrame with the requested data (may be empty on failure)
+        """
+        file_path, file_type = self._get_best_available_file(source)
+
+        if show_status:
+            logger.debug(f"Loading data for {source.value}: file={file_path}, type={file_type}")
+
+        if not file_path:
+            logger.warning(f"No data file found for source: {source}")
+            return pd.DataFrame()
+
+        # Use the cached loader to read the dataframe
+        df = self._load_dataframe(file_path, file_type)
+
+        # Apply post-processing to standardize columns and produce provider view
+        df = self._post_process_data(df, source, file_type)
+
+        # If requesting provider data, ensure aggregation is applied
+        if source == DataSource.PROVIDER_DATA:
+            # If the cleaned provider file exists and is already aggregated, _process_provider_data will
+            # return it unchanged; otherwise, aggregate from the underlying referrals
+            df = self._process_provider_data(df)
+
+        return df
+
     def refresh_file_registry(self):
         """
         Refresh the file registry to detect new files.
@@ -550,8 +545,22 @@ class DataIngestionManager:
 # Global Instance and Compatibility Functions
 # ============================================================================
 
-# Global instance for use throughout the application
-data_manager = DataIngestionManager()
+# Lazy-initialized global instance for use throughout the application
+_data_manager: Optional[DataIngestionManager] = None
+
+
+def get_data_manager() -> DataIngestionManager:
+    """
+    Return a singleton DataIngestionManager, creating it on first use.
+
+    This laziness avoids import-time side-effects and makes module
+    imports safer for long-running processes (like Streamlit) that
+    may reload modules during development.
+    """
+    global _data_manager
+    if _data_manager is None:
+        _data_manager = DataIngestionManager()
+    return _data_manager
 
 
 # ============================================================================
@@ -576,7 +585,7 @@ def load_detailed_referrals(filepath: Optional[str] = None) -> pd.DataFrame:
     Returns:
         DataFrame with outbound referral data
     """
-    return data_manager.load_data(DataSource.OUTBOUND_REFERRALS, show_status=False)
+    return get_data_manager().load_data(DataSource.OUTBOUND_REFERRALS, show_status=False)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -593,7 +602,7 @@ def load_inbound_referrals(filepath: Optional[str] = None) -> pd.DataFrame:
     Returns:
         DataFrame with inbound referral data
     """
-    return data_manager.load_data(DataSource.INBOUND_REFERRALS, show_status=False)
+    return get_data_manager().load_data(DataSource.INBOUND_REFERRALS, show_status=False)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -610,7 +619,7 @@ def load_provider_data(filepath: Optional[str] = None) -> pd.DataFrame:
     Returns:
         DataFrame with unique providers and referral counts
     """
-    return data_manager.load_data(DataSource.PROVIDER_DATA, show_status=False)
+    return get_data_manager().load_data(DataSource.PROVIDER_DATA, show_status=False)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -626,7 +635,7 @@ def load_all_referrals(filepath: Optional[str] = None) -> pd.DataFrame:
     Returns:
         DataFrame with all referral data combined
     """
-    return data_manager.load_data(DataSource.ALL_REFERRALS, show_status=False)
+    return get_data_manager().load_data(DataSource.ALL_REFERRALS, show_status=False)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -640,7 +649,7 @@ def load_preferred_providers(filepath: Optional[str] = None) -> pd.DataFrame:
     Returns:
         DataFrame with preferred provider contact information
     """
-    return data_manager.load_data(DataSource.PREFERRED_PROVIDERS, show_status=False)
+    return get_data_manager().load_data(DataSource.PREFERRED_PROVIDERS, show_status=False)
 
 
 # ============================================================================
@@ -655,7 +664,7 @@ def get_data_ingestion_status() -> Dict[str, Dict[str, Union[bool, str]]]:
     Returns:
         Status dictionary with availability and optimization info for each source
     """
-    return data_manager.get_data_status()
+    return get_data_manager().get_data_status()
 
 
 def refresh_data_cache():
@@ -668,7 +677,7 @@ def refresh_data_cache():
     - Data structure changes
     """
     st.cache_data.clear()
-    data_manager.refresh_file_registry()
+    get_data_manager().refresh_file_registry()
     logger.info("Data cache cleared and file registry refreshed")
 
 
@@ -682,7 +691,7 @@ def validate_all_data_sources() -> Dict[str, Dict[str, Union[bool, str, int, flo
     results = {}
     for source in DataSource:
         try:
-            results[source.value] = data_manager.validate_data_integrity(source)
+            results[source.value] = get_data_manager().validate_data_integrity(source)
         except Exception as e:
             results[source.value] = {
                 "valid": False,

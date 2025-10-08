@@ -53,27 +53,25 @@ class S3DataClient:
 
         # sensible defaults as requested
         defaults = {
-            'top_folder': 'jaklitschfvdomo',
+            # Fallback defaults; these will be overridden by values in secrets
+            # when available. Subfolders are treated as top-level prefixes.
             'referrals_folder': '990046944',
             'preferred_providers_folder': '990047553',
         }
 
         # overlay any config values (if config is a dict-like)
-        cfg_top = None
         cfg_ref = None
         cfg_pref = None
         if isinstance(self.config, dict):
-            cfg_top = self.config.get('top_folder')
             cfg_ref = self.config.get('referrals_folder')
             cfg_pref = self.config.get('preferred_providers_folder')
-
+        # Start with fallbacks, then prefer values from secrets, then
+        # finally apply explicit overrides passed by the caller.
         merged = defaults.copy()
-        if cfg_top:
-            merged['top_folder'] = cfg_top
-        if cfg_ref:
-            merged['referrals_folder'] = cfg_ref
-        if cfg_pref:
-            merged['preferred_providers_folder'] = cfg_pref
+
+        if isinstance(self.config, dict):
+            merged['referrals_folder'] = cfg_ref or merged['referrals_folder']
+            merged['preferred_providers_folder'] = cfg_pref or merged['preferred_providers_folder']
 
         # finally apply overrides passed by the caller
         if folder_map:
@@ -86,18 +84,54 @@ class S3DataClient:
     def is_configured(self) -> bool:
         """Check if S3 is properly configured."""
         return self.enabled
+
+    def validate_configuration(self) -> Dict[str, str]:
+        """Return configuration issues found for S3 as a dict of field->message.
+
+        This is a lightweight helper intended for UI surfaces to show helpful
+        guidance when S3 is partially configured.
+        """
+        issues: Dict[str, str] = {}
+        # Ensure config is a mapping and has required keys
+        if not isinstance(self.config, dict):
+            issues['config'] = 'S3 configuration is missing or invalid.'
+            return issues
+
+        if not self.config.get('bucket_name'):
+            issues['bucket_name'] = 'S3 bucket_name is not configured.'
+
+        if not self.config.get('aws_access_key_id'):
+            issues['aws_access_key_id'] = 'AWS access key id is not configured.'
+
+        if not self.config.get('aws_secret_access_key'):
+            issues['aws_secret_access_key'] = 'AWS secret access key is not configured.'
+
+        return issues
     
     def _get_client(self):
         """Lazy initialization of boto3 client."""
         if self._client is None and self.enabled:
             try:
                 import boto3
-                self._client = boto3.client(
-                    's3',
-                    aws_access_key_id=self.config['aws_access_key_id'],
-                    aws_secret_access_key=self.config['aws_secret_access_key'],
-                    region_name=self.config['region_name']
-                )
+
+                # Prefer the default boto3 credential resolution chain when
+                # explicit credentials are not provided. Only pass aws_access_key_id
+                # and aws_secret_access_key when they exist in the configuration.
+                client_kwargs: Dict[str, str] = {}
+
+                if isinstance(self.config, dict):
+                    region = self.config.get('region_name')
+                    access = self.config.get('aws_access_key_id')
+                    secret = self.config.get('aws_secret_access_key')
+                    if region:
+                        client_kwargs['region_name'] = region
+                    if access and secret:
+                        client_kwargs['aws_access_key_id'] = access
+                        client_kwargs['aws_secret_access_key'] = secret
+
+                # If no explicit credentials supplied, boto3 will use its usual
+                # credential chain (env vars, shared credentials file, IAM role, etc.)
+                self._client = boto3.client('s3', **client_kwargs)
             except Exception as e:
                 logger.error(f"Failed to initialize S3 client: {e}")
                 self.enabled = False
@@ -122,12 +156,49 @@ class S3DataClient:
         if not sub:
             return None
 
-        # if sub already looks like a path, use it directly, otherwise join
-        if '/' in sub:
-            folder = sub
-        else:
-            folder = f"{top}/{sub}" if top else sub
+        # Use the configured subfolder/prefix directly as the prefix for the
+        # S3 listing. The subfolder is treated as a top-level prefix under
+        # the bucket (no additional top folder is prepended).
+        folder = sub
 
+        # Normalize and strip common export folder suffixes that some systems
+        # include (e.g. 'data_exports' or 'data_exports/'). This ensures users
+        # can configure either '990046944' or '990046944/data_exports/' and we
+        # will consistently use the top-level prefix '990046944/'.
+        try:
+            if folder.endswith('/data_exports/'):
+                folder = folder[: -len('/data_exports/')]
+            elif folder.endswith('data_exports/'):
+                folder = folder[: -len('data_exports/')]
+            elif folder.endswith('/data_exports'):
+                folder = folder[: -len('/data_exports')]
+            elif folder.endswith('data_exports'):
+                folder = folder[: -len('data_exports')]
+        except Exception:
+            # If normalization fails for any reason, continue with the original
+            # folder value — other downstream normalization will still apply.
+            pass
+
+        if not folder.endswith('/'):
+            folder += '/'
+
+        if not folder.endswith('/'):
+            folder += '/'
+
+        # Defensive: if the configured prefix accidentally includes the
+        # bucket name (e.g. 'my-bucket/referrals/'), strip the leading
+        # bucket fragment so the Prefix argument is correct.
+        try:
+            if isinstance(self.config, dict):
+                bucket = self.config.get('bucket_name')
+                if bucket and folder.startswith(f"{bucket}/"):
+                    logger.debug("Resolved prefix started with bucket name; stripping bucket from prefix")
+                    folder = folder[len(bucket) + 1 :]
+        except Exception:
+            pass
+
+        # Ensure no leading slash
+        folder = folder.lstrip('/')
         if not folder.endswith('/'):
             folder += '/'
 
@@ -163,8 +234,8 @@ class S3DataClient:
                     # Skip the folder itself
                     if obj['Key'] == folder:
                         continue
-                    # Only include Excel files
-                    if obj['Key'].lower().endswith(('.xlsx', '.xls')):
+                    # Include Excel and CSV files
+                    if obj['Key'].lower().endswith(('.xlsx', '.xls', '.csv')):
                         filename = obj['Key'].split('/')[-1]
                         files.append((filename, obj['LastModified']))
             

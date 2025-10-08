@@ -67,7 +67,7 @@ def sample_raw_excel_data():
 def test_process_and_save_cleaned_referrals(tmp_path, sample_raw_excel_data):
     """Test the complete data cleaning and saving pipeline."""
     # Setup paths
-    raw_path = tmp_path / "Referrals_App_Full_Contacts.xlsx"
+    raw_path = tmp_path / "Referrals_App_Full_Contacts.csv"
     processed_dir = tmp_path / "processed"
     processed_dir.mkdir(parents=True, exist_ok=True)
 
@@ -75,8 +75,8 @@ def test_process_and_save_cleaned_referrals(tmp_path, sample_raw_excel_data):
     stale_file = processed_dir / "cleaned_inbound_referrals.parquet"
     pd.DataFrame({"Full Name": ["Legacy Provider"], "referral_type": ["legacy"]}).to_parquet(stale_file)
 
-    # Save sample data to Excel
-    sample_raw_excel_data.to_excel(raw_path, index=False)
+    # Save sample data to CSV
+    sample_raw_excel_data.to_csv(raw_path, index=False)
 
     # Run the processing pipeline
     summary = process_and_save_cleaned_referrals(raw_path, processed_dir)
@@ -111,13 +111,13 @@ def test_process_and_save_cleaned_referrals(tmp_path, sample_raw_excel_data):
 
 def test_process_handles_empty_excel(tmp_path):
     """Test handling of empty Excel file."""
-    raw_path = tmp_path / "empty.xlsx"
+    raw_path = tmp_path / "empty.csv"
     processed_dir = tmp_path / "processed"
     processed_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create minimal empty Excel
+    # Create minimal empty CSV
     empty_df = pd.DataFrame(columns=["Project ID", "Date of Intake"])
-    empty_df.to_excel(raw_path, index=False)
+    empty_df.to_csv(raw_path, index=False)
 
     summary = process_and_save_cleaned_referrals(raw_path, processed_dir)
 

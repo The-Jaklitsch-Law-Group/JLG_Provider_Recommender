@@ -24,7 +24,52 @@ s3_enabled = s3_client.is_configured()
 effective_folder_map = None
 
 if s3_enabled:
-    st.info("✅ AWS S3 is configured. You can pull data from S3 or upload files manually.")
+    # Validate S3 configuration and display issues if present
+    issues = s3_client.validate_configuration()
+    if issues:
+        # Allow the user to dismiss the warning for the session
+        dismissed = st.session_state.get('dismiss_s3_issues', False)
+
+        if not dismissed:
+            # Prominent error box with an expander for details and remediation
+            with st.container():
+                st.error("⚠️ AWS S3 configuration issues detected — some S3 features may not work.")
+                with st.expander("View configuration issues and remediation (click to expand)", expanded=True):
+                    for k, msg in issues.items():
+                        st.write(f"- **{k}**: {msg}")
+
+                    st.markdown(
+                        "For full setup instructions, see the [API Secrets Guide](docs/API_SECRETS_GUIDE.md)."
+                    )
+
+                    # Show the resolved S3 config (with secrets masked) to help debugging
+                    try:
+                        cfg = s3_client.config if hasattr(s3_client, 'config') else {}
+                        masked = {}
+                        for kk, vv in (cfg.items() if isinstance(cfg, dict) else []):
+                            if 'key' in kk.lower() or 'secret' in kk.lower():
+                                masked[kk] = '****'
+                            else:
+                                masked[kk] = vv
+                        st.write("**Resolved S3 configuration (masked)**")
+                        st.json(masked)
+                    except Exception:
+                        # If anything goes wrong while inspecting config, skip silently
+                        pass
+
+                    # Dismiss button so power users can hide the notice after fixing
+                    if st.button("Mark as fixed / Dismiss", key="dismiss_s3_issues_button"):
+                        st.session_state['dismiss_s3_issues'] = True
+
+                st.info("You can continue with manual uploads or fix the secrets to enable S3 features.")
+        else:
+            # Provide a small persistent hint and a way to re-show the notice
+            cols = st.columns([0.95, 0.05])
+            cols[0].warning("⚠️ AWS S3 configuration issues were detected (dismissed). Fix secrets to enable S3 features.")
+            if cols[1].button("Show", key="show_s3_issues"):
+                st.session_state['dismiss_s3_issues'] = False
+    else:
+        st.success("✅ AWS S3 is configured. You can pull data from S3 or upload files manually.")
     # Allow advanced users to override the S3 folder mapping
     # Persist overrides in session_state so they survive reruns
     effective_folder_map = st.session_state.get('s3_folder_map', None)
@@ -32,19 +77,16 @@ if s3_enabled:
     with st.expander("S3 Folder Overrides (advanced)", expanded=False):
         with st.form("s3_folder_form"):
             # defaults come from the currently-initialized client (which reads config)
-            top_default = getattr(s3_client, 'folder_map', {}).get('top_folder', '')
             ref_default = getattr(s3_client, 'folder_map', {}).get('referrals_folder', '')
             prov_default = getattr(s3_client, 'folder_map', {}).get('preferred_providers_folder', '')
 
-            top_in = st.text_input("Top folder", value=top_default, help="Top-level S3 folder (e.g. jaklitschfvdomo)")
-            referrals_in = st.text_input("Referrals subfolder", value=ref_default, help="Subfolder for referrals data (e.g. 990046944)")
-            providers_in = st.text_input("Preferred providers subfolder", value=prov_default, help="Subfolder for preferred providers data (e.g. 990047553)")
+            referrals_in = st.text_input("Referrals folder/prefix", value=ref_default, help="Prefix for referrals data (e.g. 990046944 or referrals/)")
+            providers_in = st.text_input("Preferred providers folder/prefix", value=prov_default, help="Prefix for preferred providers data (e.g. 990047553 or preferred_providers/)")
 
             submitted = st.form_submit_button("Apply folder overrides")
             if submitted:
                 # normalize empty strings to None to fall back to defaults/config
                 fm = {
-                    'top_folder': top_in.strip() if top_in and top_in.strip() else '',
                     'referrals_folder': referrals_in.strip() if referrals_in and referrals_in.strip() else '',
                     'preferred_providers_folder': providers_in.strip() if providers_in and providers_in.strip() else '',
                 }
@@ -66,6 +108,37 @@ else:
 
 # S3 Data Pull Section
 if s3_enabled:
+    # Quick connectivity check: allow users to run a lightweight list test
+    if st.button("🧪 Test S3 Access", key="s3_test_access"):
+        try:
+            with st.spinner("Testing S3 access (listing prefixes)..."):
+                op_client = S3DataClient(folder_map=effective_folder_map)
+
+                if not op_client.is_configured():
+                    st.error("S3 client reports not configured. Check your secrets and the configuration issues above.")
+                else:
+                    # Use cached listing helper which internally creates a client
+                    ref_files = list_s3_files('referrals', folder_map=effective_folder_map)
+                    prov_files = list_s3_files('preferred_providers', folder_map=effective_folder_map)
+
+                    if ref_files:
+                        st.success(f"Found {len(ref_files)} referral file(s) — showing up to 10 entries")
+                        st.table([
+                            {"filename": f[0], "modified": f[1].strftime('%Y-%m-%d %H:%M:%S')} for f in ref_files[:10]
+                        ])
+                    else:
+                        st.warning("No referral files found in the configured S3 prefix.")
+
+                    if prov_files:
+                        st.success(f"Found {len(prov_files)} preferred provider file(s) — showing up to 10 entries")
+                        st.table([
+                            {"filename": f[0], "modified": f[1].strftime('%Y-%m-%d %H:%M:%S')} for f in prov_files[:10]
+                        ])
+                    else:
+                        st.warning("No preferred providers files found in the configured S3 prefix.")
+        except Exception as e:
+            st.error(f"S3 test failed: {e}")
+            st.code(traceback.format_exc())
     st.markdown("---")
     st.markdown("#### ⚡ On-demand S3 Refresh")
     st.markdown(
