@@ -1,48 +1,56 @@
 # Copilot instructions — JLG Provider Recommender
 
-This file gives precise, repo-specific guidance for an AI coding agent working on this project.
+This concise guide helps an AI coding agent become productive quickly in this repo. Keep edits small, prefer the canonical helpers, and include tests for behavioral changes.
 
-Keep edits small and incremental. Core principles:
+Big picture
 
-- High-level: app is a Streamlit frontend (`app.py`, `pages/20_📊_Data_Dashboard.py`) that queries cleaned provider data (Parquet in `data/processed/`) and uses `src/utils/providers.py` + `src/utils/scoring.py` to score recommendations.
-- Data flow: raw Excel (data/raw/*.xlsx) → cleaning (`prepare_contacts/contact_cleaning.ipynb`, `src/utils/cleaning.py`) → parquet (`data/processed/*.parquet`) → loaded via `src/data/ingestion.py` (use DataIngestionManager and DataSource enums).
-- Geocoding & distance: implemented in `src/utils/geocoding.py` (Nominatim by default; Google Maps optional via env). Distance calculations are vectorized (haversine in NumPy).
+- UI: Streamlit app. Entry points are `app.py` and `pages/*.py` (notably `pages/1_🔎_Search.py` and `pages/20_📊_Data_Dashboard.py`). Session state keys live in `app.py` (examples: `user_lat`, `user_lon`, `last_best`, `last_scored_df`).
+- Business logic: `src/app_logic.py` orchestrates flows. Helpers and domain logic live in `src/utils/` (e.g., `geocoding.py`, `scoring.py`, `providers.py`, `cleaning.py`, `io_utils.py`).
+- Data flow: raw Excel in `data/raw/` → cleaning in `prepare_contacts/*.ipynb` + `src/utils/cleaning.py` → outputs in `data/processed/*.parquet` and `data/processed/geocode_cache.json` → loaded using `src/data/ingestion.py`.
 
-Important files to read first:
+Canonical contracts and conventions (do these exactly)
 
-- `app.py` — streamlit entry; contains session state keys: user_lat/lon, last_best, last_scored_df and UI controls.
-- `src/data/ingestion.py` — canonical data-loading helper. Always prefer DataIngestionManager.load_data(DataSource.X).
-- `src/utils/providers.py` and `src/utils/scoring.py` — recommendation and scoring logic (weighting, tie-breakers).
-- `src/utils/cleaning.py` and `prepare_contacts/contact_cleaning.ipynb` — canonical data-cleaning and deduplication rules.
-- `src/utils/geocoding.py` — geocoder interface and caching behavior.
-- `tests/` — unit and integration test suite (test_*.py files).
+- Ingestion: ALWAYS use `DataIngestionManager.load_data(DataSource.X)` from `src/data/ingestion.py`. This enforces precedence, caching, and expected transforms — do not read Parquet/Excel directly in new code.
+- Scoring & providers: scoring logic is in `src/utils/scoring.py` and `src/utils/providers.py`. Scores are normalized and combined; UI sliders normalize weight inputs before scoring. Follow the existing functions and normalized formula rather than inventing new score combinations.
+- Geocoding: use `src/utils/geocoding.py`. Default geocoder is Nominatim; Google Maps is optional and guarded by environment variables. Geocoding results are cached in `data/processed/geocode_cache.json` — update cache handling when changing geocode behavior.
+- Distance calculations: implemented vectorized (NumPy) haversine computations — prefer batch/vectorized operations for performance.
+- Deduplication: canonical provider identity is (normalized_name, normalized_address) — see `src/utils/cleaning.py` and `prepare_contacts/contact_cleaning.ipynb` for exact transformations.
+- Caching: heavy operations use Streamlit cache decorators (`@st.cache_data`) or local cache files; respect these to avoid expensive re-runs in the UI.
 
-Run / test commands (use workspace root):
+Tests & examples
+
+- Run tests: `pytest -q` (from repo root). Use `tests/conftest.py` fixtures. Many tests show how to mock external services:
+  - `tests/test_geocode_fallback.py` demonstrates geocoding fallbacks and mocking patterns.
+  - `tests/test_s3_client.py` shows S3 mocks for `src/utils/s3_client.py`.
+- When modifying ingestion, scoring, or geocoding, add or update tests and run the relevant test files locally (targeted runs are faster).
+
+Developer commands (repo root)
 
 - Install deps: pip install -r requirements.txt
-- Run app locally: streamlit run app.py
-- Run tests: pytest -q (or python -m pytest)
-- Lint code: flake8 (configured via .flake8)
-- Format code: black . --line-length=120 && isort . --profile=black --line-length=120
-- Pre-commit hooks: pre-commit run --all-files (black, isort, trailing whitespace, etc.)
+- Run app: streamlit run app.py
+- Run tests: pytest -q
+- Lint: flake8
+- Format: black . --line-length=120 && isort . --profile=black --line-length=120
+- Pre-commit: pre-commit run --all-files
 
-Patterns & conventions (explicit to this repo):
+Integration & environment notes
 
-- Centralized ingestion: do not read Parquet/Excel directly in new code; use DataIngestionManager to preserve loading precedence and caching.
-- Scoring: follow existing normalized formula in `providers.py` (distance norm + in_ref + out_ref with weights summing to 1). Sliders in the UI normalize weights before calling scoring.
-- Caching: heavy ops (geocoding, ingestion) expect Streamlit cache or explicit TTL. Look for `@st.cache_data` and `performance.py` decorators.
-- Deduplication key: provider identity is (normalized_name, normalized_address). Cleaning helpers live in `src/utils/cleaning.py`.
-- Tests mock external geocoding; follow tests in `tests/test_geocode_fallback.py` for examples.
+- S3: optional integration in `src/utils/s3_client.py`. Tests mock S3; to enable in dev, supply credentials and mimic test mocks as needed.
+- Google Maps: controlled by env vars in `src/utils/geocoding.py`. If you add keys, update tests that assert fallback behavior.
+- Data samples: Parquet files in `data/processed/` (e.g., `cleaned_all_referrals.parquet`) are useful for offline experiments — but load them through the ingestion manager in code.
 
-When changing behavior, update or add tests under `tests/` and run pytest. Prefer small PRs that change one area (ingestion, scoring, UI) and include a test.
+Practical editing rules
 
-If uncertain about data shapes, open `data/processed/` parquet samples (cleaned_*.parquet) or inspect `src/data/ingestion.py` to see expected columns.
+- Keep PRs small and focused (one area: ingestion, scoring, or UI). Include unit tests for changed behavior.
+- When adding data sources, add a `DataSource` enum entry and use `DataIngestionManager` so caching and precedence remain correct.
+- If changing geocoding: update cache handling (`data/processed/geocode_cache.json`) and associated tests (`tests/test_geocode_fallback.py`).
 
-If interacting with external APIs (Google Maps), use the existing env variable convention and follow the geocoding fallback tests.
+Files to read first (priority)
 
-Questions or incomplete areas to confirm with maintainers:
+1. `app.py`
+2. `src/data/ingestion.py`
+3. `src/utils/geocoding.py`
+4. `src/utils/scoring.py` and `src/utils/providers.py`
+5. `src/utils/cleaning.py` and `prepare_contacts/contact_cleaning.ipynb`
 
-- exact env vars for Google Maps if needed (look for .env usage in repo)
-- preferred CI commands beyond pytest (CI config not in repo copy)
-
-After updating this file: ask for feedback which sections were unclear or need more examples.
+If anything here is unclear or you want more examples (e.g., exact session keys, example test patterns, or sample DataSource values), tell me which section and I'll expand it.

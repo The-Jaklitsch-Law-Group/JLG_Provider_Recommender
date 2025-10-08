@@ -58,8 +58,9 @@ def load_application_data():
             if col in provider_df.columns
         ]
         if phone_candidates:
+            from src.utils.io_utils import format_phone_number
             phone_source = phone_candidates[0]
-            provider_df["Work Phone Number"] = provider_df[phone_source]
+            provider_df["Work Phone Number"] = provider_df[phone_source].apply(format_phone_number)
             if "Work Phone" not in provider_df.columns:
                 provider_df["Work Phone"] = provider_df["Work Phone Number"]
             if "Phone Number" not in provider_df.columns:

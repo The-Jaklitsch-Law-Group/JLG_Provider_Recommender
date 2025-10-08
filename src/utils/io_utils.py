@@ -7,6 +7,47 @@ import streamlit as st
 from docx import Document
 
 
+def format_phone_number(phone):
+    """
+    Convert phone number to formatted string "(XXX) XXX-XXXX".
+    Handles various input types including float, int, and string.
+    
+    Args:
+        phone: Phone number as float, int, or string
+        
+    Returns:
+        Formatted phone string or original value if formatting fails
+    """
+    if pd.isna(phone) or phone is None:
+        return None
+    
+    # Handle different input types
+    if isinstance(phone, float):
+        phone = int(phone)
+    elif isinstance(phone, str) and '.' in phone:
+        # Handle strings that look like floats (e.g., '4435140560.0')
+        try:
+            phone = int(float(phone))
+        except (ValueError, TypeError):
+            pass  # Keep as string if conversion fails
+    
+    # Convert to string and remove any non-digit characters
+    phone_str = str(phone).replace('-', '').replace('(', '').replace(')', '').replace(' ', '')
+    
+    # Extract only digits
+    digits = ''.join(filter(str.isdigit, phone_str))
+    
+    # Check if we have exactly 10 digits
+    if len(digits) == 10:
+        return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
+    elif len(digits) == 11 and digits[0] == '1':
+        # Handle numbers with leading 1
+        return f"({digits[1:4]}) {digits[4:7]}-{digits[7:]}"
+    else:
+        # Return original if we can't format it properly
+        return phone
+
+
 def get_word_bytes(best_provider: pd.Series) -> bytes:
     doc = Document()
     doc.add_heading("Recommended Provider", 0)
@@ -24,7 +65,7 @@ def get_word_bytes(best_provider: pd.Series) -> bytes:
     for phone_key in ["Work Phone Number", "Work Phone", "Phone Number", "Phone 1"]:
         candidate = best_provider.get(phone_key)
         if candidate:
-            phone = candidate
+            phone = format_phone_number(candidate)
             break
     if phone:
         doc.add_paragraph(f"Phone: {phone}")
