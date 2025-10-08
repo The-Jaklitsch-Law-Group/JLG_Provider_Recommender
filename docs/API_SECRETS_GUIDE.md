@@ -53,6 +53,16 @@ filevine_api_key = "your_filevine_api_key"
 filevine_base_url = "https://api.filevine.com"
 filevine_org_id = "your_organization_id"
 
+# AWS S3 Configuration
+[s3]
+aws_access_key_id = "your_aws_access_key_id"
+aws_secret_access_key = "your_aws_secret_access_key"
+bucket_name = "your-s3-bucket-name"
+region_name = "us-east-1"
+referrals_folder = "referrals"
+preferred_providers_folder = "preferred_providers"
+use_latest_file = true
+
 # Email configuration
 smtp_server = "smtp.gmail.com"
 smtp_port = 587
@@ -213,6 +223,55 @@ smtp_port = 587
 smtp_username = "your_email@gmail.com"
 smtp_password = "your_16_char_app_password"
 from_email = "noreply@yourcompany.com"
+```
+
+### AWS S3 for Data Storage
+
+To enable automatic data pulls from S3:
+
+1. **Create AWS IAM User**:
+   - Go to [AWS IAM Console](https://console.aws.amazon.com/iam/)
+   - Create a new IAM user for the application
+   - Attach policy: `AmazonS3ReadOnlyAccess` (or create custom policy)
+   - Generate access keys
+
+2. **Configure S3 Bucket**:
+   - Create an S3 bucket (or use existing)
+   - Create folders: `referrals/` and `preferred_providers/`
+   - Upload Excel files to these folders
+   - Set appropriate bucket policies
+
+3. **Add to secrets**:
+
+```toml
+[s3]
+aws_access_key_id = "AKIA..."
+aws_secret_access_key = "your_secret_key"
+bucket_name = "jlg-provider-data"
+region_name = "us-east-1"
+referrals_folder = "referrals"
+preferred_providers_folder = "preferred_providers"
+use_latest_file = true
+```
+
+4. **Custom S3 Policy (Optional)**:
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::jlg-provider-data",
+        "arn:aws:s3:::jlg-provider-data/*"
+      ]
+    }
+  ]
+}
 ```
 
 ## 🛡️ Security Best Practices

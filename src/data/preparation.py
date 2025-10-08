@@ -11,6 +11,32 @@ from io import BytesIO
 import numpy as np
 import pandas as pd
 
+
+def _looks_like_excel_bytes(buffer: BytesIO) -> bool:
+    """Quick heuristic: check first bytes to see if data looks like an Excel file.
+
+    - XLSX files are ZIP archives and start with PK signature (b'PK\x03\x04')
+    - Older XLS BIFF files begin with bytes 0xD0 0xCF 0x11 0xE0
+    """
+    try:
+        pos = buffer.tell()
+    except Exception:
+        pos = None
+    try:
+        buffer.seek(0)
+        head = buffer.read(4)
+        buffer.seek(0)
+    except Exception:
+        return False
+    if not head:
+        return False
+    if head.startswith(b"PK"):
+        return True
+    # BIFF header (xls)
+    if head[:4] == b"\xD0\xCF\x11\xE0":
+        return True
+    return False
+
 logger = logging.getLogger(__name__)
 
 
@@ -82,11 +108,30 @@ def _normalize_date_series(series: pd.Series) -> pd.Series:
     # First try direct conversion (handles pandas/ISO timestamps)
     converted = pd.to_datetime(series, errors="coerce")
 
-    # Attempt Excel serial conversion for numeric leftovers
+    # Attempt Excel serial conversion for numeric leftovers (and numeric-like strings from CSV)
     if converted.isna().any():
-        numeric_mask = series.apply(lambda x: isinstance(x, (int, float))) & series.notna()
+        def _looks_numeric(v: Any) -> bool:
+            if isinstance(v, (int, float)):
+                return True
+            if isinstance(v, str):
+                s = v.strip()
+                if s == "":
+                    return False
+                # allow integer or decimal representations
+                if s.isdigit():
+                    return True
+                try:
+                    float(s)
+                    return True
+                except Exception:
+                    return False
+            return False
+
+        numeric_mask = series.apply(_looks_numeric) & series.notna()
         if numeric_mask.any():
-            converted_numeric = pd.to_datetime(series[numeric_mask], unit="D", origin=_EXCEL_ORIGIN, errors="coerce")
+            # Coerce numeric-looking entries to floats then interpret as Excel serials
+            numeric_vals = pd.to_numeric(series.loc[numeric_mask], errors="coerce")
+            converted_numeric = pd.to_datetime(numeric_vals, unit="D", origin=_EXCEL_ORIGIN, errors="coerce")
             converted.loc[numeric_mask] = converted_numeric
 
     return converted
@@ -359,13 +404,44 @@ def process_and_save_cleaned_referrals(
                 excel_buffer = BytesIO(bytes(raw_input))  # type: ignore
             except Exception as e:
                 raise TypeError(f"Cannot convert {type(raw_input)} to BytesIO for Excel processing: {e}")
-        
-        try:
-            df_all = pd.read_excel(excel_buffer, sheet_name="Referrals_App_Full_Contacts")
-        except ValueError:
-            # Reset position and try again
-            excel_buffer.seek(0)
-            df_all = pd.read_excel(excel_buffer)
+        # If filename suggests CSV prefer CSV parsing (S3 often provides CSV exports)
+        excel_buffer.seek(0)
+        tried_csv = False
+        if filename and isinstance(filename, str) and filename.lower().endswith('.csv'):
+            try:
+                df_all = pd.read_csv(excel_buffer)
+                tried_csv = True
+            except Exception:
+                excel_buffer.seek(0)
+                # fall through to try Excel
+
+        if not tried_csv:
+            # Try Excel first (sheet may be present); on failure, try CSV as a fallback
+            excel_error = None
+            csv_error = None
+            try:
+                df_all = pd.read_excel(excel_buffer, sheet_name="Referrals_App_Full_Contacts")
+            except Exception as e:
+                excel_error = e
+                try:
+                    excel_buffer.seek(0)
+                    df_all = pd.read_csv(excel_buffer)
+                except Exception as e2:
+                    csv_error = e2
+                    # As a last resort try reading Excel without sheet name which may work for single-sheet files
+                    try:
+                        excel_buffer.seek(0)
+                        df_all = pd.read_excel(excel_buffer)
+                    except Exception as e3:
+                        # All attempts failed - raise informative error
+                        raise ValueError(
+                            f"Could not read file as Excel or CSV. "
+                            f"Excel (with sheet) error: {excel_error}. "
+                            f"CSV error: {csv_error}. "
+                            f"Excel (no sheet) error: {e3}. "
+                            f"Filename hint: {filename}"
+                        )
+
         # Normalize column names (strip whitespace)
         df_all.columns = df_all.columns.str.strip()
     else:
@@ -375,10 +451,19 @@ def process_and_save_cleaned_referrals(
             if not raw_path.exists():
                 raise FileNotFoundError(f"Raw referral file not found: {raw_path}")
             logger.info("Loading raw referrals from %s", raw_path)
-            try:
-                df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts")
-            except ValueError:
-                df_all = pd.read_excel(raw_path)
+            suffix = raw_path.suffix.lower()
+            if suffix == '.csv':
+                df_all = pd.read_csv(raw_path)
+            else:
+                # Try Excel first; if it fails, attempt CSV fallback (some exports are CSV without .csv extension)
+                try:
+                    df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts")
+                except Exception:
+                    try:
+                        df_all = pd.read_csv(raw_path)
+                    except Exception:
+                        # Final fallback: try read_excel without sheet
+                        df_all = pd.read_excel(raw_path)
             # Normalize column names (strip whitespace)
             df_all.columns = df_all.columns.str.strip()
         else:
@@ -633,14 +718,22 @@ def _load_excel(raw_input: Any, filename: Optional[str] = None) -> pd.DataFrame:
         raw_path = Path(raw_input)
         if not raw_path.exists():
             raise FileNotFoundError(f"File not found: {raw_path}")
-        logger.info("Loading Excel file from %s", raw_path)
-        df = pd.read_excel(raw_path)
+        logger.info("Loading data from %s", raw_path)
+        suffix = raw_path.suffix.lower()
+        if suffix == '.csv':
+            df = pd.read_csv(raw_path)
+        else:
+            # Try Excel first, but fallback to CSV if that fails (some S3 exports are CSV)
+            try:
+                df = pd.read_excel(raw_path)
+            except Exception:
+                df = pd.read_csv(raw_path)
         # Normalize column names (strip whitespace)
         df.columns = df.columns.str.strip()
         return df
     else:
         # Handle buffer-like objects
-        logger.info("Loading Excel data from memory (source: %s)", filename or "uploaded file")
+        logger.info("Loading data from memory (source: %s)", filename or "uploaded file")
         if isinstance(raw_input, BytesIO):
             excel_buffer = raw_input
         elif isinstance(raw_input, bytes):
@@ -649,7 +742,22 @@ def _load_excel(raw_input: Any, filename: Optional[str] = None) -> pd.DataFrame:
             excel_buffer = BytesIO(bytes(raw_input))
         else:
             raise TypeError(f"Unsupported input type: {type(raw_input)}")
-        df = pd.read_excel(excel_buffer)
+
+        # Prefer CSV when filename suggests it, otherwise try Excel then fallback to CSV
+        excel_buffer.seek(0)
+        if filename and isinstance(filename, str) and filename.lower().endswith('.csv'):
+            try:
+                df = pd.read_csv(excel_buffer)
+            except Exception:
+                excel_buffer.seek(0)
+                df = pd.read_excel(excel_buffer)
+        else:
+            try:
+                df = pd.read_excel(excel_buffer)
+            except Exception:
+                excel_buffer.seek(0)
+                df = pd.read_csv(excel_buffer)
+
         # Normalize column names (strip whitespace)
         df.columns = df.columns.str.strip()
         return df
