@@ -7,8 +7,15 @@ system.
 
 Usage:
     from src.utils.s3_client import S3DataClient, get_latest_s3_file
-    
-    client = S3DataClient()
+
+    # Optionally override folder names:
+    folder_map = {
+        'top_folder': 'jaklitschfvdomo',
+        'referrals_folder': '990046944',
+        'preferred_providers_folder': '990047553',
+    }
+
+    client = S3DataClient(folder_map=folder_map)
     if client.is_configured():
         file_bytes = client.download_latest_file('referrals')
 """
@@ -16,7 +23,7 @@ Usage:
 import logging
 from datetime import datetime
 from io import BytesIO
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict
 
 import streamlit as st
 
@@ -26,13 +33,55 @@ logger = logging.getLogger(__name__)
 class S3DataClient:
     """Client for accessing data files from AWS S3."""
     
-    def __init__(self):
-        """Initialize the S3 client with configuration from secrets."""
+    def __init__(self, folder_map: Optional[Dict[str, str]] = None):
+        """Initialize the S3 client with configuration from secrets.
+
+        Args:
+            folder_map: Optional dict to override folder names. Accepted keys:
+                - 'top_folder'
+                - 'referrals_folder'
+                - 'preferred_providers_folder'
+
+        If not provided, defaults are used. Config values (if present) will
+        override defaults and then values in folder_map will override both.
+        """
         from src.utils.config import get_api_config, is_api_enabled
-        
+
         self.config = get_api_config('s3')
         self.enabled = is_api_enabled('s3')
         self._client = None
+
+        # sensible defaults as requested
+        defaults = {
+            'top_folder': 'jaklitschfvdomo',
+            'referrals_folder': '990046944',
+            'preferred_providers_folder': '990047553',
+        }
+
+        # overlay any config values (if config is a dict-like)
+        cfg_top = None
+        cfg_ref = None
+        cfg_pref = None
+        if isinstance(self.config, dict):
+            cfg_top = self.config.get('top_folder')
+            cfg_ref = self.config.get('referrals_folder')
+            cfg_pref = self.config.get('preferred_providers_folder')
+
+        merged = defaults.copy()
+        if cfg_top:
+            merged['top_folder'] = cfg_top
+        if cfg_ref:
+            merged['referrals_folder'] = cfg_ref
+        if cfg_pref:
+            merged['preferred_providers_folder'] = cfg_pref
+
+        # finally apply overrides passed by the caller
+        if folder_map:
+            for k, v in folder_map.items():
+                if k in merged and v:
+                    merged[k] = v
+
+        self.folder_map = merged
         
     def is_configured(self) -> bool:
         """Check if S3 is properly configured."""
@@ -53,6 +102,36 @@ class S3DataClient:
                 logger.error(f"Failed to initialize S3 client: {e}")
                 self.enabled = False
         return self._client
+
+    def _resolve_folder(self, folder_type: str) -> Optional[str]:
+        """Return the full S3 prefix for a folder_type.
+
+        Combines top_folder and the requested subfolder unless the subfolder
+        already contains a path separator. Ensures the returned folder ends
+        with a trailing '/'.
+        """
+        if folder_type == 'referrals':
+            sub = self.folder_map.get('referrals_folder')
+        elif folder_type == 'preferred_providers':
+            sub = self.folder_map.get('preferred_providers_folder')
+        else:
+            logger.error(f"Unknown folder type: {folder_type}")
+            return None
+
+        top = self.folder_map.get('top_folder')
+        if not sub:
+            return None
+
+        # if sub already looks like a path, use it directly, otherwise join
+        if '/' in sub:
+            folder = sub
+        else:
+            folder = f"{top}/{sub}" if top else sub
+
+        if not folder.endswith('/'):
+            folder += '/'
+
+        return folder
     
     def list_files_in_folder(self, folder_type: str) -> List[Tuple[str, datetime]]:
         """
@@ -68,18 +147,9 @@ class S3DataClient:
         if not client:
             return []
         
-        # Get folder path from config
-        if folder_type == 'referrals':
-            folder = self.config['referrals_folder']
-        elif folder_type == 'preferred_providers':
-            folder = self.config['preferred_providers_folder']
-        else:
-            logger.error(f"Unknown folder type: {folder_type}")
+        folder = self._resolve_folder(folder_type)
+        if not folder:
             return []
-        
-        # Ensure folder ends with /
-        if not folder.endswith('/'):
-            folder += '/'
         
         try:
             response = client.list_objects_v2(
@@ -119,19 +189,10 @@ class S3DataClient:
         if not client:
             return None
         
-        # Get folder path from config
-        if folder_type == 'referrals':
-            folder = self.config['referrals_folder']
-        elif folder_type == 'preferred_providers':
-            folder = self.config['preferred_providers_folder']
-        else:
-            logger.error(f"Unknown folder type: {folder_type}")
+        folder = self._resolve_folder(folder_type)
+        if not folder:
             return None
-        
-        # Ensure folder ends with /
-        if not folder.endswith('/'):
-            folder += '/'
-        
+
         s3_key = f"{folder}{filename}"
         
         try:
@@ -173,7 +234,7 @@ class S3DataClient:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def get_latest_s3_file(folder_type: str) -> Optional[Tuple[bytes, str]]:
+def get_latest_s3_file(folder_type: str, folder_map: Optional[Dict[str, str]] = None) -> Optional[Tuple[bytes, str]]:
     """
     Cached function to get the latest file from S3.
     
@@ -183,7 +244,7 @@ def get_latest_s3_file(folder_type: str) -> Optional[Tuple[bytes, str]]:
     Returns:
         Tuple of (file_bytes, filename) or None if download fails
     """
-    client = S3DataClient()
+    client = S3DataClient(folder_map=folder_map)
     if not client.is_configured():
         return None
     
@@ -191,7 +252,7 @@ def get_latest_s3_file(folder_type: str) -> Optional[Tuple[bytes, str]]:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def list_s3_files(folder_type: str) -> List[Tuple[str, datetime]]:
+def list_s3_files(folder_type: str, folder_map: Optional[Dict[str, str]] = None) -> List[Tuple[str, datetime]]:
     """
     Cached function to list files in an S3 folder.
     
@@ -201,7 +262,7 @@ def list_s3_files(folder_type: str) -> List[Tuple[str, datetime]]:
     Returns:
         List of tuples (filename, last_modified_datetime)
     """
-    client = S3DataClient()
+    client = S3DataClient(folder_map=folder_map)
     if not client.is_configured():
         return []
     

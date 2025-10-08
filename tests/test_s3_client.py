@@ -39,8 +39,8 @@ class TestS3DataClient:
         mock_is_enabled.return_value = True
         mock_get_config.return_value = mock_s3_config
         
-        client = S3DataClient()
-        
+        client = S3DataClient(folder_map={'top_folder': ''})
+
         assert client.is_configured() is True
         mock_get_config.assert_called_once_with('s3')
     
@@ -53,8 +53,8 @@ class TestS3DataClient:
         mock_is_enabled.return_value = False
         mock_get_config.return_value = mock_s3_config
         
-        client = S3DataClient()
-        
+        client = S3DataClient(folder_map={'top_folder': ''})
+
         assert client.is_configured() is False
     
     @patch('boto3.client')
@@ -84,7 +84,7 @@ class TestS3DataClient:
             ]
         }
         
-        client = S3DataClient()
+        client = S3DataClient(folder_map={'top_folder': ''})
         files = client.list_files_in_folder('referrals')
         
         assert len(files) == 2
@@ -114,7 +114,7 @@ class TestS3DataClient:
         
         mock_client.download_fileobj.side_effect = mock_download_fileobj
         
-        client = S3DataClient()
+        client = S3DataClient(folder_map={'top_folder': ''})
         result = client.download_file('referrals', 'test.xlsx')
         
         assert result == test_data
@@ -155,7 +155,7 @@ class TestS3DataClient:
         
         mock_client.download_fileobj.side_effect = mock_download_fileobj
         
-        client = S3DataClient()
+        client = S3DataClient(folder_map={'top_folder': ''})
         result = client.download_latest_file('referrals')
         
         assert result is not None
@@ -180,7 +180,7 @@ class TestS3DataClient:
         # Mock empty list response
         mock_client.list_objects_v2.return_value = {}
         
-        client = S3DataClient()
+        client = S3DataClient(folder_map={'top_folder': ''})
         result = client.download_latest_file('referrals')
         
         assert result is None
@@ -194,8 +194,8 @@ class TestS3DataClient:
         mock_is_enabled.return_value = False
         mock_get_config.return_value = mock_s3_config
         
-        client = S3DataClient()
-        
+        client = S3DataClient(folder_map={'top_folder': ''})
+
         # Should return empty/None for all operations
         assert client.list_files_in_folder('referrals') == []
         assert client.download_file('referrals', 'test.xlsx') is None
