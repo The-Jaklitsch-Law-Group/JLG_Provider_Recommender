@@ -563,6 +563,20 @@ def get_data_manager() -> DataIngestionManager:
     return _data_manager
 
 
+# Backwards-compatible module-level symbol for older imports. This proxy
+# delegates attribute access to the lazily-created DataIngestionManager
+# instance so 'from src.data.ingestion import data_manager' continues to work
+# without reintroducing eager instantiation side-effects.
+class _DataManagerProxy:
+    def __getattr__(self, name: str):
+        manager = get_data_manager()
+        return getattr(manager, name)
+
+
+# Exported symbol (keeps older import paths working)
+data_manager = _DataManagerProxy()
+
+
 # ============================================================================
 # Backward Compatibility Functions
 #
