@@ -29,16 +29,19 @@ st.subheader("📍 Client Address")
 # small dev toggle to force stacked/mobile layout for testing
 responsive_sidebar_toggle()
 col1, col2 = resp_columns([1, 1])
+
 with col1:
     street = str(
         st.text_input(
             "Street Address",
             st.session_state.get("street", "14350 Old Marlboro Pike") or "",
-            help="Enter the client's street address",
+            help="Enter the client's street address"
         )
     )
 with col2:
-    city = str(st.text_input("City", st.session_state.get("city", "Upper Marlboro") or ""))
+    city = str(st.text_input("City",
+                             st.session_state.get("city", "Upper Marlboro") or "",
+            help="Enter the client's city"))
     
 
 col3, col4 = resp_columns([1, 1])
@@ -62,14 +65,16 @@ with col3:
         "State",
         options=options,
         index=default_index,
-        help="Two-letter state code (e.g., MD, VA). Select None to leave blank.",
+        help="Select the client's state (2-letter abbreviation)"
     )
 
     # Ensure state is an uppercase string or None
     state = state.upper() if isinstance(state, str) else None
     
 with col4:
-    zipcode = str(st.text_input("ZIP Code", st.session_state.get("zipcode", "20772") or "", help="5-digit ZIP code"))
+    zipcode = str(st.text_input("ZIP Code",
+                                st.session_state.get("zipcode", "20772") or "",
+                                help="5-digit ZIP code"))
 
 # Quick search presets
 st.divider()

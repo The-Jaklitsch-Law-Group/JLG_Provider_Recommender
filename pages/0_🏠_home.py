@@ -38,6 +38,7 @@ with col2:
 #         st.markdown("Refresh the system with the latest referral information.")
 #         st.markdown("**Perfect for:** Monthly data updates")
 #         st.page_link("pages/30_🔄_Update_Data.py", label="Update Data →", icon="🔄")
+
 st.divider()
 
 # Main value proposition
