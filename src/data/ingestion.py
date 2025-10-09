@@ -51,7 +51,7 @@ class DataSource(Enum):
 
     # Provider-specific data (aggregated from outbound referrals)
     PROVIDER_DATA = "provider"  # Unique providers with referral counts
-    
+
     # Preferred providers contact list
     PREFERRED_PROVIDERS = "preferred_providers"  # Firm's preferred provider contacts
 
@@ -90,8 +90,16 @@ class DataIngestionManager:
         Args:
             data_dir: Base directory containing raw/ and processed/ subdirectories
         """
+        from src.utils.config import get_api_config
+
         self.data_dir = Path(data_dir)
         self.cache_ttl = 3600  # 1 hour cache for optimal performance
+
+        # Get S3 configuration for S3-only mode check
+        s3_config = get_api_config("s3")
+        self.use_s3_only = s3_config.get("use_s3_only", True)
+        self.allow_local_fallback = s3_config.get("allow_local_fallback", False)
+
         self._file_registry = self._build_file_registry()
 
     def _build_file_registry(self) -> Dict[DataSource, Dict[str, Path]]:
@@ -452,13 +460,49 @@ class DataIngestionManager:
         Returns:
             pd.DataFrame with the requested data (may be empty on failure)
         """
+        # S3-only mode enforcement
+        if self.use_s3_only and not self.allow_local_fallback:
+            # In S3-only mode, data must be loaded from S3 and written to local processed/ folder
+            # by the S3 auto-update mechanism. If files don't exist, we fail with a clear message.
+            from src.utils.config import is_api_enabled
+
+            if not is_api_enabled("s3"):
+                error_msg = (
+                    "❌ S3-only mode is enabled but S3 is not configured.\n\n"
+                    "To use this app, you must configure S3 credentials in .streamlit/secrets.toml:\n"
+                    "- s3.aws_access_key_id\n"
+                    "- s3.aws_secret_access_key\n"
+                    "- s3.bucket_name\n\n"
+                    "Local parquet files have been deprecated and removed.\n"
+                    "See docs for S3 setup instructions."
+                )
+                logger.error(error_msg)
+                if show_status:
+                    st.error(error_msg)
+                return pd.DataFrame()
+
         file_path, file_type = self._get_best_available_file(source)
 
         if show_status:
             logger.debug(f"Loading data for {source.value}: file={file_path}, type={file_type}")
 
         if not file_path:
-            logger.warning(f"No data file found for source: {source}")
+            # Provide helpful error message in S3-only mode
+            if self.use_s3_only and not self.allow_local_fallback:
+                error_msg = (
+                    f"❌ No data file found for {source.value}.\n\n"
+                    f"S3-only mode is enabled. Data files should be automatically downloaded from S3 on app launch.\n"
+                    f"If this is your first time running the app, please:\n"
+                    f"1. Ensure S3 is properly configured with credentials\n"
+                    f"2. Navigate to the '🔄 Update Data' page\n"
+                    f"3. Click 'Pull Latest from S3' to download data\n\n"
+                    f"If S3 auto-update failed, check the S3 bucket contains the required files."
+                )
+                logger.warning(error_msg)
+                if show_status:
+                    st.warning(error_msg)
+            else:
+                logger.warning(f"No data file found for source: {source}")
             return pd.DataFrame()
 
         # Use the cached loader to read the dataframe
@@ -535,9 +579,9 @@ class DataIngestionManager:
             "missing_required_columns": missing_cols,
             "duplicate_names": df["Full Name"].duplicated().sum() if "Full Name" in df.columns else 0,
             "invalid_coordinates": coord_issues,
-            "missing_values_pct": round((df.isnull().sum().sum() / (len(df) * len(df.columns)) * 100), 2)
-            if not df.empty
-            else 0,
+            "missing_values_pct": (
+                round((df.isnull().sum().sum() / (len(df) * len(df.columns)) * 100), 2) if not df.empty else 0
+            ),
         }
 
 

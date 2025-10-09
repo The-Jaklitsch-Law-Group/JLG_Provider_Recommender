@@ -1,8 +1,20 @@
 # Data Input Format Support
 
+**⚠️ IMPORTANT: S3 is now the canonical data source. Local parquet files have been deprecated and removed from the repository.**
+
 ## Overview
 
-The JLG Provider Recommender supports **both CSV and Excel file formats** for data input, with intelligent automatic detection and fallback mechanisms to ensure seamless processing from multiple sources.
+The JLG Provider Recommender supports **both CSV and Excel file formats** for data input, with intelligent automatic detection and fallback mechanisms to ensure seamless processing from AWS S3 or manual uploads.
+
+## Data Flow
+
+```
+S3 Bucket (CSV/Excel) → Auto-Download → Clean & Process → Local Parquet Cache → App
+     OR
+Manual Upload (CSV/Excel) → Clean & Process → Local Parquet Cache → App
+```
+
+**Note:** Local parquet files in `data/processed/` are cache files auto-generated from S3, not source files.
 
 ## Supported Input Sources
 

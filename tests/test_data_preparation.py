@@ -64,7 +64,7 @@ def sample_raw_excel_data():
     )
 
 
-def test_process_and_save_cleaned_referrals(tmp_path, sample_raw_excel_data):
+def test_process_and_save_cleaned_referrals(tmp_path, sample_raw_excel_data, disable_s3_only_mode):
     """Test the complete data cleaning and saving pipeline."""
     # Setup paths
     raw_path = tmp_path / "Referrals_App_Full_Contacts.csv"
@@ -109,7 +109,7 @@ def test_process_and_save_cleaned_referrals(tmp_path, sample_raw_excel_data):
     assert lat == 38.9072, "Latitude should be parsed as float"
 
 
-def test_process_handles_empty_excel(tmp_path):
+def test_process_handles_empty_excel(tmp_path, disable_s3_only_mode):
     """Test handling of empty Excel file."""
     raw_path = tmp_path / "empty.csv"
     processed_dir = tmp_path / "processed"
