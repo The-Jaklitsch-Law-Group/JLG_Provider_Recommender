@@ -2,8 +2,9 @@ import pandas as pd
 import streamlit as st
 
 from src.app_logic import apply_time_filtering, load_application_data, run_recommendation, validate_provider_data
-from src.utils.io_utils import get_word_bytes, sanitize_filename
+from src.utils.io_utils import format_phone_number, get_word_bytes, sanitize_filename
 from src.utils.responsive import resp_columns, responsive_sidebar_toggle
+
 
 st.set_page_config(page_title="Results", page_icon=":bar_chart:", layout="centered")
 
@@ -93,7 +94,7 @@ with st.container():
             for phone_key in ["Work Phone Number", "Work Phone", "Phone Number", "Phone 1"]:
                 candidate = best.get(phone_key)
                 if candidate:
-                    phone_value = candidate
+                    phone_value = format_phone_number(candidate)
                     break
             if phone_value:
                 info_items.append(("📞 Phone", phone_value))
@@ -154,11 +155,17 @@ if available:
         .drop_duplicates(subset=["Full Name"], keep="first")
         .sort_values(by="Score" if "Score" in available else available[0])
         .reset_index(drop=True)
+        .copy()  # Ensure we have a copy to modify
     )
+
+    # Format phone numbers - handle all possible phone field names
+    phone_fields = ["Work Phone Number", "Work Phone", "Phone Number", "Phone 1"]
+    for phone_field in phone_fields:
+        if phone_field in display_df.columns:
+            display_df[phone_field] = display_df[phone_field].apply(format_phone_number)
 
     # Format boolean Preferred Provider column for better display
     if "Preferred Provider" in display_df.columns:
-        display_df = display_df.copy()
         display_df["Preferred Provider"] = display_df["Preferred Provider"].map({True: "⭐ Yes", False: "No"})
 
     # Round distance to 1 decimal place for cleaner display

@@ -2,6 +2,7 @@ import datetime as dt
 
 import streamlit as st
 
+from app import show_auto_update_status
 from src.app_logic import load_application_data
 from src.utils.addressing import validate_address_input
 from src.utils.responsive import resp_columns, responsive_sidebar_toggle
@@ -14,14 +15,73 @@ except Exception:
     geocode_address_with_cache = None
     GEOCODE_AVAILABLE = False
 
+# Constants - define once at module level for performance
+US_STATES = [
+    "MD",
+    "AL",
+    "AK",
+    "AZ",
+    "AR",
+    "CA",
+    "CO",
+    "CT",
+    "DE",
+    "FL",
+    "GA",
+    "HI",
+    "ID",
+    "IL",
+    "IN",
+    "IA",
+    "KS",
+    "KY",
+    "LA",
+    "ME",
+    "MA",
+    "MI",
+    "MN",
+    "MS",
+    "MO",
+    "MT",
+    "NE",
+    "NV",
+    "NH",
+    "NJ",
+    "NM",
+    "NY",
+    "NC",
+    "ND",
+    "OH",
+    "OK",
+    "OR",
+    "PA",
+    "RI",
+    "SC",
+    "SD",
+    "TN",
+    "TX",
+    "UT",
+    "VT",
+    "VA",
+    "WA",
+    "WV",
+    "WI",
+    "WY",
+    "DC",
+]
+
 st.set_page_config(page_title="Search", page_icon=":mag:", layout="centered")
+
+# Show S3 auto-update status if available
+show_auto_update_status()
 
 st.title("🔎 Provider Search")
 st.caption("Find the best provider for your client — just enter an address and click Search!")
 
-with st.spinner("Loading provider data..."):
-    provider_df, detailed_referrals_df = load_application_data()
+# Load data once - this is cached by @st.cache_data in load_application_data
+provider_df, detailed_referrals_df = load_application_data()
 
+# Cache the column check to avoid repeated lookups
 has_inbound = ("Inbound Referral Count" in provider_df.columns) if not provider_df.empty else False
 
 # Address input section with improved layout
@@ -30,51 +90,35 @@ st.subheader("📍 Client Address")
 responsive_sidebar_toggle()
 col1, col2 = resp_columns([1, 1])
 
+# Cache session state lookups
+prev_street = st.session_state.get("street", "14350 Old Marlboro Pike") or ""
+prev_city = st.session_state.get("city", "Upper Marlboro") or ""
+
 with col1:
-    street = str(
-        st.text_input(
-            "Street Address",
-            st.session_state.get("street", "14350 Old Marlboro Pike") or "",
-            help="Enter the client's street address"
-        )
-    )
+    street = str(st.text_input("Street Address", prev_street, help="Enter the client's street address"))
 with col2:
-    city = str(st.text_input("City",
-                             st.session_state.get("city", "Upper Marlboro") or "",
-            help="Enter the client's city"))
-    
+    city = str(st.text_input("City", prev_city, help="Enter the client's city"))
+
 
 col3, col4 = resp_columns([1, 1])
-with col3:
-    # Two-letter US state abbreviations (includes DC). "None" is provided as the first option
-    US_STATES = [
-        "MD","AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA",
-        "ME","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK",
-        "OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC",
-    ]
 
-    # options = [None] + US_STATES
-    options = US_STATES
-    prev_state = st.session_state.get("state", None)
-    try:
-        default_index = options.index(prev_state) if prev_state in options else 0
-    except Exception:
-        default_index = 0
+# Cache session state lookups
+prev_state = st.session_state.get("state", None)
+prev_zipcode = st.session_state.get("zipcode", "20772") or ""
+
+with col3:
+    # Calculate default index once
+    default_index = US_STATES.index(prev_state) if prev_state in US_STATES else 0
 
     state = st.selectbox(
-        "State",
-        options=options,
-        index=default_index,
-        help="Select the client's state (2-letter abbreviation)"
+        "State", options=US_STATES, index=default_index, help="Select the client's state (2-letter abbreviation)"
     )
 
     # Ensure state is an uppercase string or None
     state = state.upper() if isinstance(state, str) else None
-    
+
 with col4:
-    zipcode = str(st.text_input("ZIP Code",
-                                st.session_state.get("zipcode", "20772") or "",
-                                help="5-digit ZIP code"))
+    zipcode = str(st.text_input("ZIP Code", prev_zipcode, help="5-digit ZIP code"))
 
 # Quick search presets
 st.divider()
@@ -87,7 +131,7 @@ preset_choice = st.radio(
     help="Select a preset to automatically configure search weights, or choose Custom to set your own",
 )
 
-# Set weights based on preset
+# Set weights based on preset - use conditional assignment to minimize branching
 if preset_choice == "Prioritize Proximity (Recommended)":
     distance_weight = 0.7
     outbound_weight = 0.2
@@ -104,6 +148,12 @@ elif preset_choice == "Prioritize Referrals":
     inbound_weight = 0.1 if has_inbound else 0.0
     preferred_weight = 0.1
 else:  # Custom Settings
+    # Cache default values to avoid repeated session state lookups
+    default_distance = 0.4 if has_inbound else 0.6
+    default_outbound = 0.0
+    default_inbound = 0.2
+    default_preferred = 0.1
+
     with st.expander("⚖️ Custom Scoring Weights", expanded=True):
         st.caption("Adjust these sliders to control how each factor influences the recommendation.")
 
@@ -111,7 +161,7 @@ else:  # Custom Settings
             "📍 Distance Importance",
             0.0,
             1.0,
-            st.session_state.get("distance_weight", 0.4 if has_inbound else 0.6),
+            st.session_state.get("distance_weight", default_distance),
             0.05,
             help="Higher values prioritize providers closer to the client",
         )
@@ -119,7 +169,7 @@ else:  # Custom Settings
             "📊 Outbound Referral Importance",
             0.0,
             1.0,
-            st.session_state.get("outbound_weight", 0.0),
+            st.session_state.get("outbound_weight", default_outbound),
             0.05,
             help="Higher values favor providers with MORE outbound referrals (more experienced)",
         )
@@ -128,7 +178,7 @@ else:  # Custom Settings
                 "🤝 Inbound Referral Importance",
                 0.0,
                 1.0,
-                st.session_state.get("inbound_weight", 0.2),
+                st.session_state.get("inbound_weight", default_inbound),
                 0.05,
                 help="Higher values favor providers with MORE inbound referrals (refer more cases to us)",
             )
@@ -138,19 +188,21 @@ else:  # Custom Settings
             "⭐ Preferred Provider Importance",
             0.0,
             1.0,
-            st.session_state.get("preferred_weight", 0.1),
+            st.session_state.get("preferred_weight", default_preferred),
             0.05,
             help="Higher values favor designated preferred providers",
         )
 
-# Calculate normalized weights
-total = distance_weight + outbound_weight + (inbound_weight if has_inbound else 0) + preferred_weight
+# Calculate normalized weights - only compute once
+total = distance_weight + outbound_weight + inbound_weight + preferred_weight
 if total == 0:
     st.error("⚠️ At least one weight must be greater than 0. Please adjust your settings.")
-alpha = distance_weight / total if total else 0.5
-beta = outbound_weight / total if total else 0.5
-gamma = inbound_weight / total if has_inbound and total else 0.0
-pref_norm = preferred_weight / total if total else 0.0
+    alpha = beta = gamma = pref_norm = 0.0
+else:
+    alpha = distance_weight / total
+    beta = outbound_weight / total
+    gamma = inbound_weight / total if has_inbound else 0.0
+    pref_norm = preferred_weight / total
 
 # Show normalized weights in a more visual way
 if preset_choice == "Custom Settings":
@@ -168,6 +220,9 @@ if preset_choice == "Custom Settings":
 # Advanced filters in collapsible section
 with st.expander("⚙️ Advanced Filters (Optional)"):
     st.caption("Set additional criteria to refine your search results.")
+
+    # Cache session state lookups and compute defaults once
+    default_time_period = [dt.date.today() - dt.timedelta(days=365), dt.date.today()]
 
     max_radius_miles = st.slider(
         "Maximum Distance (miles)",
@@ -190,7 +245,7 @@ with st.expander("⚙️ Advanced Filters (Optional)"):
     with col_time1:
         time_period = st.date_input(
             "Referral Time Period",
-            value=st.session_state.get("time_period", [dt.date.today() - dt.timedelta(days=365), dt.date.today()]),
+            value=st.session_state.get("time_period", default_time_period),
             help="Consider only referrals within this date range",
         )
     with col_time2:
@@ -207,10 +262,8 @@ with col_btn2:
 
 if search_clicked:
     # Clear cached results from any previous search
-    if "last_best" in st.session_state:
-        del st.session_state["last_best"]
-    if "last_scored_df" in st.session_state:
-        del st.session_state["last_scored_df"]
+    st.session_state.pop("last_best", None)
+    st.session_state.pop("last_scored_df", None)
 
     # Construct full address from current form values. Use empty string when state is None
     state_for_addr = state or ""
@@ -224,42 +277,45 @@ if search_clicked:
             st.info(addr_msg)
         st.stop()
 
-    # Check geocoding availability
-    if not GEOCODE_AVAILABLE:
+    # Check geocoding availability (already checked at import)
+    if not GEOCODE_AVAILABLE or geocode_address_with_cache is None:
         st.error("❌ Geocoding service unavailable. Please contact support.")
         st.info("Technical note: geopy package is not installed")
         st.stop()
 
     # Geocode the address
     with st.spinner("🌍 Looking up address coordinates..."):
-        coords = geocode_address_with_cache(full_address) if (GEOCODE_AVAILABLE and callable(geocode_address_with_cache)) else None
+        coords = geocode_address_with_cache(full_address)
 
     if not coords:
         st.error("❌ Unable to find the address. Please check and try again.")
         st.info(f"Tried to geocode: {full_address}")
         st.stop()
 
-    # Success! Store search parameters
+    # Success! Store search parameters in a single batch update
     user_lat, user_lon = coords
-    st.session_state["street"] = street
-    st.session_state["city"] = city
-    # store empty string instead of None for backward compatibility with other code
-    st.session_state["state"] = state or ""
-    st.session_state["zipcode"] = zipcode
-    st.session_state["user_lat"] = float(user_lat)
-    st.session_state["user_lon"] = float(user_lon)
-    st.session_state["alpha"] = float(alpha)
-    st.session_state["beta"] = float(beta)
-    st.session_state["gamma"] = float(gamma)
-    st.session_state["preferred_weight"] = float(preferred_weight)
-    st.session_state["preferred_norm"] = float(pref_norm)
-    st.session_state["distance_weight"] = float(distance_weight)
-    st.session_state["outbound_weight"] = float(outbound_weight)
-    st.session_state["inbound_weight"] = float(inbound_weight)
-    st.session_state["min_referrals"] = int(min_referrals)
-    st.session_state["time_period"] = time_period
-    st.session_state["use_time_filter"] = bool(use_time_filter)
-    st.session_state["max_radius_miles"] = int(max_radius_miles)
+    st.session_state.update(
+        {
+            "street": street,
+            "city": city,
+            "state": state or "",  # store empty string for backward compatibility
+            "zipcode": zipcode,
+            "user_lat": float(user_lat),
+            "user_lon": float(user_lon),
+            "alpha": float(alpha),
+            "beta": float(beta),
+            "gamma": float(gamma),
+            "preferred_weight": float(preferred_weight),
+            "preferred_norm": float(pref_norm),
+            "distance_weight": float(distance_weight),
+            "outbound_weight": float(outbound_weight),
+            "inbound_weight": float(inbound_weight),
+            "min_referrals": int(min_referrals),
+            "time_period": time_period,
+            "use_time_filter": bool(use_time_filter),
+            "max_radius_miles": int(max_radius_miles),
+        }
+    )
 
     # Navigate to results
     with st.spinner("🔍 Searching for providers..."):

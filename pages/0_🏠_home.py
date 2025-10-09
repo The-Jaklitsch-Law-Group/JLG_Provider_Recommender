@@ -1,10 +1,15 @@
 import streamlit as st
+
+from app import show_auto_update_status
 from src.utils.responsive import resp_columns, responsive_sidebar_toggle
 
 st.set_page_config(page_title="Home", page_icon="🏠", layout="centered")
 
 # small sidebar toggle to force mobile stacked layout during development/testing
 responsive_sidebar_toggle()
+
+# Show S3 auto-update status if available
+show_auto_update_status()
 
 # Hero section
 st.title("🏥 JLG Provider Recommender")
@@ -46,12 +51,14 @@ st.subheader("Smart provider matching made simple:")
 
 col1, col2 = resp_columns([2, 1])
 with col1:
-    st.markdown("""
+    st.markdown(
+        """
     - 🎯 **Intelligent Scoring** — Balances proximity, workload, and relationships
     - ⚡ **Fast Results** — Get recommendations in seconds
     - 🎨 **Flexible Options** — Customize search or use preset profiles
     - 📊 **Data-Driven** — Based on real referral history and relationships
-    """)
+    """
+    )
 
 with col2:
     st.info("💡 **New to this tool?** Check out our [How It Works](/10_🛠️_How_It_Works) guide to get started!")
@@ -65,20 +72,24 @@ st.subheader("💡 Quick Tips")
 tip_col1, tip_col2 = st.columns(2)
 
 with tip_col1:
-    st.markdown("""
+    st.markdown(
+        """
     **For best results:**
     - Use complete addresses (street, city, state, ZIP)
     - Start with "Balanced" preset for most cases
     - Check the dashboard periodically to understand workload
-    """)
+    """
+    )
 
 with tip_col2:
-    st.markdown("""
+    st.markdown(
+        """
     **Common workflows:**
     1. 🔎 Search → Find provider → 📄 Export to Word
     2. 📊 Dashboard → Review data → 🔎 Adjust search
     3. 🔄 Update → Load new data → 🔎 Search
-    """)
+    """
+    )
 
 st.divider()
 

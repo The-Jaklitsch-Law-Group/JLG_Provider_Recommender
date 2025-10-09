@@ -15,7 +15,7 @@ The system processes raw Excel exports from Filevine, cleans and geocodes provid
 ## Features
 
 - **Smart Data Loading** - Prioritizes optimized Parquet files (10x faster than Excel) with automatic fallback
-- **AWS S3 Integration** - Automatic data pulls from S3 buckets for cloud-native data workflows
+- **AWS S3 Integration** - Automatic data pulls from S3 buckets for cloud-native data workflows with **auto-update on app launch**
 - **Accurate Distance Calculation** - Vectorized haversine formula for Earth-curvature-aware measurements
 - **Flexible Scoring** - Configurable weights for distance, outbound referrals, inbound referrals, and preferred status
 - **Interactive UI** - Multi-page Streamlit app with search, results visualization, and data dashboards
@@ -54,7 +54,7 @@ Launch the Streamlit app:
 streamlit run app.py
 ```
 
-The app will open in your browser at `http://localhost:8501`. Navigate through the pages:
+The app will open in your browser at `http://localhost:8501`. **If S3 is configured, the app will automatically update data from S3 on launch.** Navigate through the pages:
 - **🏠 Home** - Project overview and navigation
 - **🔎 Search** - Enter client address and configure search parameters
 - **📄 Results** - View ranked provider recommendations
@@ -191,6 +191,8 @@ Configure secrets in `.streamlit/secrets.toml` (see `docs/API_SECRETS_GUIDE.md` 
 - AWS S3 credentials for automatic data pulls
 - Google Maps API key for enhanced geocoding
 - Database connection strings (if needed)
+
+📚 **Documentation**: See `docs/AUTO_S3_UPDATE.md` for details on the automatic S3 data update feature.
 
 ### Data Refresh
 

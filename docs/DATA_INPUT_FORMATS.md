@@ -13,7 +13,7 @@ The JLG Provider Recommender supports **both CSV and Excel file formats** for da
 - **Processing**: Automatic detection via filename extension
 
 ### 2. Local File Upload (Excel or CSV)
-- **Formats**: 
+- **Formats**:
   - Excel: `.xlsx`, `.xls`
   - CSV: `.csv`
 - **Use Case**: Manual file uploads via Streamlit UI
@@ -70,7 +70,7 @@ process_and_save_cleaned_referrals(
 
 ### S3 CSV Download
 ```python
-from src.utils.s3_client import S3DataClient
+from src.utils.s3_client_optimized import S3DataClient
 from src.data.preparation import process_and_save_cleaned_referrals
 
 client = S3DataClient()
@@ -177,15 +177,15 @@ Status: ✓ SUCCESS
 ## Troubleshooting
 
 ### Issue: "Excel file format cannot be determined"
-**Cause**: pandas trying to read CSV as Excel without correct engine  
+**Cause**: pandas trying to read CSV as Excel without correct engine
 **Solution**: Implemented in code via CSV fallback logic
 
 ### Issue: Missing columns warning
-**Cause**: Input file structure doesn't match expected schema  
+**Cause**: Input file structure doesn't match expected schema
 **Solution**: Check column names in source file, ensure exact match
 
 ### Issue: Empty output files
-**Cause**: All records filtered out due to missing required fields  
+**Cause**: All records filtered out due to missing required fields
 **Solution**: Check `summary.issue_records` for details on filtered rows
 
 ## File Locations

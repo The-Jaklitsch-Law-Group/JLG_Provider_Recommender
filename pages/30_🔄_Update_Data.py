@@ -4,7 +4,16 @@ from pathlib import Path
 import streamlit as st
 
 from src.data import process_and_save_cleaned_referrals, process_and_save_preferred_providers, refresh_data_cache
-from src.utils.s3_client import S3DataClient, list_s3_files, get_latest_s3_file
+from src.utils.s3_client_optimized import (
+    S3DataClient,
+    get_latest_s3_file,
+    get_latest_s3_files_optimized,
+    get_s3_files_optimized,
+    list_s3_files,
+)
+
+# The optimized client is now the default
+OPTIMIZED_S3_AVAILABLE = True
 
 st.set_page_config(page_title="Update Data", page_icon="🗂️", layout="centered")
 
@@ -28,7 +37,7 @@ if s3_enabled:
     issues = s3_client.validate_configuration()
     if issues:
         # Allow the user to dismiss the warning for the session
-        dismissed = st.session_state.get('dismiss_s3_issues', False)
+        dismissed = st.session_state.get("dismiss_s3_issues", False)
 
         if not dismissed:
             # Prominent error box with an expander for details and remediation
@@ -38,17 +47,15 @@ if s3_enabled:
                     for k, msg in issues.items():
                         st.write(f"- **{k}**: {msg}")
 
-                    st.markdown(
-                        "For full setup instructions, see the [API Secrets Guide](docs/API_SECRETS_GUIDE.md)."
-                    )
+                    st.markdown("For full setup instructions, see the [API Secrets Guide](docs/API_SECRETS_GUIDE.md).")
 
                     # Show the resolved S3 config (with secrets masked) to help debugging
                     try:
-                        cfg = s3_client.config if hasattr(s3_client, 'config') else {}
+                        cfg = s3_client.config if hasattr(s3_client, "config") else {}
                         masked = {}
-                        for kk, vv in (cfg.items() if isinstance(cfg, dict) else []):
-                            if 'key' in kk.lower() or 'secret' in kk.lower():
-                                masked[kk] = '****'
+                        for kk, vv in cfg.items() if isinstance(cfg, dict) else []:
+                            if "key" in kk.lower() or "secret" in kk.lower():
+                                masked[kk] = "****"
                             else:
                                 masked[kk] = vv
                         st.write("**Resolved S3 configuration (masked)**")
@@ -59,45 +66,55 @@ if s3_enabled:
 
                     # Dismiss button so power users can hide the notice after fixing
                     if st.button("Mark as fixed / Dismiss", key="dismiss_s3_issues_button"):
-                        st.session_state['dismiss_s3_issues'] = True
+                        st.session_state["dismiss_s3_issues"] = True
 
                 st.info("You can continue with manual uploads or fix the secrets to enable S3 features.")
         else:
             # Provide a small persistent hint and a way to re-show the notice
             cols = st.columns([0.95, 0.05])
-            cols[0].warning("⚠️ AWS S3 configuration issues were detected (dismissed). Fix secrets to enable S3 features.")
+            cols[0].warning(
+                "⚠️ AWS S3 configuration issues were detected (dismissed). Fix secrets to enable S3 features."
+            )
             if cols[1].button("Show", key="show_s3_issues"):
-                st.session_state['dismiss_s3_issues'] = False
+                st.session_state["dismiss_s3_issues"] = False
     else:
         st.success("✅ AWS S3 is configured. You can pull data from S3 or upload files manually.")
     # Allow advanced users to override the S3 folder mapping
     # Persist overrides in session_state so they survive reruns
-    effective_folder_map = st.session_state.get('s3_folder_map', None)
+    effective_folder_map = st.session_state.get("s3_folder_map", None)
 
     with st.expander("S3 Folder Overrides (advanced)", expanded=False):
         with st.form("s3_folder_form"):
             # defaults come from the currently-initialized client (which reads config)
-            ref_default = getattr(s3_client, 'folder_map', {}).get('referrals_folder', '')
-            prov_default = getattr(s3_client, 'folder_map', {}).get('preferred_providers_folder', '')
+            ref_default = getattr(s3_client, "folder_map", {}).get("referrals_folder", "")
+            prov_default = getattr(s3_client, "folder_map", {}).get("preferred_providers_folder", "")
 
-            referrals_in = st.text_input("Referrals folder/prefix", value=ref_default, help="Prefix for referrals data (e.g. 990046944 or referrals/)")
-            providers_in = st.text_input("Preferred providers folder/prefix", value=prov_default, help="Prefix for preferred providers data (e.g. 990047553 or preferred_providers/)")
+            referrals_in = st.text_input(
+                "Referrals folder/prefix",
+                value=ref_default,
+                help="Prefix for referrals data (e.g. 990046944 or referrals/)",
+            )
+            providers_in = st.text_input(
+                "Preferred providers folder/prefix",
+                value=prov_default,
+                help="Prefix for preferred providers data (e.g. 990047553 or preferred_providers/)",
+            )
 
             submitted = st.form_submit_button("Apply folder overrides")
             if submitted:
                 # normalize empty strings to None to fall back to defaults/config
                 fm = {
-                    'referrals_folder': referrals_in.strip() if referrals_in and referrals_in.strip() else '',
-                    'preferred_providers_folder': providers_in.strip() if providers_in and providers_in.strip() else '',
+                    "referrals_folder": referrals_in.strip() if referrals_in and referrals_in.strip() else "",
+                    "preferred_providers_folder": providers_in.strip() if providers_in and providers_in.strip() else "",
                 }
-                st.session_state['s3_folder_map'] = fm
+                st.session_state["s3_folder_map"] = fm
                 effective_folder_map = fm
                 st.success("Folder overrides applied — these will be used for subsequent S3 operations on this page")
 
         # Option to clear overrides
         if st.button("Clear folder overrides"):
-            if 's3_folder_map' in st.session_state:
-                del st.session_state['s3_folder_map']
+            if "s3_folder_map" in st.session_state:
+                del st.session_state["s3_folder_map"]
             effective_folder_map = None
             st.info("Folder overrides cleared — defaults/config will be used")
 else:
@@ -106,188 +123,189 @@ else:
         "Configure S3 credentials in secrets to enable automatic data pull."
     )
 
-# S3 Data Pull Section
+# S3 Data Management Section
 if s3_enabled:
-    # Quick connectivity check: allow users to run a lightweight list test
-    if st.button("🧪 Test S3 Access", key="s3_test_access"):
-        try:
-            with st.spinner("Testing S3 access (listing prefixes)..."):
-                op_client = S3DataClient(folder_map=effective_folder_map)
+    st.markdown("#### 📥 S3 Data Management")
+    performance_note = "⚡ Optimized performance mode" if OPTIMIZED_S3_AVAILABLE else "Standard mode"
+    st.markdown(f"Download and process the latest files from your S3 bucket. *{performance_note}*")
 
-                if not op_client.is_configured():
-                    st.error("S3 client reports not configured. Check your secrets and the configuration issues above.")
-                else:
-                    # Use cached listing helper which internally creates a client
-                    ref_files = list_s3_files('referrals', folder_map=effective_folder_map)
-                    prov_files = list_s3_files('preferred_providers', folder_map=effective_folder_map)
+    # Get file information for both types using optimized client
+    try:
+        # Use optimized batch file listing for better performance
+        files_data = get_s3_files_optimized(
+            ["referrals", "preferred_providers"], "s3_folder_map" if effective_folder_map else None
+        )
+        referrals_files = files_data.get("referrals", [])
+        providers_files = files_data.get("preferred_providers", [])
+    except Exception as e:
+        st.error(f"Failed to list S3 files: {e}")
+        referrals_files = []
+        providers_files = []
 
-                    if ref_files:
-                        st.success(f"Found {len(ref_files)} referral file(s) — showing up to 10 entries")
-                        st.table([
-                            {"filename": f[0], "modified": f[1].strftime('%Y-%m-%d %H:%M:%S')} for f in ref_files[:10]
-                        ])
-                    else:
-                        st.warning("No referral files found in the configured S3 prefix.")
-
-                    if prov_files:
-                        st.success(f"Found {len(prov_files)} preferred provider file(s) — showing up to 10 entries")
-                        st.table([
-                            {"filename": f[0], "modified": f[1].strftime('%Y-%m-%d %H:%M:%S')} for f in prov_files[:10]
-                        ])
-                    else:
-                        st.warning("No preferred providers files found in the configured S3 prefix.")
-        except Exception as e:
-            st.error(f"S3 test failed: {e}")
-            st.code(traceback.format_exc())
-    st.markdown("---")
-    st.markdown("#### ⚡ On-demand S3 Refresh")
-    st.markdown(
-        """
-Use this button to pull the latest referrals and preferred providers files from S3 and
-process them immediately. This is handy when an external system drops new files into
-the S3 folders and you want to update the app without manually selecting individual files.
-
-Note: This will attempt to download and process both referrals and preferred providers
-using the most recently modified Excel file found in each folder.
-        """
-    )
-
-    if st.button("🔁 Pull & Refresh Latest from S3", key="s3_pull_all"):
-        try:
-            with st.spinner("Pulling latest files from S3 and processing…"):
-                # Create an operational client that respects any folder_map overrides
-                op_client = S3DataClient(folder_map=effective_folder_map)
-
-                # Referrals
-                referrals_name = None
-                providers_name = None
-                referrals_result = op_client.download_latest_file('referrals')
-                if referrals_result:
-                    referrals_bytes, referrals_name = referrals_result
-                    summary_ref = process_and_save_cleaned_referrals(
-                        referrals_bytes,
-                        Path("data/processed"),
-                        filename=referrals_name,
-                    )
-                else:
-                    summary_ref = None
-
-                # Preferred providers
-                providers_result = op_client.download_latest_file('preferred_providers')
-                if providers_result:
-                    providers_bytes, providers_name = providers_result
-                    summary_prov = process_and_save_preferred_providers(
-                        providers_bytes,
-                        Path("data/processed"),
-                        filename=providers_name,
-                    )
-                else:
-                    summary_prov = None
-
-                # Refresh cached datasets
-                refresh_data_cache()
-
-            # Report results
-            if summary_ref:
-                st.success(f"✅ Referrals updated from `{referrals_name}`")
-                cols = st.columns(3)
-                cols[0].metric(label="Inbound rows", value=f"{summary_ref.inbound_count:,}")
-                cols[1].metric(label="Outbound rows", value=f"{summary_ref.outbound_count:,}")
-                cols[2].metric(label="All referrals", value=f"{summary_ref.all_count:,}")
-            else:
-                st.warning("No referrals file found in S3 to update.")
-
-            if summary_prov:
-                st.success(f"✅ Preferred providers updated from `{providers_name}`")
-                cols = st.columns(3)
-                cols[0].metric(label="Total records", value=f"{summary_prov.total_count:,}")
-                cols[1].metric(label="Cleaned records", value=f"{summary_prov.cleaned_count:,}")
-                cols[2].metric(label="Missing geo", value=f"{summary_prov.missing_geo_count:,}")
-            else:
-                st.warning("No preferred providers file found in S3 to update.")
-
-        except Exception as e:
-            st.error(f"Failed to pull & refresh from S3: {e}")
-            st.code(traceback.format_exc())
-
-    st.markdown("---")
-    st.markdown("#### 📥 Pull Data from AWS S3")
-    st.markdown("Automatically download and process the latest files from your S3 bucket.")
-    
+    # Display file information
     col1, col2 = st.columns(2)
-    
     with col1:
-        st.markdown("**Referrals Data**")
-        # Use the cached helper but pass the overrides so cache keys separate per mapping
-        referrals_files = list_s3_files('referrals', folder_map=effective_folder_map)
-        
+        st.markdown("**📄 Referrals Data**")
         if referrals_files:
             latest_referral_file, latest_referral_date = referrals_files[0]
-            st.caption(f"Latest file: `{latest_referral_file}`")
-            st.caption(f"Modified: {latest_referral_date.strftime('%Y-%m-%d %H:%M:%S')}")
-            
-            if st.button("📥 Pull Latest Referrals from S3", key="s3_pull_referrals"):
-                try:
-                    with st.spinner("Downloading and processing data from S3..."):
-                        op_client = S3DataClient(folder_map=effective_folder_map)
-                        file_bytes = op_client.download_file('referrals', latest_referral_file)
-                        if file_bytes:
-                            summary = process_and_save_cleaned_referrals(
-                                file_bytes,
-                                Path("data/processed"),
-                                filename=latest_referral_file
-                            )
-                            refresh_data_cache()
-                            
-                            st.success(f"✅ Successfully pulled and processed `{latest_referral_file}` from S3")
-                            
-                            metrics = st.columns(3)
-                            metrics[0].metric(label="Inbound rows", value=f"{summary.inbound_count:,}")
-                            metrics[1].metric(label="Outbound rows", value=f"{summary.outbound_count:,}")
-                            metrics[2].metric(label="All referrals", value=f"{summary.all_count:,}")
-                        else:
-                            st.error("Failed to download file from S3")
-                except Exception as e:
-                    st.error(f"Failed to pull data from S3: {e}")
-                    st.code(traceback.format_exc())
+            st.caption(f"📁 Latest: `{latest_referral_file}`")
+            st.caption(f"📅 Modified: {latest_referral_date.strftime('%Y-%m-%d %H:%M:%S')}")
+            st.caption(f"📊 Total files: {len(referrals_files)}")
         else:
-            st.caption("No files found in S3 referrals folder")
-    
+            st.caption("❌ No files found")
+
     with col2:
-        st.markdown("**Preferred Providers Data**")
-        providers_files = list_s3_files('preferred_providers', folder_map=effective_folder_map)
-        
+        st.markdown("**👥 Preferred Providers**")
         if providers_files:
             latest_provider_file, latest_provider_date = providers_files[0]
-            st.caption(f"Latest file: `{latest_provider_file}`")
-            st.caption(f"Modified: {latest_provider_date.strftime('%Y-%m-%d %H:%M:%S')}")
-            
-            if st.button("📥 Pull Latest Providers from S3", key="s3_pull_providers"):
+            st.caption(f"📁 Latest: `{latest_provider_file}`")
+            st.caption(f"📅 Modified: {latest_provider_date.strftime('%Y-%m-%d %H:%M:%S')}")
+            st.caption(f"📊 Total files: {len(providers_files)}")
+        else:
+            st.caption("❌ No files found")
+
+    st.markdown("---")
+
+    # Action buttons in a clean layout
+    col1, col2, col3 = st.columns([2.5, 1.5, 1.5])
+
+    with col1:
+        # Primary action: Refresh both files
+        if st.button(
+            "🔄 **Refresh Both Files**",
+            key="s3_refresh_both",
+            type="primary",
+            width="stretch",
+            help="Download and process the latest referrals and providers files",
+        ):
+            if not referrals_files and not providers_files:
+                st.error("❌ No files found in S3 to refresh.")
+            else:
                 try:
-                    with st.spinner("Downloading and processing data from S3..."):
-                        op_client = S3DataClient(folder_map=effective_folder_map)
-                        file_bytes = op_client.download_file('preferred_providers', latest_provider_file)
+                    with st.spinner("🔄 Refreshing data from S3..."):
+                        s3_client = S3DataClient(folder_map=effective_folder_map)
+
+                        # Process both files
+                        summary_ref = None
+                        summary_prov = None
+                        processed_files = []
+
+                        # Download and process referrals
+                        if referrals_files:
+                            referrals_result = s3_client.download_latest_file("referrals")
+                            if referrals_result:
+                                referrals_bytes, referrals_name = referrals_result
+                                summary_ref = process_and_save_cleaned_referrals(
+                                    referrals_bytes,
+                                    Path("data/processed"),
+                                    filename=referrals_name,
+                                )
+                                processed_files.append(f"referrals ({referrals_name})")
+
+                        # Download and process providers
+                        if providers_files:
+                            providers_result = s3_client.download_latest_file("preferred_providers")
+                            if providers_result:
+                                providers_bytes, providers_name = providers_result
+                                summary_prov = process_and_save_preferred_providers(
+                                    providers_bytes,
+                                    Path("data/processed"),
+                                    filename=providers_name,
+                                )
+                                processed_files.append(f"providers ({providers_name})")
+
+                        # Refresh cached datasets
+                        refresh_data_cache()
+
+                    # Show results
+                    if processed_files:
+                        st.success(f"✅ Successfully updated: {', '.join(processed_files)}")
+
+                        # Compact metrics display
+                        if summary_ref and summary_prov:
+                            metrics_col1, metrics_col2 = st.columns(2)
+                            with metrics_col1:
+                                st.metric(
+                                    "📄 Referrals",
+                                    f"{summary_ref.all_count:,}",
+                                    delta=f"In: {summary_ref.inbound_count:,}, Out: {summary_ref.outbound_count:,}",
+                                )
+                            with metrics_col2:
+                                st.metric(
+                                    "👥 Providers",
+                                    f"{summary_prov.cleaned_count:,}",
+                                    delta=f"Total: {summary_prov.total_count:,}",
+                                )
+                        elif summary_ref:
+                            st.metric("📄 Referrals Processed", f"{summary_ref.all_count:,}")
+                        elif summary_prov:
+                            st.metric("👥 Providers Processed", f"{summary_prov.cleaned_count:,}")
+                    else:
+                        st.warning("⚠️ No files were successfully processed.")
+
+                except Exception as e:
+                    st.error(f"❌ Failed to refresh S3 data: {e}")
+                    st.code(traceback.format_exc())
+
+    with col2:
+        # Referrals only
+        if st.button("📄 Referrals Only", key="s3_referrals_only", disabled=not referrals_files, width="stretch"):
+            if referrals_files:
+                try:
+                    with st.spinner("Processing referrals..."):
+                        s3_client = S3DataClient(folder_map=effective_folder_map)
+                        file_bytes = s3_client.download_file("referrals", referrals_files[0][0])
                         if file_bytes:
-                            summary = process_and_save_preferred_providers(
-                                file_bytes,
-                                Path("data/processed"),
-                                filename=latest_provider_file
+                            summary = process_and_save_cleaned_referrals(
+                                file_bytes, Path("data/processed"), filename=referrals_files[0][0]
                             )
                             refresh_data_cache()
-                            
-                            st.success(f"✅ Successfully pulled and processed `{latest_provider_file}` from S3")
-                            
-                            metrics = st.columns(3)
-                            metrics[0].metric(label="Total records", value=f"{summary.total_count:,}")
-                            metrics[1].metric(label="Cleaned records", value=f"{summary.cleaned_count:,}")
-                            metrics[2].metric(label="Missing geo", value=f"{summary.missing_geo_count:,}")
+                            st.success(f"✅ Referrals: {summary.all_count:,} records")
                         else:
-                            st.error("Failed to download file from S3")
+                            st.error("❌ Failed to download file")
                 except Exception as e:
-                    st.error(f"Failed to pull data from S3: {e}")
-                    st.code(traceback.format_exc())
-        else:
-            st.caption("No files found in S3 providers folder")
+                    st.error(f"❌ Failed: {e}")
+
+    with col3:
+        # Providers only
+        if st.button("👥 Providers Only", key="s3_providers_only", disabled=not providers_files, width="stretch"):
+            if providers_files:
+                try:
+                    with st.spinner("Processing providers..."):
+                        s3_client = S3DataClient(folder_map=effective_folder_map)
+                        file_bytes = s3_client.download_file("preferred_providers", providers_files[0][0])
+                        if file_bytes:
+                            summary = process_and_save_preferred_providers(
+                                file_bytes, Path("data/processed"), filename=providers_files[0][0]
+                            )
+                            refresh_data_cache()
+                            st.success(f"✅ Providers: {summary.cleaned_count:,} records")
+                        else:
+                            st.error("❌ Failed to download file")
+                except Exception as e:
+                    st.error(f"❌ Failed: {e}")
+
+    # Collapsible test connection section
+    with st.expander("🧪 Test S3 Connection", expanded=False):
+        if st.button("Test Connection", key="test_s3_connection", width="stretch"):
+            try:
+                with st.spinner("Testing S3 connection..."):
+                    if referrals_files or providers_files:
+                        st.success("✅ S3 connection successful!")
+                        if referrals_files:
+                            st.info(f"📄 Found {len(referrals_files)} referral file(s)")
+                            if len(referrals_files) <= 5:
+                                for filename, modified in referrals_files:
+                                    st.caption(f"  • {filename} ({modified.strftime('%Y-%m-%d %H:%M')})")
+                        if providers_files:
+                            st.info(f"👥 Found {len(providers_files)} provider file(s)")
+                            if len(providers_files) <= 5:
+                                for filename, modified in providers_files:
+                                    st.caption(f"  • {filename} ({modified.strftime('%Y-%m-%d %H:%M')})")
+                    else:
+                        st.warning("⚠️ S3 connection works, but no files found in configured folders")
+            except Exception as e:
+                st.error(f"❌ S3 connection test failed: {e}")
 
 st.markdown("---")
 
@@ -305,9 +323,7 @@ if uploaded_file is not None:
             # Process directly from memory without saving raw file to disk
             file_bytes = uploaded_file.getbuffer()
             summary = process_and_save_cleaned_referrals(
-                file_bytes, 
-                Path("data/processed"), 
-                filename=uploaded_file.name
+                file_bytes, Path("data/processed"), filename=uploaded_file.name
             )
             refresh_data_cache()
 
@@ -320,9 +336,7 @@ if uploaded_file is not None:
         metrics[2].metric(label="All referrals", value=f"{summary.all_count:,}")
 
         if summary.skipped_configs:
-            st.warning(
-                "Skipped sections during processing: " + ", ".join(summary.skipped_configs)
-            )
+            st.warning("Skipped sections during processing: " + ", ".join(summary.skipped_configs))
 
         if summary.warnings:
             for message in summary.warnings:
@@ -348,7 +362,7 @@ st.markdown("---")
 st.markdown("#### 📤 Upload Preferred Providers File (Excel)")
 st.markdown(
     """
-Upload the preferred providers list with contact information. Records missing latitude and/or longitude 
+Upload the preferred providers list with contact information. Records missing latitude and/or longitude
 will be identified and excluded from the cleaned dataset.
 """
 )
@@ -357,7 +371,7 @@ preferred_providers_file = st.file_uploader(
     "Upload preferred providers data (Excel format)",
     type=["xlsx", "xls"],
     help="Upload an Excel file with preferred provider contact information",
-    key="preferred_providers_uploader"
+    key="preferred_providers_uploader",
 )
 
 if preferred_providers_file is not None:
@@ -366,9 +380,7 @@ if preferred_providers_file is not None:
             # Process directly from memory without saving raw file to disk
             file_bytes = preferred_providers_file.getbuffer()
             summary = process_and_save_preferred_providers(
-                file_bytes, 
-                Path("data/processed"), 
-                filename=preferred_providers_file.name
+                file_bytes, Path("data/processed"), filename=preferred_providers_file.name
             )
             refresh_data_cache()
 
@@ -399,29 +411,30 @@ if preferred_providers_file is not None:
                 f"The following {summary.missing_geo_count} record(s) were excluded due to missing "
                 "latitude and/or longitude information:"
             )
-            
+
             # Display the records (limit to reasonable number for display)
             display_records = summary.missing_records
             if len(display_records) > 50:
                 st.caption("Showing the first 50 records")
                 display_records = display_records.head(50)
-            
-            st.dataframe(display_records, width='stretch')
-            
+
+            st.dataframe(display_records, width="stretch")
+
             # Optionally offer to download the missing records
             if st.button("📥 Download Missing Records as Excel", key="download_missing_geo"):
                 try:
                     # Create Excel file in memory
                     from io import BytesIO
+
                     excel_buffer = BytesIO()
-                    summary.missing_records.to_excel(excel_buffer, index=False, engine='openpyxl')
+                    summary.missing_records.to_excel(excel_buffer, index=False, engine="openpyxl")
                     excel_buffer.seek(0)
-                    
+
                     st.download_button(
                         label="📥 Download Missing Records",
                         data=excel_buffer.getvalue(),
                         file_name="Preferred_Providers_Missing_LatLong.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     )
                 except Exception as e:
                     st.error(f"Failed to create Excel download: {e}")
@@ -438,8 +451,7 @@ if st.button("🔄 Clear cache and reload data"):
         refresh_data_cache()
         # Clear any time filter info flags to avoid stale notices
         keys_to_remove = [
-            key for key in list(st.session_state.keys())
-            if isinstance(key, str) and key.startswith("time_filter_msg_")
+            key for key in list(st.session_state.keys()) if isinstance(key, str) and key.startswith("time_filter_msg_")
         ]
         for key in keys_to_remove:
             del st.session_state[key]
