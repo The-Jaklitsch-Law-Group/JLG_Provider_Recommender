@@ -24,6 +24,9 @@ The system processes raw Excel exports from Filevine, cleans and geocodes provid
 
 ## Quick Start
 
+> **🔴 BREAKING CHANGE:** As of version 2.0, S3 configuration is **required**. Local parquet files have been deprecated.  
+> See [S3 Migration Guide](docs/S3_MIGRATION_GUIDE.md) for detailed setup instructions.
+
 ### Prerequisites
 
 - Python 3.10+ (tested on 3.10-3.12)

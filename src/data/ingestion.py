@@ -51,7 +51,7 @@ class DataSource(Enum):
 
     # Provider-specific data (aggregated from outbound referrals)
     PROVIDER_DATA = "provider"  # Unique providers with referral counts
-    
+
     # Preferred providers contact list
     PREFERRED_PROVIDERS = "preferred_providers"  # Firm's preferred provider contacts
 
@@ -94,12 +94,12 @@ class DataIngestionManager:
 
         self.data_dir = Path(data_dir)
         self.cache_ttl = 3600  # 1 hour cache for optimal performance
-        
+
         # Get S3 configuration for S3-only mode check
-        s3_config = get_api_config('s3')
-        self.use_s3_only = s3_config.get('use_s3_only', True)
-        self.allow_local_fallback = s3_config.get('allow_local_fallback', False)
-        
+        s3_config = get_api_config("s3")
+        self.use_s3_only = s3_config.get("use_s3_only", True)
+        self.allow_local_fallback = s3_config.get("allow_local_fallback", False)
+
         self._file_registry = self._build_file_registry()
 
     def _build_file_registry(self) -> Dict[DataSource, Dict[str, Path]]:
@@ -465,22 +465,22 @@ class DataIngestionManager:
             # In S3-only mode, data must be loaded from S3 and written to local processed/ folder
             # by the S3 auto-update mechanism. If files don't exist, we fail with a clear message.
             from src.utils.config import is_api_enabled
-            
-            if not is_api_enabled('s3'):
+
+            if not is_api_enabled("s3"):
                 error_msg = (
-                    f"❌ S3-only mode is enabled but S3 is not configured.\n\n"
-                    f"To use this app, you must configure S3 credentials in .streamlit/secrets.toml:\n"
-                    f"- s3.aws_access_key_id\n"
-                    f"- s3.aws_secret_access_key\n"
-                    f"- s3.bucket_name\n\n"
-                    f"Local parquet files have been deprecated and removed.\n"
-                    f"See docs for S3 setup instructions."
+                    "❌ S3-only mode is enabled but S3 is not configured.\n\n"
+                    "To use this app, you must configure S3 credentials in .streamlit/secrets.toml:\n"
+                    "- s3.aws_access_key_id\n"
+                    "- s3.aws_secret_access_key\n"
+                    "- s3.bucket_name\n\n"
+                    "Local parquet files have been deprecated and removed.\n"
+                    "See docs for S3 setup instructions."
                 )
                 logger.error(error_msg)
                 if show_status:
                     st.error(error_msg)
                 return pd.DataFrame()
-        
+
         file_path, file_type = self._get_best_available_file(source)
 
         if show_status:
@@ -579,9 +579,9 @@ class DataIngestionManager:
             "missing_required_columns": missing_cols,
             "duplicate_names": df["Full Name"].duplicated().sum() if "Full Name" in df.columns else 0,
             "invalid_coordinates": coord_issues,
-            "missing_values_pct": round((df.isnull().sum().sum() / (len(df) * len(df.columns)) * 100), 2)
-            if not df.empty
-            else 0,
+            "missing_values_pct": (
+                round((df.isnull().sum().sum() / (len(df) * len(df.columns)) * 100), 2) if not df.empty else 0
+            ),
         }
 
 
