@@ -187,19 +187,31 @@ _nav_items = [
     ("pages/30_🔄_Update_Data.py", "Update Data", "🔄"),
 ]
 
-# Only include pages whose path does not point to this module file.
-nav_pages = [st.Page(path, title=title, icon=icon) for path, title, icon in _nav_items if path != _current_file]
 
-import threading
+def _build_and_run_app():
+    """Build navigation pages and kick off the auto-update thread, then run Streamlit navigation.
 
-# Run auto-update on app launch (before navigation setup) in a background thread
-# so it doesn't block Streamlit's startup or the initial page render.
-try:
-    thread = threading.Thread(target=auto_update_data_from_s3, daemon=True)
-    thread.start()
-except Exception:
-    # Fallback to synchronous call if threading is unavailable for any reason
-    auto_update_data_from_s3()
+    This is intentionally encapsulated so importing `app` from a page module
+    does not execute the navigation or auto-update logic (which would cause
+    duplicate rendering)."""
 
-pg = st.navigation(nav_pages)
-pg.run()
+    # Only include pages whose path does not point to this module file.
+    nav_pages = [st.Page(path, title=title, icon=icon) for path, title, icon in _nav_items if path != _current_file]
+
+    import threading
+
+    # Run auto-update on app launch (before navigation setup) in a background thread
+    # so it doesn't block Streamlit's startup or the initial page render.
+    try:
+        thread = threading.Thread(target=auto_update_data_from_s3, daemon=True)
+        thread.start()
+    except Exception:
+        # Fallback to synchronous call if threading is unavailable for any reason
+        auto_update_data_from_s3()
+
+    pg = st.navigation(nav_pages)
+    pg.run()
+
+
+if __name__ == "__main__":
+    _build_and_run_app()
