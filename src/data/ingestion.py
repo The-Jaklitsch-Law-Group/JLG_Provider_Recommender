@@ -690,7 +690,19 @@ def refresh_data_cache():
     - Adding new data files
     - Data structure changes
     """
-    st.cache_data.clear()
+    # Clear cached data (dataframes, listings, downloads) and cached resources
+    # (client instances, sessions). This ensures that after processing new
+    # files or performing an auto-update the app will reload fresh copies of
+    # datasets and recreate any resource objects like S3 clients.
+    try:
+        st.cache_data.clear()
+    except Exception:
+        # Best-effort: ignore if Streamlit API changes or clearing fails
+        pass
+    try:
+        st.cache_resource.clear()
+    except Exception:
+        pass
     get_data_manager().refresh_file_registry()
     logger.info("Data cache cleared and file registry refreshed")
 

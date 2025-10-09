@@ -25,9 +25,15 @@ def responsive_sidebar_toggle() -> None:
     Call this once near the top of pages that need responsive behavior so
     developers can switch layouts without resizing the browser.
     """
+    # Create the checkbox only once per session/run. Calling this helper
+    # multiple times (across pages or components) would otherwise attempt
+    # to create multiple Streamlit widgets with the same key and raise
+    # StreamlitDuplicateElementKey. We keep the value in session state.
     if "force_mobile_layout" not in st.session_state:
         st.session_state["force_mobile_layout"] = False
-    st.sidebar.checkbox("Force mobile layout (debug)", key="force_mobile_layout")
+        st.sidebar.checkbox("Force mobile layout (debug)", key="force_mobile_layout")
+    # If the key already exists in session state the checkbox has been
+    # rendered earlier in this run; do not create it again.
 
 
 def resp_columns(widths: List[float]):

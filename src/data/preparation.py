@@ -10,6 +10,46 @@ from io import BytesIO
 
 import numpy as np
 import pandas as pd
+import os
+import time
+from pathlib import PurePath
+
+
+def _safe_to_parquet(df: pd.DataFrame, dest: Path, *, compression: str = "snappy", attempts: int = 5, backoff: float = 0.2) -> None:
+    """Write a DataFrame to Parquet atomically with retries.
+
+    This writes to a temporary file in the same directory and then
+    atomically replaces the destination. On Windows a concurrent
+    reader can cause PermissionError (WinError 32); retry a few
+    times before giving up.
+    """
+    dest = Path(dest)
+    tmp = dest.with_name(dest.name + ".tmp")
+    last_exc = None
+    for attempt in range(1, attempts + 1):
+        try:
+            # Remove tmp if left over
+            if tmp.exists():
+                try:
+                    tmp.unlink()
+                except Exception:
+                    pass
+            df.to_parquet(tmp, compression=compression)
+            try:
+                # Atomic replace; may raise on Windows if dest is locked
+                os.replace(tmp, dest)
+            except PermissionError as e:
+                last_exc = e
+                # If replace fails due to lock, wait and retry
+                time.sleep(backoff * attempt)
+                continue
+            return
+        except Exception as e:
+            last_exc = e
+            time.sleep(backoff * attempt)
+            continue
+    # If we get here, attempts exhausted
+    raise last_exc  # type: ignore
 
 
 def _looks_like_excel_bytes(buffer: BytesIO) -> bool:
@@ -503,14 +543,54 @@ def process_and_save_cleaned_referrals(
     inbound_path = processed_path / "cleaned_inbound_referrals.parquet"
     outbound_path = processed_path / "cleaned_outbound_referrals.parquet"
     all_path = processed_path / "cleaned_all_referrals.parquet"
+    def _safe_to_parquet(df: pd.DataFrame, dest: Path, *, compression: str = "snappy", attempts: int = 5, backoff: float = 0.2) -> None:
+        """Write a DataFrame to Parquet atomically with retries.
 
+        This writes to a temporary file in the same directory and then
+        atomically replaces the destination. On Windows a concurrent
+        reader can cause PermissionError (WinError 32); retry a few
+        times before giving up.
+        """
+        dest = Path(dest)
+        tmp = dest.with_name(dest.name + ".tmp")
+        last_exc = None
+        for attempt in range(1, attempts + 1):
+            try:
+                # Remove tmp if left over
+                if tmp.exists():
+                    try:
+                        tmp.unlink()
+                    except Exception:
+                        pass
+                df.to_parquet(tmp, compression=compression)
+                try:
+                    # Atomic replace; may raise on Windows if dest is locked
+                    os.replace(tmp, dest)
+                except PermissionError as e:
+                    last_exc = e
+                    # If replace fails due to lock, wait and retry
+                    time.sleep(backoff * attempt)
+                    continue
+                return
+            except Exception as e:
+                last_exc = e
+                time.sleep(backoff * attempt)
+                continue
+        # If we get here, attempts exhausted
+        raise last_exc  # type: ignore
+
+    # Attempt to remove stale files but ignore permission issues (they will be
+    # handled by the atomic writer which will retry on replace).
     for path in (inbound_path, outbound_path, all_path):
         if path.exists():
-            path.unlink()
+            try:
+                path.unlink()
+            except PermissionError:
+                logger.warning("Could not remove existing file (locked): %s", path)
 
-    inbound_combined.to_parquet(inbound_path, compression="snappy")
-    outbound.to_parquet(outbound_path, compression="snappy")
-    combined.to_parquet(all_path, compression="snappy")
+    _safe_to_parquet(inbound_combined, inbound_path, compression="snappy")
+    _safe_to_parquet(outbound, outbound_path, compression="snappy")
+    _safe_to_parquet(combined, all_path, compression="snappy")
 
     saved_files.update({"inbound": inbound_path, "outbound": outbound_path, "all": all_path})
 
@@ -819,9 +899,12 @@ def process_and_save_preferred_providers(
     # Save cleaned data to parquet
     output_path = processed_path / "cleaned_preferred_providers.parquet"
     if output_path.exists():
-        output_path.unlink()
-    
-    df_cleaned.to_parquet(output_path, index=False, compression="snappy")
+        try:
+            output_path.unlink()
+        except PermissionError:
+            logger.warning("Could not remove existing preferred providers file (locked): %s", output_path)
+
+    _safe_to_parquet(df_cleaned, output_path, compression="snappy")
     
     logger.info(
         "Saved cleaned preferred providers: %d records (dropped %d missing geo data)",

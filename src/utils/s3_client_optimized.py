@@ -362,11 +362,17 @@ def get_optimized_s3_client(folder_map_key: Optional[str] = None) -> OptimizedS3
     return OptimizedS3DataClient(folder_map=folder_map)
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=86400, show_spinner=False)
 def get_s3_files_optimized(
     folder_types: List[str], folder_map_key: Optional[str] = None
 ) -> Dict[str, List[Tuple[str, datetime]]]:
-    """Cached function to get file listings for multiple folder types."""
+    """Cached function to get file listings for multiple folder types.
+
+    Note: TTL is set to 86400 seconds (1 day) to keep listings available
+    across user sessions while still allowing a daily refresh. The cache
+    is cleared immediately when new data is processed via
+    ``refresh_data_cache()`` which calls ``st.cache_data.clear()``.
+    """
     client = get_optimized_s3_client(folder_map_key)
     if not client.is_configured():
         return {ft: [] for ft in folder_types}
@@ -374,11 +380,64 @@ def get_s3_files_optimized(
     return client.list_files_batch(folder_types)
 
 
-@st.cache_data(ttl=60, show_spinner=False)  # Shorter TTL for latest files
+@st.cache_data(ttl=86400, show_spinner=False)
 def get_latest_s3_files_optimized(
     folder_types: List[str], folder_map_key: Optional[str] = None
 ) -> Dict[str, Optional[Tuple[bytes, str]]]:
-    """Cached function to download latest files from multiple folders."""
+    """Cached function to download latest files from multiple folders.
+
+    TTL is 1 day to align with the upstream daily sync cadence. If an
+    immediate refresh is required after processing new data, call
+    ``refresh_data_cache()`` which clears Streamlit caches.
+    """
+    # Strategy: compute a lightweight signature from the S3 listing (filenames
+    # and LastModified timestamps) and use that as the cache key for the
+    # heavy download operation. This allows automatic invalidation when the
+    # remote files change while still caching downloaded bytes for a day.
+    client = get_optimized_s3_client(folder_map_key)
+    if not client.is_configured():
+        return {ft: None for ft in folder_types}
+
+    # Obtain the current listing (fresh) to compute a signature. We call the
+    # client's listing method directly (not the cached wrapper) so the
+    # signature reflects the true remote state.
+    try:
+        listings = client.list_files_batch(folder_types)
+    except Exception as e:
+        logger.error(f"Failed to compute S3 listing signature: {e}")
+        listings = {ft: [] for ft in folder_types}
+
+    # Build a compact signature string from the most relevant metadata. Use
+    # the most-recent file's name and last-modified time per folder.
+    sig_parts: List[str] = []
+    for ft in folder_types:
+        files = listings.get(ft, [])
+        if files:
+            filename, lm = files[0]
+            try:
+                ts = int(lm.timestamp())
+            except Exception:
+                ts = 0
+            sig_parts.append(f"{ft}:{filename}:{ts}")
+        else:
+            sig_parts.append(f"{ft}::0")
+
+    signature = "|".join(sig_parts)
+
+    # Delegate to the cached downloader keyed by signature
+    return _download_latest_files_cached(folder_types, folder_map_key, signature)
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def _download_latest_files_cached(
+    folder_types: List[str], folder_map_key: Optional[str], signature: str
+) -> Dict[str, Optional[Tuple[bytes, str]]]:
+    """Cached heavy download operation keyed by a signature string.
+
+    The `signature` parameter should be derived from S3 last-modified
+    timestamps and filenames so that when remote files change the cache key
+    changes and the downloads are refreshed automatically.
+    """
     client = get_optimized_s3_client(folder_map_key)
     if not client.is_configured():
         return {ft: None for ft in folder_types}
@@ -397,7 +456,7 @@ def list_s3_files(folder_type: str, folder_map: Optional[Dict[str, str]] = None)
     return files_data.get(folder_type, [])
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=86400, show_spinner=False)
 def get_latest_s3_file(folder_type: str, folder_map: Optional[Dict[str, str]] = None) -> Optional[Tuple[bytes, str]]:
     """
     Cached function to get the latest file from S3 - compatibility wrapper for old interface.
@@ -413,7 +472,45 @@ def get_latest_s3_file(folder_type: str, folder_map: Optional[Dict[str, str]] = 
     if not client.is_configured():
         return None
 
-    return client.download_latest_file(folder_type)
+    # Compute signature from latest file metadata to allow automatic
+    # cache invalidation when remote files change.
+    try:
+        files = client.list_files_in_folder(folder_type)
+    except Exception as e:
+        logger.error(f"Failed to list files for signature: {e}")
+        files = []
+
+    if files:
+        latest_filename, latest_lm = files[0]
+        try:
+            ts = int(latest_lm.timestamp())
+        except Exception:
+            ts = 0
+        signature = f"{folder_type}:{latest_filename}:{ts}"
+    else:
+        signature = f"{folder_type}::0"
+
+    # If a caller supplied a folder_map dict (backwards-compatible), we need
+    # to provide a stable folder_map_key to the cached downloader. Streamlit's
+    # cache keys require hashable args, so we store the dict in
+    # ``st.session_state`` under a generated key and pass that key through.
+    folder_map_key = None
+    if isinstance(folder_map, dict):
+        try:
+            # Create a deterministic key from the sorted items
+            items = tuple(sorted((k, str(v)) for k, v in folder_map.items()))
+            key_name = "__s3_folder_map_" + str(abs(hash(items)))
+            # Store in session_state so get_optimized_s3_client can read it
+            if key_name not in st.session_state:
+                st.session_state[key_name] = folder_map
+            folder_map_key = key_name
+        except Exception:
+            folder_map_key = None
+    elif isinstance(folder_map, str):
+        folder_map_key = folder_map
+
+    result = _download_latest_files_cached([folder_type], folder_map_key, signature)
+    return result.get(folder_type)
 
 
 # Alias for backward compatibility

@@ -106,7 +106,7 @@ def auto_update_data_from_s3():
             logger.info("S3 not configured - skipping auto data update")
             try:
                 status_file.parent.mkdir(parents=True, exist_ok=True)
-                status_file.write_text("ℹ️ S3 not configured — auto-update skipped")
+                status_file.write_text("ℹ️ S3 not configured — auto-update skipped", encoding="utf-8")
             except Exception:
                 pass
             return
@@ -116,7 +116,7 @@ def auto_update_data_from_s3():
             logger.info(f"S3 configuration issues detected - skipping auto data update: {issues}")
             try:
                 status_file.parent.mkdir(parents=True, exist_ok=True)
-                status_file.write_text("⚠️ S3 configuration issues — auto-update skipped")
+                status_file.write_text("⚠️ S3 configuration issues — auto-update skipped", encoding="utf-8")
             except Exception:
                 pass
             return
@@ -152,14 +152,14 @@ def auto_update_data_from_s3():
             logger.info(msg)
             try:
                 status_file.parent.mkdir(parents=True, exist_ok=True)
-                status_file.write_text(msg)
+                status_file.write_text(msg, encoding="utf-8")
             except Exception:
                 logger.exception("Failed to write s3 auto-update status file")
         else:
             logger.info("S3 auto-update: No files found to update")
             try:
                 status_file.parent.mkdir(parents=True, exist_ok=True)
-                status_file.write_text("ℹ️ S3 auto-update ran: no files to process")
+                status_file.write_text("ℹ️ S3 auto-update ran: no files to process", encoding="utf-8")
             except Exception:
                 pass
 
@@ -169,7 +169,7 @@ def auto_update_data_from_s3():
         logger.exception(f"Unexpected error during S3 auto-update: {e}")
         try:
             status_file.parent.mkdir(parents=True, exist_ok=True)
-            status_file.write_text(f"❌ S3 auto-update failed: {e}")
+            status_file.write_text(f"❌ S3 auto-update failed: {e}", encoding="utf-8")
         except Exception:
             pass
 
