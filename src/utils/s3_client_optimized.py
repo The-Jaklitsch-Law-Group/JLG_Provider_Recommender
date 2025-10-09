@@ -58,28 +58,46 @@ class OptimizedS3DataClient:
 
     def is_configured(self) -> bool:
         """Check if S3 is properly configured."""
-        return self.enabled and isinstance(self.config, dict) and self.config.get("bucket_name")
+        return self.enabled and isinstance(self.config, dict) and bool(self.config.get("bucket_name"))
+
+    def validate_configuration(self) -> Dict[str, str]:
+        """Return configuration issues found for S3 as a dict of field->message.
+
+        This is a lightweight helper intended for UI surfaces to show helpful
+        guidance when S3 is partially configured.
+        """
+        issues: Dict[str, str] = {}
+        # Ensure config is a mapping and has required keys
+        if not isinstance(self.config, dict):
+            issues["config"] = "S3 configuration is missing or invalid."
+            return issues
+
+        if not self.config.get("bucket_name"):
+            issues["bucket_name"] = "S3 bucket_name is not configured."
+
+        if not self.config.get("aws_access_key_id"):
+            issues["aws_access_key_id"] = "AWS access key id is not configured."
+
+        if not self.config.get("aws_secret_access_key"):
+            issues["aws_secret_access_key"] = "AWS secret access key is not configured."
+
+        return issues
 
     def _get_session(self):
         """Get cached boto3 session for connection reuse."""
         if self._session is None and self.enabled:
             try:
                 import boto3
-                from botocore.config import Config
 
-                # Optimize connection pooling
-                config = Config(
-                    region_name=self.config.get("region_name", "us-east-1"),
-                    retries={"max_attempts": 3, "mode": "adaptive"},
-                    max_pool_connections=10,
-                )
-
-                session_kwargs = {"config": config}
+                session_kwargs = {}
                 if isinstance(self.config, dict):
                     access_key = self.config.get("aws_access_key_id")
                     secret_key = self.config.get("aws_secret_access_key")
+                    region = self.config.get("region_name")
                     if access_key and secret_key:
                         session_kwargs.update({"aws_access_key_id": access_key, "aws_secret_access_key": secret_key})
+                    if region:
+                        session_kwargs["region_name"] = region
 
                 self._session = boto3.Session(**session_kwargs)
             except Exception as e:
@@ -93,7 +111,15 @@ class OptimizedS3DataClient:
             session = self._get_session()
             if session:
                 try:
-                    self._client = session.client("s3")
+                    from botocore.config import Config
+
+                    # Optimize connection pooling
+                    config = Config(
+                        retries={"max_attempts": 3, "mode": "adaptive"},
+                        max_pool_connections=10,
+                    )
+
+                    self._client = session.client("s3", config=config)
                 except Exception as e:
                     logger.error(f"Failed to create S3 client: {e}")
                     self.enabled = False
@@ -253,6 +279,42 @@ class OptimizedS3DataClient:
         s3_key = f"{folder}{filename}"
         return self._download_single_file(client, self.config["bucket_name"], s3_key)
 
+    def list_files_in_folder(self, folder_type: str) -> List[Tuple[str, datetime]]:
+        """
+        List all files in a specific S3 folder.
+
+        Args:
+            folder_type: Either 'referrals' or 'preferred_providers'
+
+        Returns:
+            List of tuples (filename, last_modified_datetime)
+        """
+        files_data = self.list_files_batch([folder_type])
+        return files_data.get(folder_type, [])
+
+    def download_latest_file(self, folder_type: str) -> Optional[Tuple[bytes, str]]:
+        """
+        Download the most recently modified file from an S3 folder.
+
+        Args:
+            folder_type: Either 'referrals' or 'preferred_providers'
+
+        Returns:
+            Tuple of (file_bytes, filename) or None if no files found
+        """
+        files = self.list_files_batch([folder_type]).get(folder_type, [])
+        if not files:
+            logger.warning(f"No files found in S3 folder '{folder_type}'")
+            return None
+
+        latest_filename, last_modified = files[0]
+        logger.info(f"Downloading latest file '{latest_filename}' from S3 (modified: {last_modified})")
+
+        file_bytes = self.download_file(folder_type, latest_filename)
+        if file_bytes:
+            return file_bytes, latest_filename
+        return None
+
     def download_latest_files_batch(self, folder_types: List[str]) -> Dict[str, Optional[Tuple[bytes, str]]]:
         """Download the latest file from multiple folders in parallel."""
         # First get file listings
@@ -322,3 +384,37 @@ def get_latest_s3_files_optimized(
         return {ft: None for ft in folder_types}
 
     return client.download_latest_files_batch(folder_types)
+
+
+# Compatibility functions to match the old s3_client interface
+def list_s3_files(folder_type: str, folder_map: Optional[Dict[str, str]] = None) -> List[Tuple[str, datetime]]:
+    """List files in an S3 folder - compatibility wrapper for old interface."""
+    client = OptimizedS3DataClient(folder_map=folder_map)
+    if not client.is_configured():
+        return []
+
+    files_data = client.list_files_batch([folder_type])
+    return files_data.get(folder_type, [])
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_latest_s3_file(folder_type: str, folder_map: Optional[Dict[str, str]] = None) -> Optional[Tuple[bytes, str]]:
+    """
+    Cached function to get the latest file from S3 - compatibility wrapper for old interface.
+
+    Args:
+        folder_type: Either 'referrals' or 'preferred_providers'
+        folder_map: Optional folder mapping overrides
+
+    Returns:
+        Tuple of (file_bytes, filename) or None if download fails
+    """
+    client = OptimizedS3DataClient(folder_map=folder_map)
+    if not client.is_configured():
+        return None
+
+    return client.download_latest_file(folder_type)
+
+
+# Alias for backward compatibility
+S3DataClient = OptimizedS3DataClient

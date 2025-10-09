@@ -2,6 +2,7 @@ import datetime as dt
 
 import streamlit as st
 
+from app import show_auto_update_status
 from src.app_logic import load_application_data
 from src.utils.addressing import validate_address_input
 from src.utils.responsive import resp_columns, responsive_sidebar_toggle
@@ -16,12 +17,63 @@ except Exception:
 
 # Constants - define once at module level for performance
 US_STATES = [
-    "MD", "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA",
-    "ME", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK",
-    "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC",
+    "MD",
+    "AL",
+    "AK",
+    "AZ",
+    "AR",
+    "CA",
+    "CO",
+    "CT",
+    "DE",
+    "FL",
+    "GA",
+    "HI",
+    "ID",
+    "IL",
+    "IN",
+    "IA",
+    "KS",
+    "KY",
+    "LA",
+    "ME",
+    "MA",
+    "MI",
+    "MN",
+    "MS",
+    "MO",
+    "MT",
+    "NE",
+    "NV",
+    "NH",
+    "NJ",
+    "NM",
+    "NY",
+    "NC",
+    "ND",
+    "OH",
+    "OK",
+    "OR",
+    "PA",
+    "RI",
+    "SC",
+    "SD",
+    "TN",
+    "TX",
+    "UT",
+    "VT",
+    "VA",
+    "WA",
+    "WV",
+    "WI",
+    "WY",
+    "DC",
 ]
 
 st.set_page_config(page_title="Search", page_icon=":mag:", layout="centered")
+
+# Show S3 auto-update status if available
+show_auto_update_status()
 
 st.title("🔎 Provider Search")
 st.caption("Find the best provider for your client — just enter an address and click Search!")
@@ -43,18 +95,10 @@ prev_street = st.session_state.get("street", "14350 Old Marlboro Pike") or ""
 prev_city = st.session_state.get("city", "Upper Marlboro") or ""
 
 with col1:
-    street = str(
-        st.text_input(
-            "Street Address",
-            prev_street,
-            help="Enter the client's street address"
-        )
-    )
+    street = str(st.text_input("Street Address", prev_street, help="Enter the client's street address"))
 with col2:
-    city = str(st.text_input("City",
-                             prev_city,
-            help="Enter the client's city"))
-    
+    city = str(st.text_input("City", prev_city, help="Enter the client's city"))
+
 
 col3, col4 = resp_columns([1, 1])
 
@@ -67,19 +111,14 @@ with col3:
     default_index = US_STATES.index(prev_state) if prev_state in US_STATES else 0
 
     state = st.selectbox(
-        "State",
-        options=US_STATES,
-        index=default_index,
-        help="Select the client's state (2-letter abbreviation)"
+        "State", options=US_STATES, index=default_index, help="Select the client's state (2-letter abbreviation)"
     )
 
     # Ensure state is an uppercase string or None
     state = state.upper() if isinstance(state, str) else None
-    
+
 with col4:
-    zipcode = str(st.text_input("ZIP Code",
-                                prev_zipcode,
-                                help="5-digit ZIP code"))
+    zipcode = str(st.text_input("ZIP Code", prev_zipcode, help="5-digit ZIP code"))
 
 # Quick search presets
 st.divider()
@@ -114,7 +153,7 @@ else:  # Custom Settings
     default_outbound = 0.0
     default_inbound = 0.2
     default_preferred = 0.1
-    
+
     with st.expander("⚖️ Custom Scoring Weights", expanded=True):
         st.caption("Adjust these sliders to control how each factor influences the recommendation.")
 
@@ -184,7 +223,7 @@ with st.expander("⚙️ Advanced Filters (Optional)"):
 
     # Cache session state lookups and compute defaults once
     default_time_period = [dt.date.today() - dt.timedelta(days=365), dt.date.today()]
-    
+
     max_radius_miles = st.slider(
         "Maximum Distance (miles)",
         1,
@@ -255,26 +294,28 @@ if search_clicked:
 
     # Success! Store search parameters in a single batch update
     user_lat, user_lon = coords
-    st.session_state.update({
-        "street": street,
-        "city": city,
-        "state": state or "",  # store empty string for backward compatibility
-        "zipcode": zipcode,
-        "user_lat": float(user_lat),
-        "user_lon": float(user_lon),
-        "alpha": float(alpha),
-        "beta": float(beta),
-        "gamma": float(gamma),
-        "preferred_weight": float(preferred_weight),
-        "preferred_norm": float(pref_norm),
-        "distance_weight": float(distance_weight),
-        "outbound_weight": float(outbound_weight),
-        "inbound_weight": float(inbound_weight),
-        "min_referrals": int(min_referrals),
-        "time_period": time_period,
-        "use_time_filter": bool(use_time_filter),
-        "max_radius_miles": int(max_radius_miles),
-    })
+    st.session_state.update(
+        {
+            "street": street,
+            "city": city,
+            "state": state or "",  # store empty string for backward compatibility
+            "zipcode": zipcode,
+            "user_lat": float(user_lat),
+            "user_lon": float(user_lon),
+            "alpha": float(alpha),
+            "beta": float(beta),
+            "gamma": float(gamma),
+            "preferred_weight": float(preferred_weight),
+            "preferred_norm": float(pref_norm),
+            "distance_weight": float(distance_weight),
+            "outbound_weight": float(outbound_weight),
+            "inbound_weight": float(inbound_weight),
+            "min_referrals": int(min_referrals),
+            "time_period": time_period,
+            "use_time_filter": bool(use_time_filter),
+            "max_radius_miles": int(max_radius_miles),
+        }
+    )
 
     # Navigate to results
     with st.spinner("🔍 Searching for providers..."):

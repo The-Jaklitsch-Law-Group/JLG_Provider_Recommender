@@ -225,7 +225,7 @@ def display_data_quality_dashboard() -> None:
             st.dataframe(pd.DataFrame(quality_metrics), width="stretch", hide_index=True)
 
         # Show S3 sync status if configured
-        from src.utils.s3_client import S3DataClient
+        from src.utils.s3_client_optimized import S3DataClient
 
         s3_client = S3DataClient()
         if s3_client.is_configured():
@@ -233,7 +233,7 @@ def display_data_quality_dashboard() -> None:
             st.success("✅ AWS S3 is configured and available for data pulls")
 
             # Show latest S3 file info
-            from src.utils.s3_client import list_s3_files
+            from src.utils.s3_client_optimized import list_s3_files
 
             referrals_files = list_s3_files("referrals")
             providers_files = list_s3_files("preferred_providers")

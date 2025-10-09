@@ -4,19 +4,16 @@ from pathlib import Path
 import streamlit as st
 
 from src.data import process_and_save_cleaned_referrals, process_and_save_preferred_providers, refresh_data_cache
-from src.utils.s3_client import S3DataClient, get_latest_s3_file, list_s3_files
+from src.utils.s3_client_optimized import (
+    S3DataClient,
+    get_latest_s3_file,
+    get_latest_s3_files_optimized,
+    get_s3_files_optimized,
+    list_s3_files,
+)
 
-# Performance optimization imports
-try:
-    from src.utils.s3_client_optimized import (
-        OptimizedS3DataClient,
-        get_latest_s3_files_optimized,
-        get_s3_files_optimized,
-    )
-
-    OPTIMIZED_S3_AVAILABLE = True
-except ImportError:
-    OPTIMIZED_S3_AVAILABLE = False
+# The optimized client is now the default
+OPTIMIZED_S3_AVAILABLE = True
 
 st.set_page_config(page_title="Update Data", page_icon="🗂️", layout="centered")
 
@@ -132,24 +129,14 @@ if s3_enabled:
     performance_note = "⚡ Optimized performance mode" if OPTIMIZED_S3_AVAILABLE else "Standard mode"
     st.markdown(f"Download and process the latest files from your S3 bucket. *{performance_note}*")
 
-    # Get file information for both types using optimized client if available
+    # Get file information for both types using optimized client
     try:
-        if OPTIMIZED_S3_AVAILABLE and "get_s3_files_optimized" in globals():
-            try:
-                # Use optimized batch file listing for better performance
-                files_data = globals()["get_s3_files_optimized"](
-                    ["referrals", "preferred_providers"], "s3_folder_map" if effective_folder_map else None
-                )
-                referrals_files = files_data.get("referrals", [])
-                providers_files = files_data.get("preferred_providers", [])
-            except Exception:
-                # Fallback if optimized version fails
-                referrals_files = list_s3_files("referrals", folder_map=effective_folder_map)
-                providers_files = list_s3_files("preferred_providers", folder_map=effective_folder_map)
-        else:
-            # Fallback to original implementation
-            referrals_files = list_s3_files("referrals", folder_map=effective_folder_map)
-            providers_files = list_s3_files("preferred_providers", folder_map=effective_folder_map)
+        # Use optimized batch file listing for better performance
+        files_data = get_s3_files_optimized(
+            ["referrals", "preferred_providers"], "s3_folder_map" if effective_folder_map else None
+        )
+        referrals_files = files_data.get("referrals", [])
+        providers_files = files_data.get("preferred_providers", [])
     except Exception as e:
         st.error(f"Failed to list S3 files: {e}")
         referrals_files = []
@@ -196,7 +183,7 @@ if s3_enabled:
             else:
                 try:
                     with st.spinner("🔄 Refreshing data from S3..."):
-                        op_client = S3DataClient(folder_map=effective_folder_map)
+                        s3_client = S3DataClient(folder_map=effective_folder_map)
 
                         # Process both files
                         summary_ref = None
@@ -205,7 +192,7 @@ if s3_enabled:
 
                         # Download and process referrals
                         if referrals_files:
-                            referrals_result = op_client.download_latest_file("referrals")
+                            referrals_result = s3_client.download_latest_file("referrals")
                             if referrals_result:
                                 referrals_bytes, referrals_name = referrals_result
                                 summary_ref = process_and_save_cleaned_referrals(
@@ -217,7 +204,7 @@ if s3_enabled:
 
                         # Download and process providers
                         if providers_files:
-                            providers_result = op_client.download_latest_file("preferred_providers")
+                            providers_result = s3_client.download_latest_file("preferred_providers")
                             if providers_result:
                                 providers_bytes, providers_name = providers_result
                                 summary_prov = process_and_save_preferred_providers(
@@ -266,8 +253,8 @@ if s3_enabled:
             if referrals_files:
                 try:
                     with st.spinner("Processing referrals..."):
-                        op_client = S3DataClient(folder_map=effective_folder_map)
-                        file_bytes = op_client.download_file("referrals", referrals_files[0][0])
+                        s3_client = S3DataClient(folder_map=effective_folder_map)
+                        file_bytes = s3_client.download_file("referrals", referrals_files[0][0])
                         if file_bytes:
                             summary = process_and_save_cleaned_referrals(
                                 file_bytes, Path("data/processed"), filename=referrals_files[0][0]
@@ -285,8 +272,8 @@ if s3_enabled:
             if providers_files:
                 try:
                     with st.spinner("Processing providers..."):
-                        op_client = S3DataClient(folder_map=effective_folder_map)
-                        file_bytes = op_client.download_file("preferred_providers", providers_files[0][0])
+                        s3_client = S3DataClient(folder_map=effective_folder_map)
+                        file_bytes = s3_client.download_file("preferred_providers", providers_files[0][0])
                         if file_bytes:
                             summary = process_and_save_preferred_providers(
                                 file_bytes, Path("data/processed"), filename=providers_files[0][0]
