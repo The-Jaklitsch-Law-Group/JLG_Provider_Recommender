@@ -14,8 +14,8 @@ The system processes raw Excel exports from Filevine, cleans and geocodes provid
 
 ## Features
 
-- **Smart Data Loading** - Prioritizes optimized Parquet files (10x faster than Excel) with automatic fallback
-- **AWS S3 Integration** - Automatic data pulls from S3 buckets for cloud-native data workflows with **auto-update on app launch**
+- **Smart Data Loading** - Data automatically synced from AWS S3 with auto-update on app launch (S3-only mode)
+- **AWS S3 Integration** - Cloud-native data workflows with **automatic updates** - local parquet files deprecated
 - **Accurate Distance Calculation** - Vectorized haversine formula for Earth-curvature-aware measurements
 - **Flexible Scoring** - Configurable weights for distance, outbound referrals, inbound referrals, and preferred status
 - **Interactive UI** - Multi-page Streamlit app with search, results visualization, and data dashboards
@@ -28,6 +28,7 @@ The system processes raw Excel exports from Filevine, cleans and geocodes provid
 
 - Python 3.10+ (tested on 3.10-3.12)
 - Virtual environment recommended (venv, conda, etc.)
+- **AWS S3 access configured** (required for data loading - see Configuration section below)
 
 ### Installation
 
@@ -99,17 +100,20 @@ JLG_Provider_Recommender/
 │       ├── scoring.py             # Recommendation scoring algorithm
 │       └── validation.py          # Input validation
 ├── data/
-│   ├── raw/                       # Excel exports from Filevine
+│   ├── raw/                       # (gitignored) Excel exports from Filevine
 │   │   └── Referrals_App_Full_Contacts.xlsx
-│   └── processed/                 # Cleaned Parquet files (optimized)
-│       ├── cleaned_all_referrals.parquet
-│       ├── cleaned_inbound_referrals.parquet
-│       ├── cleaned_outbound_referrals.parquet
-│       └── cleaned_preferred_providers.parquet
+│   └── processed/                 # (gitignored) Cleaned Parquet cache files
+│       ├── cleaned_all_referrals.parquet        # Auto-generated from S3
+│       ├── cleaned_inbound_referrals.parquet    # Auto-generated from S3
+│       ├── cleaned_outbound_referrals.parquet   # Auto-generated from S3
+│       └── cleaned_preferred_providers.parquet  # Auto-generated from S3
 ├── prepare_contacts/              # Jupyter notebooks for data exploration
 │   ├── contact_cleaning.ipynb     # Referral data cleaning workflow
 │   └── Cleaning_Preferred_Providers.ipynb
 ├── tests/                         # Comprehensive pytest suite (70+ tests)
+│   ├── fixtures/                  # Small sample data for testing
+│   │   ├── sample_referrals.parquet
+│   │   └── sample_providers.parquet
 │   ├── test_scoring.py           # Scoring algorithm tests
 │   ├── test_validation.py        # Input validation tests
 │   ├── test_distance_calculation.py  # Haversine distance tests
@@ -122,17 +126,21 @@ JLG_Provider_Recommender/
 
 ### 1. Data Pipeline
 
-**Raw Data → Cleaned Data → Application**
+**S3 → Auto-Download → Cleaned Data → Application**
 
-1. **Data Export**: Export referral data from Filevine to Excel (`Referrals_App_Full_Contacts.xlsx`)
-2. **Data Cleaning** (via `src/data/preparation.py`):
+1. **Data Storage**: Referral data stored in AWS S3 bucket
+2. **Auto-Update**: On app launch, latest files are automatically downloaded from S3
+3. **Data Cleaning** (via `src/data/preparation.py`):
    - Split into inbound/outbound referrals
    - Normalize addresses and phone numbers
    - Parse and validate coordinates
    - Deduplicate providers using (normalized_name, normalized_address)
    - Fill missing geocodes via Nominatim/Google Maps
-3. **Optimization**: Save as Parquet files (10x faster loading)
-4. **Application Loading**: Use `DataIngestionManager` to load with automatic format prioritization
+4. **Optimization**: Save as Parquet files in `data/processed/` (local cache)
+5. **Application Loading**: Use `DataIngestionManager` to load from local cache
+
+**Note:** Local parquet files in `data/processed/` are now cache files created from S3 data.
+They are not checked into the repository and will be auto-generated on first run.
 
 ### 2. Geocoding Strategy
 
@@ -176,6 +184,36 @@ Where:
 
 ## Configuration
 
+### S3 Configuration (Required)
+
+**🔴 IMPORTANT: The app now requires S3 configuration to load data. Local parquet files have been deprecated and removed.**
+
+Configure AWS S3 credentials in `.streamlit/secrets.toml`:
+
+```toml
+[s3]
+aws_access_key_id = "your-access-key-id"
+aws_secret_access_key = "your-secret-access-key"
+bucket_name = "your-bucket-name"
+region_name = "us-east-1"  # optional, defaults to us-east-1
+referrals_folder = "referrals"  # S3 prefix/folder for referrals data
+preferred_providers_folder = "preferred_providers"  # S3 prefix/folder for providers
+
+# S3-only mode settings (defaults shown)
+use_s3_only = true  # Enforce S3-only mode (no local fallback)
+allow_local_fallback = false  # Temporary fallback flag (will be removed)
+```
+
+**First-time setup:**
+1. Create `.streamlit/secrets.toml` with your S3 credentials
+2. Upload your referral data files to S3 (CSV or Excel format)
+3. Run the app - it will auto-download and process data on launch
+4. Or navigate to **🔄 Update Data** page to manually pull from S3
+
+**For local development without S3:**
+- Set `use_s3_only = false` and `allow_local_fallback = true` temporarily
+- This fallback option will be removed in a future release
+
 ### Environment Variables (Optional)
 
 - `GOOGLE_MAPS_API_KEY` - Enable Google Maps geocoding fallback (Nominatim used by default)
@@ -198,23 +236,19 @@ Configure secrets in `.streamlit/secrets.toml` (see `docs/API_SECRETS_GUIDE.md` 
 
 To update provider data:
 
-**Option 1: AWS S3 (Recommended for Cloud Deployments)**
-1. Upload latest referral files to your S3 bucket
-2. Navigate to **🔄 Update Data** page in the app
-3. Click "Pull Latest Referrals from S3" or "Pull Latest Providers from S3"
-4. Data is automatically downloaded, cleaned, and cached
+**AWS S3 (Required - Recommended for All Deployments)**
+1. Upload latest referral files to your S3 bucket (CSV or Excel format)
+2. **Option A - Automatic:** Restart the app - it will auto-download on launch
+3. **Option B - Manual:** Navigate to **🔄 Update Data** page and click "Pull Latest from S3"
+4. Data is automatically downloaded, cleaned, and cached locally
 
-**Option 2: Manual Upload**
-1. Export latest referral data from Filevine to Excel
-2. Navigate to **🔄 Update Data** page in the app
-3. Upload the file using the file uploader
-4. Data is automatically processed and cached
+**Local File Upload (Alternative)**
+1. Navigate to **🔄 Update Data** page in the app
+2. Upload CSV/Excel file using the file uploader
+3. Data is automatically processed and cached
 
-**Option 3: Local File Processing**
-1. Export latest referral data from Filevine to `data/raw/Referrals_App_Full_Contacts.xlsx`
-2. Navigate to **🔄 Update Data** page
-3. Upload the file to trigger processing
-4. Or run manually: `python -c "from src.data.preparation import process_and_save_cleaned_referrals; process_and_save_cleaned_referrals()"`
+**Note:** Local parquet files in `data/processed/` are deprecated and removed from version control.
+The app now relies exclusively on S3 as the canonical data source.
 
 ## Testing
 

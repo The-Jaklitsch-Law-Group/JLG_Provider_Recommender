@@ -101,6 +101,10 @@ def get_api_config(api_name: str) -> Dict[str, Any]:
             'referrals_folder': get_secret('s3.referrals_folder', 'referrals'),
             'preferred_providers_folder': get_secret('s3.preferred_providers_folder', 'preferred_providers'),
             'use_latest_file': get_secret('s3.use_latest_file', True),
+            # S3-only mode: when True, app requires S3 and will not use local parquet fallbacks
+            'use_s3_only': get_secret('s3.use_s3_only', True),
+            # Temporary fallback flag for deprecation transition (will be removed in future release)
+            'allow_local_fallback': get_secret('s3.allow_local_fallback', False),
         }
     else:
         return {}
