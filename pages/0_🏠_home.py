@@ -3,7 +3,7 @@ import streamlit as st
 from app import show_auto_update_status
 from src.utils.responsive import resp_columns, responsive_sidebar_toggle
 
-st.set_page_config(page_title="Home", page_icon="🏠", layout="centered")
+st.set_page_config(page_title="Home", page_icon="🏠", layout="wide")
 
 # small sidebar toggle to force mobile stacked layout during development/testing
 responsive_sidebar_toggle()
@@ -13,26 +13,32 @@ responsive_sidebar_toggle()
 
 # Hero section (concise)
 st.title("🏥 JLG Provider Recommender")
-st.markdown("Find the right healthcare provider for your client — quickly and confidently")
+st.markdown("Find the right healthcare provider for your client — quickly and confidently!")
 
 # Prominent quick CTA: big, centered link to the Search page
-cta_col_left, cta_col_center, cta_col_right = st.columns([1, 2, 1])
-with cta_col_center:
-    st.markdown("### Ready to find a provider?")
-    st.page_link("pages/1_🔎_Search.py", label="Start a Search", icon="🔎")
+# cta_col_left, cta_col_center, cta_col_right = st.columns([1, 2, 1])
+# with cta_col_left:
+#     st.markdown("### Ready to find a provider?")
+#     st.page_link("pages/1_🔎_Search.py", label="Start a Search", icon="🔎")
+
+st.markdown("### Start your search for the perfect provider:")
+st.page_link("pages/1_🔎_Search.py", label="Start a Search", icon="🔎")
 
 # Keep the main actions but simplify and shorten descriptions
 st.divider()
-st.subheader("Quick actions")
+st.subheader("Quick Actions")
 col1, col2 = resp_columns([1, 1])
 
 with col1:
-    st.markdown("**🔄 Update Data** — Refresh the system with the latest referral information.")
+    st.markdown("**Update Data** — Refresh the system with the latest referral information.")
     st.page_link("pages/30_🔄_Update_Data.py", label="Open Update Data", icon="🔄")
 
 with col2:
-    st.markdown("**📊 Dashboard** — View provider metrics and referral trends.")
+    st.markdown("**Dashboard** — View provider metrics and referral trends.")
     st.page_link("pages/20_📊_Data_Dashboard.py", label="Open Dashboard", icon="📊")
+
+st.divider()
+st.subheader("Why and How to Use This Tool")
 
 # Condense value props into an expander to reduce visual noise
 with st.expander("Why use this tool?", expanded=False):
