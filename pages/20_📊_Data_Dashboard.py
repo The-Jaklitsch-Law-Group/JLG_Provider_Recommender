@@ -137,102 +137,107 @@ def display_data_quality_dashboard() -> None:
 
     # Data Source and Processing Status
     st.markdown("## 📋 Data Source and Processing Status")
-    
+
     # Show information about data sources and cleaning status
     try:
         # Try to load raw data to compare with cleaned data
         from pathlib import Path
-        
+
         processed_dir = Path("data/processed")
-        
+
         # Check for parquet files and their metadata
         parquet_files = {
             "Cleaned Referrals": processed_dir / "cleaned_all_referrals.parquet",
             "Cleaned Providers": processed_dir / "cleaned_outbound_referrals.parquet",
-            "Preferred Providers": processed_dir / "cleaned_preferred_providers.parquet"
+            "Preferred Providers": processed_dir / "cleaned_preferred_providers.parquet",
         }
-        
+
         file_info = []
         for name, path in parquet_files.items():
             if path.exists():
                 import os
+
                 size_mb = os.path.getsize(path) / (1024 * 1024)
                 modified = datetime.fromtimestamp(os.path.getmtime(path))
-                file_info.append({
-                    "Dataset": name,
-                    "Size (MB)": f"{size_mb:.2f}",
-                    "Last Updated": modified.strftime("%Y-%m-%d %H:%M:%S"),
-                    "Status": "✅ Available"
-                })
+                file_info.append(
+                    {
+                        "Dataset": name,
+                        "Size (MB)": f"{size_mb:.2f}",
+                        "Last Updated": modified.strftime("%Y-%m-%d %H:%M:%S"),
+                        "Status": "✅ Available",
+                    }
+                )
             else:
-                file_info.append({
-                    "Dataset": name,
-                    "Size (MB)": "N/A",
-                    "Last Updated": "N/A",
-                    "Status": "❌ Not Found"
-                })
-        
+                file_info.append({"Dataset": name, "Size (MB)": "N/A", "Last Updated": "N/A", "Status": "❌ Not Found"})
+
         if file_info:
-            import pandas as pd
-            st.dataframe(pd.DataFrame(file_info), use_container_width=True, hide_index=True)
-        
+            st.dataframe(pd.DataFrame(file_info), width="stretch", hide_index=True)
+
         # Show data quality comparison if we have both cleaned and provider data
         st.markdown("### Data Quality Metrics")
-        
+
         quality_metrics = []
-        
+
         # Provider data quality
         if not provider_df.empty:
             total_records = len(provider_df)
-            
+
             # Check for missing coordinates
             if "Latitude" in provider_df.columns and "Longitude" in provider_df.columns:
                 valid_coords = provider_df.dropna(subset=["Latitude", "Longitude"])
                 coord_completeness = (len(valid_coords) / total_records * 100) if total_records > 0 else 0
-                quality_metrics.append({
-                    "Metric": "Geographic Coordinates",
-                    "Complete Records": len(valid_coords),
-                    "Total Records": total_records,
-                    "Completeness": f"{coord_completeness:.1f}%"
-                })
-            
+                quality_metrics.append(
+                    {
+                        "Metric": "Geographic Coordinates",
+                        "Complete Records": len(valid_coords),
+                        "Total Records": total_records,
+                        "Completeness": f"{coord_completeness:.1f}%",
+                    }
+                )
+
             # Check for phone numbers
             if "Phone Number" in provider_df.columns:
                 valid_phones = provider_df[provider_df["Phone Number"].notna() & (provider_df["Phone Number"] != "")]
                 phone_completeness = (len(valid_phones) / total_records * 100) if total_records > 0 else 0
-                quality_metrics.append({
-                    "Metric": "Phone Numbers",
-                    "Complete Records": len(valid_phones),
-                    "Total Records": total_records,
-                    "Completeness": f"{phone_completeness:.1f}%"
-                })
-            
+                quality_metrics.append(
+                    {
+                        "Metric": "Phone Numbers",
+                        "Complete Records": len(valid_phones),
+                        "Total Records": total_records,
+                        "Completeness": f"{phone_completeness:.1f}%",
+                    }
+                )
+
             # Check for addresses
             if "Full Address" in provider_df.columns:
                 valid_addresses = provider_df[provider_df["Full Address"].notna() & (provider_df["Full Address"] != "")]
                 address_completeness = (len(valid_addresses) / total_records * 100) if total_records > 0 else 0
-                quality_metrics.append({
-                    "Metric": "Addresses",
-                    "Complete Records": len(valid_addresses),
-                    "Total Records": total_records,
-                    "Completeness": f"{address_completeness:.1f}%"
-                })
-        
+                quality_metrics.append(
+                    {
+                        "Metric": "Addresses",
+                        "Complete Records": len(valid_addresses),
+                        "Total Records": total_records,
+                        "Completeness": f"{address_completeness:.1f}%",
+                    }
+                )
+
         if quality_metrics:
-            st.dataframe(pd.DataFrame(quality_metrics), use_container_width=True, hide_index=True)
-        
+            st.dataframe(pd.DataFrame(quality_metrics), width="stretch", hide_index=True)
+
         # Show S3 sync status if configured
         from src.utils.s3_client import S3DataClient
+
         s3_client = S3DataClient()
         if s3_client.is_configured():
             st.markdown("### 📥 S3 Sync Status")
             st.success("✅ AWS S3 is configured and available for data pulls")
-            
+
             # Show latest S3 file info
             from src.utils.s3_client import list_s3_files
-            referrals_files = list_s3_files('referrals')
-            providers_files = list_s3_files('preferred_providers')
-            
+
+            referrals_files = list_s3_files("referrals")
+            providers_files = list_s3_files("preferred_providers")
+
             col1, col2 = st.columns(2)
             with col1:
                 if referrals_files:
@@ -242,7 +247,7 @@ def display_data_quality_dashboard() -> None:
                     st.caption(f"🕐 {latest_date.strftime('%Y-%m-%d %H:%M:%S')}")
                 else:
                     st.caption("No referrals files in S3")
-            
+
             with col2:
                 if providers_files:
                     latest_file, latest_date = providers_files[0]
@@ -253,7 +258,7 @@ def display_data_quality_dashboard() -> None:
                     st.caption("No provider files in S3")
         else:
             st.info("ℹ️ AWS S3 is not configured. Using local data files only.")
-            
+
     except Exception as e:
         st.warning(f"Could not load data source information: {e}")
 
