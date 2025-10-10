@@ -24,7 +24,7 @@ The system processes raw Excel exports from Filevine, cleans and geocodes provid
 
 ## Quick Start
 
-> **🔴 BREAKING CHANGE:** As of version 2.0, S3 configuration is **required**. Local parquet files have been deprecated.  
+> **🔴 BREAKING CHANGE:** As of version 2.1+, S3 configuration is **strictly required**. All local parquet file fallbacks have been removed.  
 > See [S3 Migration Guide](docs/S3_MIGRATION_GUIDE.md) for detailed setup instructions.
 
 ### Prerequisites

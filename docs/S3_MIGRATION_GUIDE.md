@@ -35,10 +35,6 @@ region_name = "us-east-1"
 # Folder/prefix configuration
 referrals_folder = "referrals"
 preferred_providers_folder = "preferred_providers"
-
-# S3-only mode (default settings)
-use_s3_only = true
-allow_local_fallback = false
 ```
 
 ### S3 Bucket Structure
@@ -69,38 +65,22 @@ The app will automatically use the **most recent file** based on timestamp in th
 
 ### For Local Development
 
-#### Option A: Use S3 (Recommended)
 1. Create `.streamlit/secrets.toml` with your S3 credentials (see template above)
 2. Run the app: `streamlit run app.py`
 3. Data will auto-download from S3 on first launch
-
-#### Option B: Temporary Local Fallback (Deprecated)
-If you need to run locally without S3 temporarily:
-
-1. Set in `.streamlit/secrets.toml`:
-   ```toml
-   [s3]
-   use_s3_only = false
-   allow_local_fallback = true
-   ```
-2. Manually create local parquet files in `data/processed/` (use the Update Data page)
-
-**⚠️ WARNING:** The `allow_local_fallback` option is temporary and will be removed in a future release.
 
 ## Deployment Checklist
 
 - [ ] S3 bucket created and accessible
 - [ ] Latest referral data uploaded to S3
 - [ ] S3 credentials configured in secrets/environment
-- [ ] `s3.use_s3_only = true` (default)
-- [ ] `s3.allow_local_fallback = false` (default)
 - [ ] App deployed and auto-update verified
 - [ ] Smoke test: Search page returns results
 - [ ] Data Dashboard shows expected record counts
 
 ## Troubleshooting
 
-### Error: "S3-only mode is enabled but S3 is not configured"
+### Error: "S3 is not configured"
 
 **Cause:** S3 credentials are missing or invalid.
 
@@ -115,7 +95,7 @@ If you need to run locally without S3 temporarily:
 
 **Fix:**
 1. Navigate to **🔄 Update Data** page
-2. Click "Pull Latest from S3" to manually trigger download
+2. Click "Refresh Both Files" to manually trigger download from S3
 3. Check S3 bucket contains files in the correct folders
 4. Verify folder names match config: `referrals_folder` and `preferred_providers_folder`
 
@@ -127,19 +107,6 @@ If you need to run locally without S3 temporarily:
 1. Check logs for processing errors
 2. Verify CSV/Excel format matches expected schema
 3. Try re-uploading a known-good file to S3
-
-## Rollback Plan
-
-If you need to rollback temporarily:
-
-1. Set in secrets:
-   ```toml
-   [s3]
-   allow_local_fallback = true
-   ```
-2. Create local parquet files via the Update Data page upload feature
-3. Investigate S3 configuration issues
-4. Re-enable S3-only mode once fixed
 
 ## File Naming Conventions
 
@@ -168,7 +135,7 @@ For unit tests, use the `disable_s3_only_mode` pytest fixture:
 
 ```python
 def test_my_feature(disable_s3_only_mode):
-    # Test runs with S3-only mode disabled
+    # Test runs without S3 requirement
     # Can use local fixtures or temp files
     pass
 ```

@@ -6,7 +6,7 @@
 
 ## Overview
 
-This implementation enforces AWS S3 as the exclusive canonical data source for the JLG Provider Recommender app, removing dependency on repository-local parquet files.
+This implementation enforces AWS S3 as the **exclusive** data source for the JLG Provider Recommender app, with complete removal of all local parquet file fallback mechanisms.
 
 ## Changes Implemented
 
@@ -14,16 +14,15 @@ This implementation enforces AWS S3 as the exclusive canonical data source for t
 
 **File:** `src/utils/config.py`
 
-Added two new S3 configuration flags:
+**Removed deprecated configuration flags:**
 
-```python
-'use_s3_only': get_secret('s3.use_s3_only', True),  # Default: S3 required
-'allow_local_fallback': get_secret('s3.allow_local_fallback', False),  # Default: no fallback
-```
+- ❌ Removed `use_s3_only` flag (S3 is now always required)
+- ❌ Removed `allow_local_fallback` flag (no fallbacks supported)
 
-- `use_s3_only=true`: Enforces S3 requirement (default)
-- `allow_local_fallback=false`: Disables local file fallback (default)
-- Temporary fallback available for transition period
+S3 configuration is now simplified and required:
+- S3 credentials are mandatory
+- No fallback options available
+- Clear error messages if S3 not configured
 
 ### 2. Data Ingestion Manager
 
@@ -31,8 +30,8 @@ Added two new S3 configuration flags:
 
 Updated `DataIngestionManager` class:
 
-- Added S3-only mode enforcement in `__init__`
-- Enhanced `load_data()` with S3 configuration checks
+- Removed S3-only mode flags from `__init__` (S3 always required now)
+- Simplified `load_data()` to check S3 configuration directly
 - Clear error messages when S3 not configured:
   - Configuration guide
   - Required credentials list
@@ -40,17 +39,19 @@ Updated `DataIngestionManager` class:
 - Helpful warnings when data files missing:
   - Suggests using Update Data page
   - Points to S3 bucket validation
+- Removed all fallback logic and conditional checks
 
 ### 3. Test Infrastructure
 
 **Files:** `tests/conftest.py`, `tests/test_data_preparation.py`
 
-Created pytest fixture for S3-only mode bypass:
+Updated pytest fixture to bypass S3 requirement:
 
 ```python
 @pytest.fixture
 def disable_s3_only_mode(monkeypatch):
-    # Mocks config to allow local file access for tests
+    # Mocks is_api_enabled to return False for S3
+    # Allows tests to use local fixtures
 ```
 
 Updated test functions to use fixture:
