@@ -19,13 +19,13 @@ def pytest_configure():
 @pytest.fixture
 def disable_s3_only_mode(monkeypatch):
     """
-    Fixture to disable S3-only mode for tests that use local files.
+    Fixture to disable S3 requirement for tests that use local files.
 
-    This allows tests to run without S3 configuration by enabling the local fallback.
+    This allows tests to run without S3 configuration by mocking the S3 check.
     Use this fixture in tests that need to load data from local test fixtures.
     """
 
-    # Mock the config to allow local fallback
+    # Mock the config to bypass S3 requirement
     def mock_get_api_config(api_name):
         if api_name == "s3":
             return {
@@ -36,12 +36,17 @@ def disable_s3_only_mode(monkeypatch):
                 "referrals_folder": "referrals",
                 "preferred_providers_folder": "preferred_providers",
                 "use_latest_file": True,
-                "use_s3_only": False,  # Disable S3-only mode for tests
-                "allow_local_fallback": True,
             }
         return {}
 
+    def mock_is_api_enabled(api_name):
+        # For tests, pretend S3 is not configured so the app doesn't check for S3
+        if api_name == "s3":
+            return False
+        return False
+
     monkeypatch.setattr("src.utils.config.get_api_config", mock_get_api_config)
+    monkeypatch.setattr("src.utils.config.is_api_enabled", mock_is_api_enabled)
 
 
 @pytest.fixture
