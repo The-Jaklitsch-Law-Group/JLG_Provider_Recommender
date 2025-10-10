@@ -201,10 +201,6 @@ bucket_name = "your-bucket-name"
 region_name = "us-east-1"  # optional, defaults to us-east-1
 referrals_folder = "referrals"  # S3 prefix/folder for referrals data
 preferred_providers_folder = "preferred_providers"  # S3 prefix/folder for providers
-
-# S3-only mode settings (defaults shown)
-use_s3_only = true  # Enforce S3-only mode (no local fallback)
-allow_local_fallback = false  # Temporary fallback flag (will be removed)
 ```
 
 **First-time setup:**
@@ -213,9 +209,7 @@ allow_local_fallback = false  # Temporary fallback flag (will be removed)
 3. Run the app - it will auto-download and process data on launch
 4. Or navigate to **🔄 Update Data** page to manually pull from S3
 
-**For local development without S3:**
-- Set `use_s3_only = false` and `allow_local_fallback = true` temporarily
-- This fallback option will be removed in a future release
+**Note:** S3 is the only supported data source. No local fallback options are available.
 
 ### Environment Variables (Optional)
 

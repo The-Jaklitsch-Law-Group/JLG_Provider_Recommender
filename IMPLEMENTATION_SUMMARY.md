@@ -182,45 +182,32 @@ Deprecation notice with:
 
 ## Configuration Examples
 
-### Production (Default)
+### Production and Development (S3 Required)
 ```toml
 [s3]
 aws_access_key_id = "AKIA..."
 aws_secret_access_key = "..."
 bucket_name = "jlg-provider-data"
-use_s3_only = true
-allow_local_fallback = false
+region_name = "us-east-1"
+referrals_folder = "referrals"
+preferred_providers_folder = "preferred_providers"
 ```
 
-### Local Development with S3
-```toml
-[s3]
-aws_access_key_id = "AKIA..."
-aws_secret_access_key = "..."
-bucket_name = "jlg-provider-data"
-# Defaults work fine
-```
-
-### Temporary Fallback (Deprecated)
-```toml
-[s3]
-use_s3_only = false
-allow_local_fallback = true
-# Only for transition period - will be removed
-```
+**Note:** S3 is the only supported data source. No fallback options available.
 
 ## Acceptance Criteria Status
 
 From original issue requirements:
 
 - [x] App loads provider and referral data from S3 in production, staging, and local dev by default
-  - ✅ `use_s3_only=true` enforces S3 requirement
+  - ✅ S3 is the only supported data source
   - ✅ Auto-update on launch already implemented
 
-- [x] No runtime attempts to read the repo-local parquet files when `USE_S3=true`
+- [x] No runtime attempts to read the repo-local parquet files
   - ✅ Files removed from git
   - ✅ .gitignore excludes them
-  - ✅ Only used as cache files (auto-generated)
+  - ✅ Only used as cache files (auto-generated from S3)
+  - ✅ All fallback logic removed
 
 - [x] CI and unit tests run without relying on heavy local data files
   - ✅ Tests use `disable_s3_only_mode` fixture
@@ -230,7 +217,7 @@ From original issue requirements:
 - [x] README and runbook document that local parquet files are deprecated and removed
   - ✅ README updated with breaking change notice
   - ✅ S3_MIGRATION_GUIDE.md created
-  - ✅ DEPRECATION_NOTICE.md documents timeline
+  - ✅ DEPRECATION_NOTICE.md documents complete removal
 
 - [x] Local parquet files deleted from the repository
   - ✅ `git rm` executed on 4 files
@@ -239,13 +226,13 @@ From original issue requirements:
 ## Implementation Tasks Completed
 
 1. ✅ **Configuration**
-   - `use_s3_only` defaults to `true`
-   - `allow_local_fallback` as short-lived debug flag
-   - Documented removal timeline
+   - Removed `use_s3_only` flag (no longer needed)
+   - Removed `allow_local_fallback` flag (no fallbacks supported)
+   - S3 is now the only data source
 
 2. ✅ **Data loader changes**
-   - Removed main-code local-file dependency
-   - Guarded fallback under `allow_local_fallback=true`
+   - Removed all local-file fallback logic
+   - S3 check is mandatory on startup
    - Clear error messages for S3 failures
    - S3 logic unchanged (already working)
 
@@ -260,15 +247,15 @@ From original issue requirements:
    - Test fixtures created (small, <10KB total)
 
 5. ✅ **Docs & runbook**
-   - README states S3 is canonical
-   - S3_MIGRATION_GUIDE.md with complete setup
-   - DEPRECATION_NOTICE.md with timeline
-   - Removal date documented
+   - README states S3 is the only source
+   - S3_MIGRATION_GUIDE.md updated (no fallback references)
+   - DEPRECATION_NOTICE.md reflects complete removal
+   - IMPLEMENTATION_SUMMARY.md updated
 
 6. ⏭️ **Deployment** (To be done by user)
    - Hosting already uses S3 credentials
    - No deployment changes needed
-   - Validate staging with `use_s3_only=true`
+   - Validate in staging environment
 
 7. ⏭️ **Verification** (To be done by user)
    - Smoke test in staging
@@ -283,17 +270,16 @@ From original issue requirements:
 3. Verify S3 auto-update works correctly
 4. Smoke test: Search page returns results
 5. Monitor for errors in production
-6. Plan removal of `allow_local_fallback` in next release
 
 ### For Developers
 1. Update local `.streamlit/secrets.toml` with S3 credentials
 2. Run `streamlit run app.py` - data auto-downloads
 3. If issues, see `docs/S3_MIGRATION_GUIDE.md`
 
-### For Future Releases
-1. **Phase 3 (Next Release):** Remove `allow_local_fallback` flag entirely
-2. Update docs to remove fallback references
-3. Simplify `DataIngestionManager` by removing fallback code
+### Future Maintenance
+- S3 is the only supported data source
+- No fallback mechanisms exist
+- All environments require S3 configuration
 
 ## Risk Assessment
 
