@@ -1,1 +1,0 @@
-✅ Data automatically updated from S3: referrals (referrals_app_full_contacts_2025-10-09_0115.csv), providers (referrals_app_preferred_providers_2025-10-09_0100.csv)
