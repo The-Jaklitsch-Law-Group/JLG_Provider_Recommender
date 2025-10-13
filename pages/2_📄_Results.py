@@ -150,10 +150,12 @@ if "Score" in scored_df.columns:
 available = [c for c in cols if c in scored_df.columns]
 
 if available:
+    sort_col = "Score" if "Score" in available else available[0]
+    sort_order = False if "Score" in available else True  # Score: descending, others: ascending
     display_df = (
         scored_df[available]
         .drop_duplicates(subset=["Full Name"], keep="first")
-        .sort_values(by="Score" if "Score" in available else available[0], ascending=False if "Score" in available else True)
+        .sort_values(by=sort_col, ascending=sort_order)
         .reset_index(drop=True)
         .copy()  # Ensure we have a copy to modify
     )
