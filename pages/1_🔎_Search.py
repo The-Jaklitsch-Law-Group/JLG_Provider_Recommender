@@ -80,7 +80,18 @@ st.title("🏥 JLG Provider Recommender")
 st.markdown("Find the right healthcare provider for your client — quickly and confidently!")
 
 # Load data once - this is cached by @st.cache_data in load_application_data
-provider_df, detailed_referrals_df = load_application_data()
+try:
+    provider_df, detailed_referrals_df = load_application_data()
+except Exception as e:
+    st.error("❌ Failed to load provider data. Please ensure data files are available or contact support.")
+    st.info(f"Technical details: {str(e)}")
+    st.stop()
+
+# Validate data is available before proceeding
+if provider_df.empty:
+    st.error("❌ No provider data available.")
+    st.info("💡 Please upload data using the 'Update Data' page or contact support.")
+    st.stop()
 
 # Cache the column check to avoid repeated lookups
 has_inbound = ("Inbound Referral Count" in provider_df.columns) if not provider_df.empty else False

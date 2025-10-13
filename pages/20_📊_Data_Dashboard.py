@@ -81,7 +81,15 @@ def display_data_quality_dashboard() -> None:
         provider_df = data_manager.load_data(DataSource.PROVIDER_DATA, show_status=False)
         detailed_df = data_manager.load_data(DataSource.OUTBOUND_REFERRALS, show_status=False)
     except Exception as e:
-        st.error(f"Failed to load data: {e}")
+        st.error("❌ Failed to load data for the dashboard.")
+        st.info("💡 Please ensure data files are available. Use the 'Update Data' page to refresh from S3.")
+        st.info(f"Technical details: {str(e)}")
+        return
+
+    # Validate data is available
+    if provider_df.empty:
+        st.error("❌ No provider data available.")
+        st.info("💡 Please upload data using the 'Update Data' page or contact support.")
         return
 
     # Add referral counts if missing
@@ -242,7 +250,7 @@ def display_data_quality_dashboard() -> None:
             with col1:
                 if referrals_files:
                     latest_file, latest_date = referrals_files[0]
-                    st.caption(f"**Latest Referrals in S3:**")
+                    st.caption("**Latest Referrals in S3:**")
                     st.caption(f"📄 {latest_file}")
                     st.caption(f"🕐 {latest_date.strftime('%Y-%m-%d %H:%M:%S')}")
                 else:
@@ -251,7 +259,7 @@ def display_data_quality_dashboard() -> None:
             with col2:
                 if providers_files:
                     latest_file, latest_date = providers_files[0]
-                    st.caption(f"**Latest Providers in S3:**")
+                    st.caption("**Latest Providers in S3:**")
                     st.caption(f"📄 {latest_file}")
                     st.caption(f"🕐 {latest_date.strftime('%Y-%m-%d %H:%M:%S')}")
                 else:
