@@ -15,7 +15,7 @@ from src.utils.s3_client_optimized import (
 # The optimized client is now the default
 OPTIMIZED_S3_AVAILABLE = True
 
-st.set_page_config(page_title="Update Data", page_icon="🗂️", layout="centered")
+st.set_page_config(page_title="Update Data", page_icon="🗂️", layout="wide")
 
 st.markdown("### 🔄 Update Referral Data")
 

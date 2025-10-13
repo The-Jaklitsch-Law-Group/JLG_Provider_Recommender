@@ -6,7 +6,7 @@ from src.utils.io_utils import format_phone_number, get_word_bytes, sanitize_fil
 from src.utils.responsive import resp_columns, responsive_sidebar_toggle
 
 
-st.set_page_config(page_title="Results", page_icon=":bar_chart:", layout="centered")
+st.set_page_config(page_title="Results", page_icon=":bar_chart:", layout="wide")
 
 # Sidebar navigation
 if st.sidebar.button("← New Search", type="secondary", width="stretch"):

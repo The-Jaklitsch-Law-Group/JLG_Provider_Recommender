@@ -179,7 +179,6 @@ def auto_update_data_from_s3():
 # loads the selected page.
 _current_file = Path(__file__).name
 _nav_items = [
-    ("pages/0_🏠_home.py", "Home", "🏠"),
     ("pages/1_🔎_Search.py", "Search", "🔎"),
     ("pages/2_📄_Results.py", "Results", "📄"),
     ("pages/10_🛠️_How_It_Works.py", "How It Works", "🛠️"),

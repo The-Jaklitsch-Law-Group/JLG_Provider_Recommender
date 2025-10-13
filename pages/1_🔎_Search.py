@@ -70,19 +70,22 @@ US_STATES = [
     "DC",
 ]
 
-st.set_page_config(page_title="Search", page_icon=":mag:", layout="centered")
+st.set_page_config(page_title="JLG Provider Recommender", page_icon="🏥", layout="wide")
 
 # Show S3 auto-update status if available
 show_auto_update_status()
 
-st.title("🔎 Provider Search")
-st.caption("Find the best provider for your client — just enter an address and click Search!")
+# Hero section - welcoming landing page
+st.title("🏥 JLG Provider Recommender")
+st.markdown("Find the right healthcare provider for your client — quickly and confidently!")
 
 # Load data once - this is cached by @st.cache_data in load_application_data
 provider_df, detailed_referrals_df = load_application_data()
 
 # Cache the column check to avoid repeated lookups
 has_inbound = ("Inbound Referral Count" in provider_df.columns) if not provider_df.empty else False
+
+st.divider()
 
 # Address input section with improved layout
 st.subheader("📍 Client Address")

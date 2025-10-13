@@ -64,7 +64,7 @@ def display_data_quality_dashboard() -> None:
         return
 
     # Streamlit is available; render the interactive dashboard.
-    st.set_page_config(page_title="Data Quality Dashboard", page_icon="📊", layout="centered")
+    st.set_page_config(page_title="Data Quality Dashboard", page_icon="📊", layout="wide")
     # Allow forcing mobile layout for testing. Import inside function so non-Streamlit
     # imports (tests/CLI) remain lightweight.
     try:
