@@ -153,7 +153,7 @@ if available:
     display_df = (
         scored_df[available]
         .drop_duplicates(subset=["Full Name"], keep="first")
-        .sort_values(by="Score" if "Score" in available else available[0])
+        .sort_values(by="Score" if "Score" in available else available[0], ascending=False if "Score" in available else True)
         .reset_index(drop=True)
         .copy()  # Ensure we have a copy to modify
     )
