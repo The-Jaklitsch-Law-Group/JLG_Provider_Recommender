@@ -155,16 +155,16 @@ They are not checked into the repository and will be auto-generated on first run
 The recommendation score combines multiple normalized factors:
 
 ```
-Score = α × Distance_norm + β × (1 - Outbound_norm) + γ × Inbound_norm + δ × Preferred_norm
+Score = α × Distance_norm + β × Outbound_norm + γ × Inbound_norm + δ × Preferred_norm
 ```
 
 Where:
 - **α, β, γ, δ** = User-configured weights (automatically normalized to sum to 1.0)
-- **Distance_norm** = Min-max normalized distance (0-1, closer is better)
-- **Outbound_norm** = Inverted referral count (higher count = lower score = better)
+- **Distance_norm** = Inverted distance normalization (0-1, closer is higher/better)
+- **Outbound_norm** = Direct referral count normalization (higher count = higher score = better)
 - **Inbound_norm** = Min-max normalized inbound referrals (higher = better)
-- **Preferred_norm** = Binary preferred provider flag (reduces score for preferred providers)
-- **Lower scores indicate better matches**
+- **Preferred_norm** = Binary preferred provider flag (increases score for preferred providers)
+- **Higher scores indicate better matches**
 
 ### 4. Filtering & Ranking
 
@@ -172,7 +172,7 @@ Where:
 2. Apply minimum referral threshold (ensures experience)
 3. Filter by maximum radius (geographic boundary)
 4. Calculate normalized scores
-5. Sort by score (ascending) with deterministic tie-breaking
+5. Sort by score (descending) with deterministic tie-breaking
 6. Return top recommendation + full ranked list
 
 ### 5. Key Design Principles

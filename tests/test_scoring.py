@@ -2,7 +2,7 @@
 
 Tests verify that the scoring system correctly:
 - Produces valid scores and rankings
-- Favors providers with higher referral counts (lower scores are better)
+- Favors providers with higher referral counts (higher scores are better)
 - Handles edge cases like empty data and minimum referral thresholds
 """
 import pandas as pd
@@ -60,16 +60,16 @@ def test_recommend_provider_basic(sample_providers):
     assert scored["Score"].notnull().all(), "All scores should be non-null"
     assert (scored["Score"] >= 0).all(), "Scores should be non-negative"
 
-    # Verify sorting (lower score is better)
+    # Verify sorting (higher score is better)
     scores = scored["Score"].tolist()
-    assert scores == sorted(scores), "Results should be sorted by score (ascending)"
+    assert scores == sorted(scores, reverse=True), "Results should be sorted by score (descending)"
 
     # With high distance weight, closest provider should win
     assert best["Full Name"] == "Alpha", "Closest provider should be ranked first"
 
 
 def test_higher_referrals_favored():
-    """Test that providers with MORE outbound referrals get LOWER (better) scores."""
+    """Test that providers with MORE outbound referrals get HIGHER (better) scores."""
     df = pd.DataFrame(
         [
             {
@@ -96,11 +96,11 @@ def test_higher_referrals_favored():
 
     high_exp_score = scored.loc[scored["Full Name"] == "High Experience", "Score"].iloc[0]
     low_exp_score = scored.loc[scored["Full Name"] == "Low Experience", "Score"].iloc[0]
-    assert high_exp_score < low_exp_score, "Higher referral count should result in lower (better) score"
+    assert high_exp_score > low_exp_score, "Higher referral count should result in higher (better) score"
 
 
 def test_inbound_referrals_favored():
-    """Test that providers with MORE inbound referrals get LOWER (better) scores."""
+    """Test that providers with MORE inbound referrals get HIGHER (better) scores."""
     df = pd.DataFrame(
         [
             {
@@ -127,7 +127,7 @@ def test_inbound_referrals_favored():
 
     high_inbound_score = scored.loc[scored["Full Name"] == "High Inbound", "Score"].iloc[0]
     low_inbound_score = scored.loc[scored["Full Name"] == "Low Inbound", "Score"].iloc[0]
-    assert high_inbound_score < low_inbound_score, "Higher inbound count should result in lower (better) score"
+    assert high_inbound_score > low_inbound_score, "Higher inbound count should result in higher (better) score"
 
 
 def test_min_referrals_filter():

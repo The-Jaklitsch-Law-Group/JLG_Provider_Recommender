@@ -42,12 +42,12 @@ Tests the core recommendation scoring algorithm in `src/utils/scoring.py`.
 - ✅ Inbound referral count weighting (higher = better)
 - ✅ Minimum referral threshold filtering
 - ✅ Empty DataFrame handling
-- ✅ Score ordering (lower is better)
+- ✅ Score ordering (higher is better)
 
 **Key Tests:**
 - `test_recommend_provider_basic` - Validates core scoring with distance priority
-- `test_higher_referrals_favored` - Confirms high outbound referrals get lower (better) scores
-- `test_inbound_referrals_favored` - Confirms high inbound referrals get lower (better) scores
+- `test_higher_referrals_favored` - Confirms high outbound referrals get higher (better) scores
+- `test_inbound_referrals_favored` - Confirms high inbound referrals get higher (better) scores
 - `test_min_referrals_filter` - Tests filtering by minimum referral threshold
 - `test_empty_dataframe` - Edge case for empty input
 - `test_all_filtered_by_min_referrals` - Edge case when all providers filtered out
