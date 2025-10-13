@@ -26,7 +26,21 @@ if any(k not in st.session_state for k in required_keys):
     st.warning("No search parameters found. Redirecting to search.")
     st.switch_page("pages/1_🔎_Search.py")
 
-provider_df, detailed_referrals_df = load_application_data()
+try:
+    provider_df, detailed_referrals_df = load_application_data()
+except Exception as e:
+    st.error("❌ Failed to load provider data. Please return to the search page and try again.")
+    st.info(f"Technical details: {str(e)}")
+    if st.button("← Back to Search"):
+        st.switch_page("pages/1_🔎_Search.py")
+    st.stop()
+
+if provider_df.empty:
+    st.error("❌ No provider data available.")
+    st.info("💡 Please upload data using the 'Update Data' page or contact support.")
+    if st.button("← Back to Search"):
+        st.switch_page("pages/1_🔎_Search.py")
+    st.stop()
 
 if (
     st.session_state.get("use_time_filter")
@@ -34,7 +48,10 @@ if (
     and len(st.session_state["time_period"]) == 2
 ):
     start_date, end_date = st.session_state["time_period"]
-    provider_df = apply_time_filtering(provider_df, detailed_referrals_df, start_date, end_date)
+    try:
+        provider_df = apply_time_filtering(provider_df, detailed_referrals_df, start_date, end_date)
+    except Exception as e:
+        st.warning(f"⚠️ Failed to apply time filtering. Using all available data. Details: {str(e)}")
 
 valid, msg = validate_provider_data(provider_df)
 if not valid and msg:
@@ -45,20 +62,27 @@ best = st.session_state.get("last_best")
 scored_df = st.session_state.get("last_scored_df")
 
 if best is None or scored_df is None or (isinstance(scored_df, pd.DataFrame) and scored_df.empty):
-    best, scored_df = run_recommendation(
-        provider_df,
-        st.session_state["user_lat"],
-        st.session_state["user_lon"],
-        min_referrals=st.session_state["min_referrals"],
-        max_radius_miles=st.session_state["max_radius_miles"],
-        alpha=st.session_state["alpha"],
-        beta=st.session_state["beta"],
-        gamma=st.session_state.get("gamma", 0.0),
-        # Prefer normalized preferred weight when available (preferred_norm); fall back to preferred_weight
-        preferred_weight=st.session_state.get("preferred_norm", st.session_state.get("preferred_weight", 0.1)),
-    )
-    st.session_state["last_best"] = best
-    st.session_state["last_scored_df"] = scored_df
+    try:
+        best, scored_df = run_recommendation(
+            provider_df,
+            st.session_state["user_lat"],
+            st.session_state["user_lon"],
+            min_referrals=st.session_state["min_referrals"],
+            max_radius_miles=st.session_state["max_radius_miles"],
+            alpha=st.session_state["alpha"],
+            beta=st.session_state["beta"],
+            gamma=st.session_state.get("gamma", 0.0),
+            # Prefer normalized preferred weight when available (preferred_norm); fall back to preferred_weight
+            preferred_weight=st.session_state.get("preferred_norm", st.session_state.get("preferred_weight", 0.1)),
+        )
+        st.session_state["last_best"] = best
+        st.session_state["last_scored_df"] = scored_df
+    except Exception as e:
+        st.error("❌ Failed to calculate recommendations.")
+        st.info(f"Technical details: {str(e)}")
+        if st.button("← Back to Search"):
+            st.switch_page("pages/1_🔎_Search.py")
+        st.stop()
 
 st.title("🎯 Provider Recommendations")
 

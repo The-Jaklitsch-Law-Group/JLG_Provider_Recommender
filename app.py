@@ -32,7 +32,7 @@ try:
 
     # Real implementation provided by the utils package
     from src.utils.geocoding import geocode_address_with_cache  # type: ignore
-except Exception as exc:  # pragma: no cover - environment dependent
+except Exception:  # pragma: no cover - environment dependent
     GEOPY_AVAILABLE = False
 
     def geocode_address_with_cache(address: str) -> Optional[Tuple[float, float]]:  # type: ignore[override]
@@ -43,7 +43,10 @@ except Exception as exc:  # pragma: no cover - environment dependent
         fallback behavior.
         """
         # We use Streamlit to surface a friendly message in the UI.
-        st.warning("geopy package not available. Geocoding disabled (returns None). " "Install with: pip install geopy")
+        st.warning(
+            "geopy package not available. Geocoding disabled (returns None). "
+            "Install with: pip install geopy"
+        )
         return None
 
 

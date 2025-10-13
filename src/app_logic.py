@@ -1,6 +1,3 @@
-import datetime as dt
-from typing import Tuple, Optional
-
 import pandas as pd
 import streamlit as st
 
@@ -29,7 +26,22 @@ __all__ = [
 
 @st.cache_data(ttl=3600)
 def load_application_data():
-    """Load and enrich provider + referral data for the application."""
+    """Load and enrich provider and referral data for the application.
+
+    This function is the primary data loader for the app, performing:
+    1. Provider data loading and validation
+    2. Coordinate and address cleaning
+    3. Inbound referral count enrichment
+    4. Preferred provider list integration
+
+    Returns:
+        Tuple[pd.DataFrame, pd.DataFrame]: (provider_df, detailed_referrals_df)
+            - provider_df: Complete provider data with all enrichments
+            - detailed_referrals_df: Detailed outbound referral records
+
+    Raises:
+        Exception: If data loading fails completely (caught by calling code)
+    """
     provider_df = load_and_validate_provider_data()
 
     if provider_df.empty:
@@ -95,7 +107,9 @@ def load_application_data():
             # Merge outer so preferred-only providers are included
             provider_df = provider_df.merge(pref_names, on="Full Name", how="outer", indicator=True)
             # Mark preferred where the merge shows presence in preferred list (boolean)
-            provider_df["Preferred Provider"] = provider_df["_merge"].apply(lambda v: True if v in ("both", "right_only") else False)
+            provider_df["Preferred Provider"] = provider_df["_merge"].apply(
+                lambda v: True if v in ("both", "right_only") else False
+            )
             provider_df = provider_df.drop(columns=["_merge"])
         else:
             # No preferred list available or no Full Name column
@@ -112,7 +126,9 @@ def load_application_data():
 
     # Ensure inbound referral count exists
     if "Inbound Referral Count" in provider_df.columns:
-        provider_df["Inbound Referral Count"] = pd.to_numeric(provider_df["Inbound Referral Count"], errors="coerce").fillna(0)
+        provider_df["Inbound Referral Count"] = pd.to_numeric(
+            provider_df["Inbound Referral Count"], errors="coerce"
+        ).fillna(0)
     else:
         provider_df["Inbound Referral Count"] = 0
 
@@ -120,7 +136,20 @@ def load_application_data():
 
 
 def apply_time_filtering(provider_df, detailed_referrals_df, start_date, end_date):
-    """Apply time-based filtering for outbound and inbound referrals."""
+    """Apply time-based filtering for outbound and inbound referrals.
+
+    Recalculates referral counts based on a specific date range, replacing
+    the full-time counts with time-filtered values.
+
+    Args:
+        provider_df: Provider DataFrame with existing referral counts
+        detailed_referrals_df: Detailed outbound referral records
+        start_date: Start date for filtering (inclusive)
+        end_date: End date for filtering (inclusive)
+
+    Returns:
+        pd.DataFrame: Provider DataFrame with time-filtered referral counts
+    """
     working_df = provider_df.copy()
     if not detailed_referrals_df.empty:
         time_filtered_outbound = calculate_time_based_referral_counts(
@@ -146,7 +175,15 @@ def apply_time_filtering(provider_df, detailed_referrals_df, start_date, end_dat
 
 
 def filter_providers_by_radius(df: pd.DataFrame, max_radius_miles: float) -> pd.DataFrame:
-    """Filter providers by maximum radius (miles)."""
+    """Filter providers by maximum radius distance.
+
+    Args:
+        df: Provider DataFrame with "Distance (Miles)" column
+        max_radius_miles: Maximum distance threshold in miles
+
+    Returns:
+        pd.DataFrame: Filtered DataFrame with only providers within radius
+    """
     if df is None or df.empty or "Distance (Miles)" not in df.columns:
         return df
     return df[df["Distance (Miles)"] <= max_radius_miles].copy()
@@ -164,7 +201,31 @@ def run_recommendation(
     gamma: float,
     preferred_weight: float = 0.1,
 ):
-    """Run distance calculation, radius filter and composite recommendation."""
+    """Run the complete provider recommendation workflow.
+
+    This orchestrates the core recommendation algorithm:
+    1. Filter by minimum referral threshold
+    2. Calculate distances from client location
+    3. Filter by maximum radius
+    4. Score providers using weighted criteria
+    5. Return best match and ranked results
+
+    Args:
+        provider_df: Provider data with referral counts
+        user_lat: Client latitude
+        user_lon: Client longitude
+        min_referrals: Minimum referral count threshold
+        max_radius_miles: Maximum distance in miles
+        alpha: Normalized weight for distance (0-1)
+        beta: Normalized weight for outbound referrals (0-1)
+        gamma: Normalized weight for inbound referrals (0-1)
+        preferred_weight: Normalized weight for preferred status (0-1)
+
+    Returns:
+        Tuple[Optional[pd.Series], pd.DataFrame]:
+            - best: Top-ranked provider (or None if no matches)
+            - scored_df: All matching providers with scores (or empty DataFrame)
+    """
     working = provider_df[provider_df["Referral Count"] >= min_referrals].copy()
     if working.empty:
         return None, pd.DataFrame()

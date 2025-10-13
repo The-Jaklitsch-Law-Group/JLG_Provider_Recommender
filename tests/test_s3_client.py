@@ -59,26 +59,34 @@ class TestS3DataClient:
 
         assert client.is_configured() is False
 
-    @patch("boto3.client")
+    @patch("boto3.Session")
     @patch("src.utils.config.get_api_config")
     @patch("src.utils.config.is_api_enabled")
-    def test_list_files_in_folder(self, mock_is_enabled, mock_get_config, mock_boto3_client, mock_s3_config):
+    def test_list_files_in_folder(self, mock_is_enabled, mock_get_config, mock_boto3_session, mock_s3_config):
         """Test listing files in S3 folder."""
         from src.utils.s3_client_optimized import S3DataClient
 
         mock_is_enabled.return_value = True
         mock_get_config.return_value = mock_s3_config
 
-        # Mock S3 response
+        # Mock S3 client and session
         mock_client = MagicMock()
-        mock_boto3_client.return_value = mock_client
+        mock_session = MagicMock()
+        mock_session.client.return_value = mock_client
+        mock_boto3_session.return_value = mock_session
 
-        mock_client.list_objects_v2.return_value = {
-            "Contents": [
-                {"Key": "referrals/file1.csv", "LastModified": datetime(2024, 1, 1, 12, 0, 0)},
-                {"Key": "referrals/file2.csv", "LastModified": datetime(2024, 1, 2, 12, 0, 0)},
-            ]
-        }
+        # Mock paginator for list_objects_v2
+        mock_paginator = MagicMock()
+        mock_client.get_paginator.return_value = mock_paginator
+        mock_page_iterator = [
+            {
+                "Contents": [
+                    {"Key": "referrals/file1.csv", "LastModified": datetime(2024, 1, 1, 12, 0, 0)},
+                    {"Key": "referrals/file2.csv", "LastModified": datetime(2024, 1, 2, 12, 0, 0)},
+                ]
+            }
+        ]
+        mock_paginator.paginate.return_value = mock_page_iterator
 
         client = S3DataClient(folder_map={})
         files = client.list_files_in_folder("referrals")
@@ -88,19 +96,21 @@ class TestS3DataClient:
         assert files[0][0] == "file2.csv"
         assert files[1][0] == "file1.csv"
 
-    @patch("boto3.client")
+    @patch("boto3.Session")
     @patch("src.utils.config.get_api_config")
     @patch("src.utils.config.is_api_enabled")
-    def test_download_file(self, mock_is_enabled, mock_get_config, mock_boto3_client, mock_s3_config):
+    def test_download_file(self, mock_is_enabled, mock_get_config, mock_boto3_session, mock_s3_config):
         """Test downloading a file from S3."""
         from src.utils.s3_client_optimized import S3DataClient
 
         mock_is_enabled.return_value = True
         mock_get_config.return_value = mock_s3_config
 
-        # Mock S3 client
+        # Mock S3 client and session
         mock_client = MagicMock()
-        mock_boto3_client.return_value = mock_client
+        mock_session = MagicMock()
+        mock_session.client.return_value = mock_client
+        mock_boto3_session.return_value = mock_session
 
         # Mock file download
         test_data = b"test file content"
@@ -115,27 +125,34 @@ class TestS3DataClient:
 
         assert result == test_data
 
-    @patch("boto3.client")
+    @patch("boto3.Session")
     @patch("src.utils.config.get_api_config")
     @patch("src.utils.config.is_api_enabled")
-    def test_download_latest_file(self, mock_is_enabled, mock_get_config, mock_boto3_client, mock_s3_config):
+    def test_download_latest_file(self, mock_is_enabled, mock_get_config, mock_boto3_session, mock_s3_config):
         """Test downloading the latest file from S3."""
         from src.utils.s3_client_optimized import S3DataClient
 
         mock_is_enabled.return_value = True
         mock_get_config.return_value = mock_s3_config
 
-        # Mock S3 client
+        # Mock S3 client and session
         mock_client = MagicMock()
-        mock_boto3_client.return_value = mock_client
+        mock_session = MagicMock()
+        mock_session.client.return_value = mock_client
+        mock_boto3_session.return_value = mock_session
 
-        # Mock list response
-        mock_client.list_objects_v2.return_value = {
-            "Contents": [
-                {"Key": "referrals/old_file.csv", "LastModified": datetime(2024, 1, 1, 12, 0, 0)},
-                {"Key": "referrals/latest_file.csv", "LastModified": datetime(2024, 1, 2, 12, 0, 0)},
-            ]
-        }
+        # Mock paginator for list_objects_v2
+        mock_paginator = MagicMock()
+        mock_client.get_paginator.return_value = mock_paginator
+        mock_page_iterator = [
+            {
+                "Contents": [
+                    {"Key": "referrals/old_file.csv", "LastModified": datetime(2024, 1, 1, 12, 0, 0)},
+                    {"Key": "referrals/latest_file.csv", "LastModified": datetime(2024, 1, 2, 12, 0, 0)},
+                ]
+            }
+        ]
+        mock_paginator.paginate.return_value = mock_page_iterator
 
         # Mock file download
         test_data = b"latest file content"
