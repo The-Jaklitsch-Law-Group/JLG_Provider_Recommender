@@ -59,8 +59,7 @@ streamlit run app.py
 ```
 
 The app will open in your browser at `http://localhost:8501`. **If S3 is configured, the app will automatically update data from S3 on launch.** Navigate through the pages:
-- **🏠 Home** - Project overview and navigation
-- **🔎 Search** - Enter client address and configure search parameters
+- **🔎 Search** - Enter client address and configure search parameters (landing page)
 - **📄 Results** - View ranked provider recommendations
 - **📊 Data Dashboard** - Explore referral patterns and data quality
 - **🔄 Update Data** - Re-process raw Excel files into cleaned datasets
@@ -84,8 +83,7 @@ pytest tests/ --cov=src --cov-report=html
 JLG_Provider_Recommender/
 ├── app.py                          # Main Streamlit entry point
 ├── pages/                          # Multi-page Streamlit UI
-│   ├── 0_🏠_home.py               # Landing page
-│   ├── 1_🔎_Search.py             # Provider search interface
+│   ├── 1_🔎_Search.py             # Provider search interface (landing page)
 │   ├── 2_📄_Results.py            # Ranked recommendations display
 │   ├── 10_🛠️_How_It_Works.py    # Algorithm documentation
 │   ├── 20_📊_Data_Dashboard.py   # Data quality and analytics
