@@ -59,7 +59,7 @@ with col2:
 - Filters by radius and minimum referrals
 
 **🏆 6. Recommendation Delivery**
-- Rank providers by score (lower = better)
+- Rank providers by score (higher = better)
 - Display top recommendation with full contact details
 - Show complete ranked list with export options
 - Visualize results on interactive map
@@ -78,14 +78,14 @@ with col1:
 **📏 1. Distance (Geographic Proximity)**
 - Calculates straight-line distance using haversine formula
 - Accounts for Earth's curvature for accuracy
-- Normalized to 0-1 range (closer = lower score)
+- Normalized to 0-1 range (closer = higher score)
 - Results displayed in miles for practical interpretation
 
 **📊 2. Outbound Referrals (Workload Balance)**
 - Counts referrals FROM firm TO provider
-- Higher counts indicate busier providers
-- **Inverted normalization**: More referrals = LOWER score (preferred)
-- Helps distribute work evenly across provider network
+- Higher counts indicate more experienced providers
+- **Direct normalization**: More referrals = HIGHER score (preferred)
+- Helps identify experienced providers with proven track records
 """
     )
 
@@ -95,12 +95,12 @@ with col2:
 **🤝 3. Inbound Referrals (Relationship Strength)**
 - Counts referrals FROM provider TO firm
 - Higher counts indicate stronger partnerships
-- Higher referrals = LOWER score (preferred)
+- Higher referrals = HIGHER score (preferred)
 - Strengthens reciprocal referral relationships
 
 **⭐ 4. Preferred Provider Status**
 - Binary flag for firm's preferred providers
-- Preferred status reduces score (improves ranking)
+- Preferred status increases score (improves ranking)
 - Optional weighting via slider control
 - Helps prioritize strategic partnerships
 """
@@ -111,16 +111,16 @@ st.markdown(
 ### Combined Score Formula
 
 ```
-Final Score = α × Distance_norm + β × (1 - Outbound_norm) + γ × Inbound_norm + δ × Preferred_norm
+Final Score = α × Distance_norm + β × Outbound_norm + γ × Inbound_norm + δ × Preferred_norm
 ```
 
 **Where:**
 - **α, β, γ, δ** = Your configured weights (automatically normalized to sum to 1.0)
-- **Distance_norm** = Min-max normalized distance (0 = closest, 1 = farthest)
-- **Outbound_norm** = Inverted referral count (more referrals = lower value = better score)
-- **Inbound_norm** = Min-max normalized inbound referrals (more = better)
-- **Preferred_norm** = Binary preferred provider flag (subtracts from score)
-- **Lower final scores = better matches**
+- **Distance_norm** = Inverted distance (0 = farthest, 1 = closest)
+- **Outbound_norm** = Direct referral count (more referrals = higher value = better score)
+- **Inbound_norm** = Min-max normalized inbound referrals (more = higher score)
+- **Preferred_norm** = Binary preferred provider flag (adds to score)
+- **Higher final scores = better matches**
 
 The system automatically normalizes your slider values so you don't have to worry about making them sum to 100%!
 """
@@ -141,9 +141,9 @@ with col1:
 - **Low (0.1-0.2)**: Geography less important than relationships
 
 **📊 Outbound Referral Weight**
-- **High (0.6-0.8)**: Strongly prefer providers with fewer current cases
-- **Medium (0.3-0.5)**: Consider workload but don't dominate decision
-- **Low (0.1-0.2)**: Workload distribution less of a priority
+- **High (0.6-0.8)**: Strongly prefer providers with more experience
+- **Medium (0.3-0.5)**: Consider experience but don't dominate decision
+- **Low (0.1-0.2)**: Experience level less of a priority
 """
     )
 
@@ -188,9 +188,9 @@ with scenario_col1:
 
 **⚖️ Distribute Workload Fairly**
 - Distance: 0.2 (Low importance)
-- Outbound: 0.7 (High importance)
-- Inbound: 0.1 (Low importance)
-- *Best for: Busy periods, avoiding provider overload, network balance*
+- Outbound: 0.1 (Very low - don't prioritize experience here)
+- Inbound: 0.7 (High importance - focus on relationships)
+- *Best for: Busy periods, balancing referral relationships*
 
 **🤝 Strengthen Referral Partnerships**
 - Distance: 0.2 (Low importance)
@@ -277,21 +277,21 @@ with st.expander("🔧 Technical Details", expanded=False):
 
     st.markdown("**Full scoring equation when all data is available:**")
     st.latex(
-        r"\text{Score} = \alpha \times D_{norm} + \beta \times (1-O_{norm}) + \gamma \times I_{norm} + \delta \times P_{norm}"
+        r"\text{Score} = \alpha \times D_{norm} + \beta \times O_{norm} + \gamma \times I_{norm} + \delta \times P_{norm}"
     )
 
     st.markdown("**When only outbound referral data exists:**")
-    st.latex(r"\text{Score} = \alpha \times D_{norm} + \beta \times (1-O_{norm})")
+    st.latex(r"\text{Score} = \alpha \times D_{norm} + \beta \times O_{norm}")
 
     st.markdown(
         """
         **Variable Definitions:**
         - **α, β, γ, δ**: User-configured weights, automatically normalized so α + β + γ + δ = 1.0
-        - **D_norm**: Distance normalized to [0, 1] range via min-max scaling (closer = lower value)
-        - **O_norm**: Outbound referral count normalized to [0, 1] (inverted: fewer referrals = better)
-        - **I_norm**: Inbound referral count normalized to [0, 1] (more referrals = better)
+        - **D_norm**: Distance normalized to [0, 1] range via inverted min-max scaling (closer = higher value)
+        - **O_norm**: Outbound referral count normalized to [0, 1] (direct: more referrals = higher score)
+        - **I_norm**: Inbound referral count normalized to [0, 1] (more referrals = higher score)
         - **P_norm**: Preferred provider binary flag (1 for preferred, 0 otherwise)
-        - **Final Score**: Lower values indicate better matches (ascending sort)
+        - **Final Score**: Higher values indicate better matches (descending sort)
 
         ### Implementation Algorithms
 

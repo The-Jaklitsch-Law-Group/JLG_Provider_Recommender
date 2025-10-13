@@ -113,7 +113,7 @@ with st.container():
         # Key metrics
         if isinstance(best, pd.Series):
             if "Score" in best:
-                st.metric("Match Score", f"{best['Score']:.3f}", help="Lower scores indicate better matches")
+                st.metric("Match Score", f"{best['Score']:.3f}", help="Higher scores indicate better matches")
 
             if "Preferred Provider" in best:
                 is_preferred = best["Preferred Provider"]
@@ -194,7 +194,7 @@ with st.expander("📊 How Scoring Works"):
         """
     **Scoring Formula:**
 
-    Providers are scored using a weighted combination of factors. **Lower scores indicate better matches.**
+    Providers are scored using a weighted combination of factors. **Higher scores indicate better matches.**
     """
     )
 
@@ -210,6 +210,6 @@ with st.expander("📊 How Scoring Works"):
     **What this means:**
     - Each factor is normalized to a 0-1 scale
     - Weights are automatically adjusted to total 100%
-    - The provider with the lowest score is your best match
+    - The provider with the highest score is your best match
     """
     )

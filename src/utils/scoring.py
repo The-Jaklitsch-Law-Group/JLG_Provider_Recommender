@@ -41,14 +41,15 @@ def recommend_provider(
     referral_range = df["Referral Count"].max() - df["Referral Count"].min()
     dist_range = df["Distance (Miles)"].max() - df["Distance (Miles)"].min()
 
-    # Normalize outbound referrals: INVERTED so higher referral count = LOWER (better) score
-    # This removes the penalty for providers with many outbound referrals
-    df["norm_rank"] = (df["Referral Count"].max() - df["Referral Count"]) / referral_range if referral_range != 0 else 0
-    df["norm_dist"] = (df["Distance (Miles)"] - df["Distance (Miles)"].min()) / dist_range if dist_range != 0 else 0
+    # Normalize outbound referrals: higher referral count = HIGHER (better) score
+    # More referrals indicates more experience
+    df["norm_rank"] = (df["Referral Count"] - df["Referral Count"].min()) / referral_range if referral_range != 0 else 0
+    # Normalize distance: closer = HIGHER (better) score
+    df["norm_dist"] = (df["Distance (Miles)"].max() - df["Distance (Miles)"]) / dist_range if dist_range != 0 else 0
 
     df["Score"] = distance_weight * df["norm_dist"] + referral_weight * df["norm_rank"]
 
-    # Preferred provider handling: compute normalized pref flag and subtract contribution (reduce score)
+    # Preferred provider handling: compute normalized pref flag and add contribution (increase score)
     if preferred_weight > 0 and "Preferred Provider" in df.columns:
         # Map various representations to numeric (True/"Yes"/1 -> 1, else 0), fill missing with 0
         def _pref_to_int(v):
@@ -74,18 +75,18 @@ def recommend_provider(
             df["norm_pref"] = (df["_pref_flag"] - df["_pref_flag"].min()) / pref_range
         else:
             df["norm_pref"] = 0
-        # Preferred should give a small edge (reduce score) so subtract its contribution
-        df["Score"] = df["Score"] - preferred_weight * df["norm_pref"]
+        # Preferred should give a small edge (increase score) so add its contribution
+        df["Score"] = df["Score"] + preferred_weight * df["norm_pref"]
 
     if inbound_weight > 0 and "Inbound Referral Count" in df.columns:
         inbound_df = df[df["Inbound Referral Count"].notnull()].copy()
         if not inbound_df.empty:
             inbound_range = inbound_df["Inbound Referral Count"].max() - inbound_df["Inbound Referral Count"].min()
-            # Normalize inbound referrals: INVERTED so higher inbound count = LOWER (better) score
-            # This removes the penalty and rewards providers who refer cases back to us
+            # Normalize inbound referrals: higher inbound count = HIGHER (better) score
+            # This rewards providers who refer cases back to us
             if inbound_range != 0:
                 inbound_df["norm_inbound"] = (
-                    inbound_df["Inbound Referral Count"].max() - inbound_df["Inbound Referral Count"]
+                    inbound_df["Inbound Referral Count"] - inbound_df["Inbound Referral Count"].min()
                 ) / inbound_range
             else:
                 inbound_df["norm_inbound"] = 0
@@ -109,7 +110,11 @@ def recommend_provider(
 
     candidate_keys = sort_keys + ["Full Name"]
     sort_keys_final = [k for k in candidate_keys if k in df.columns]
-    ascending = [True] * len(sort_keys_final)
+    ascending = [False] * len(sort_keys_final)  # Higher scores are better, so descending sort
+    # Exception: Full Name should still be ascending for alphabetical tie-breaking
+    for i, key in enumerate(sort_keys_final):
+        if key == "Full Name":
+            ascending[i] = True
 
     df_sorted = df.sort_values(by=sort_keys_final, ascending=ascending).reset_index(drop=True)
     best = df_sorted.iloc[0]
