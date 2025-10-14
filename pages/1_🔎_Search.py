@@ -3,7 +3,7 @@ import datetime as dt
 import streamlit as st
 
 from app import show_auto_update_status
-from src.app_logic import load_application_data
+from src.app_logic import get_unique_specialties, load_application_data
 from src.utils.addressing import validate_address_input
 from src.utils.responsive import resp_columns, responsive_sidebar_toggle
 
@@ -86,7 +86,7 @@ except Exception as e:
     st.error("❌ Failed to load provider data. Please ensure data files are available or contact support.")
     st.info(f"**Error Type:** {type(e).__name__}")
     st.info(f"**Technical details:** {str(e)}")
-    
+
     # Show more helpful context
     with st.expander("🔍 Troubleshooting Information"):
         st.markdown("""
@@ -95,18 +95,18 @@ except Exception as e:
         - Network connection issues preventing S3 access
         - Data format issues in S3 files
         - Missing required Python packages (openpyxl, pandas, etc.)
-        
+
         **Next steps:**
         1. Check S3 configuration in `.streamlit/secrets.toml`
         2. Verify network connectivity
         3. Check Streamlit logs for detailed error messages
         4. Try refreshing the page or restarting the app
         """)
-        
+
         # Show the full exception for debugging
         import traceback
         st.code(traceback.format_exc(), language="python")
-    
+
     st.stop()
 
 # Validate data is available before proceeding
@@ -289,6 +289,24 @@ with st.expander("⚙️ Advanced Filters (Optional)"):
             "Enable", value=st.session_state.get("use_time_filter", True), help="Apply time period filter"
         )
 
+    # Specialty filter
+    st.caption("**Provider Specialties**")
+    available_specialties = get_unique_specialties(provider_df)
+
+    if available_specialties:
+        # Get previously selected specialties from session state, default to all
+        default_selected = st.session_state.get("selected_specialties", available_specialties)
+
+        selected_specialties = st.multiselect(
+            "Filter by Specialty",
+            options=available_specialties,
+            default=default_selected,
+            help="Select one or more provider specialties. Leave all selected to include all providers.",
+        )
+    else:
+        selected_specialties = []
+        st.info("ℹ️ No specialty information available in provider data.")
+
 st.divider()
 
 # Prominent search button
@@ -350,6 +368,7 @@ if search_clicked:
             "time_period": time_period,
             "use_time_filter": bool(use_time_filter),
             "max_radius_miles": int(max_radius_miles),
+            "selected_specialties": selected_specialties,
         }
     )
 
