@@ -69,16 +69,8 @@ def load_provider_data(filepath: str) -> pd.DataFrame:
     suffix = path.suffix.lower()
     if suffix == ".csv":
         df = pd.read_csv(path)
-    elif suffix == ".xlsx":
-        df = pd.read_excel(path)
-    elif suffix == ".csv":
-        df = pd.read_csv(path)
-    elif suffix == ".feather":
-        df = pd.read_feather(path)
-    elif suffix == ".parquet":
-        df = pd.read_parquet(path)
     else:
-        raise ValueError(f"Unsupported file type: {suffix}")
+        raise ValueError(f"Unsupported file type: {suffix}. Only CSV files are supported.")
 
     df.columns = [col.strip() for col in df.columns]
     df = df.drop(columns="Preference", errors="ignore")

@@ -202,8 +202,8 @@ class OptimizedS3DataClient:
                         # Skip the folder itself
                         if obj["Key"] == folder:
                             continue
-                        # Include Excel and CSV files
-                        if obj["Key"].lower().endswith((".xlsx", ".xls", ".csv")):
+                        # Include only CSV files
+                        if obj["Key"].lower().endswith(".csv"):
                             filename = obj["Key"].split("/")[-1]
                             files.append((filename, obj["LastModified"]))
 

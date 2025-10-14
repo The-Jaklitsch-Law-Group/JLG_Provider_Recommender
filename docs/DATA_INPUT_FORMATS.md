@@ -1,82 +1,84 @@
 # Data Input Format Support
 
-**⚠️ IMPORTANT: S3 is now the canonical data source. Local parquet files have been deprecated and removed from the repository.**
+**⚠️ IMPORTANT: S3 is now the canonical data source. Only CSV files are supported. All data is cached in-memory for 24 hours.**
 
 ## Overview
 
-The JLG Provider Recommender supports **both CSV and Excel file formats** for data input, with intelligent automatic detection and fallback mechanisms to ensure seamless processing from AWS S3 or manual uploads.
+The JLG Provider Recommender supports **CSV file format exclusively** for data input from AWS S3.
 
 ## Data Flow
 
 ```
-S3 Bucket (CSV/Excel) → Auto-Download → Clean & Process → Local Parquet Cache → App
+S3 Bucket (CSV) → Auto-Download → Transform → In-Memory Cache (24hr) → App
      OR
-Manual Upload (CSV/Excel) → Clean & Process → Local Parquet Cache → App
+Manual Upload (CSV) → Transform → In-Memory Cache (24hr) → App
 ```
 
-**Note:** Local parquet files in `data/processed/` are cache files auto-generated from S3, not source files.
+**Note:** CSV files in `data/processed/` are temporary cache files created from transformed S3 data, not source files.
 
 ## Supported Input Sources
 
-### 1. S3 Bucket (CSV files)
-- **Format**: CSV (Comma-Separated Values)
+### 1. S3 Bucket (CSV files only)
+- **Format**: CSV (Comma-Separated Values) 
 - **Use Case**: Automatic data pulls from AWS S3
 - **File Pattern**: `*.csv`
-- **Processing**: Automatic detection via filename extension
+- **Processing**: Automatic CSV parsing
+- **Cache**: Transformed data cached in-memory for 24 hours
 
-### 2. Local File Upload (Excel or CSV)
-- **Formats**:
-  - Excel: `.xlsx`, `.xls`
-  - CSV: `.csv`
+### 2. Local File Upload (CSV only)
+- **Format**: CSV (`.csv`)
 - **Use Case**: Manual file uploads via Streamlit UI
-- **Processing**: Format auto-detection based on file extension and content
+- **Processing**: Direct CSV parsing
+- **Cache**: Transformed data cached in-memory for 24 hours
 
-### 3. File Paths (Excel or CSV)
-- **Formats**: Both Excel and CSV
+### 3. File Paths (CSV only)
+- **Format**: CSV only
 - **Use Case**: Processing from local filesystem paths
-- **Processing**: Extension-based detection with fallback
+- **Processing**: CSV parsing with validation
 
 ## Processing Logic
 
-The data preparation pipeline (`src/data/preparation.py`) uses intelligent multi-layer format detection:
+The data preparation pipeline (`src/data/preparation.py`) uses CSV-only format:
 
 ### Buffer/Bytes Input (S3 or Uploads)
 ```python
 process_and_save_cleaned_referrals(
-    raw_bytes,          # bytes or BytesIO object
+    raw_bytes,          # bytes or BytesIO object (CSV data)
+    output_dir,         # Path to save processed CSV files
+    filename="data.csv" # Filename hint for logging
+)
+```
+
+**Format Detection:**
+1. Parse as CSV
+2. If parsing fails, raise error with detailed message
+
+### File Path Input
+```python
+process_and_save_cleaned_referrals(
+    Path("data.csv"),   # Path to CSV file
+    output_dir          # Path to save processed files
+)
+```
+
+**Format Detection:**
+1. Check file extension is `.csv`
+2. Parse as CSV
+3. If not `.csv`, raise ValueError
+
+### DataFrame Input
+```python
+process_and_save_cleaned_referrals(
+    df,                 # Pre-loaded DataFrame
     output_dir,         # Path to save processed files
-    filename="data.csv" # Filename hint for format detection
+    filename="source.csv"  # Optional filename for logging
 )
 ```
 
-**Detection Flow**:
-1. **Filename Check**: If filename ends with `.csv` → Try CSV first
-2. **Excel Attempt**: Try `pd.read_excel()` with sheet name
-3. **CSV Fallback**: If Excel fails → Try `pd.read_csv()`
-4. **Final Attempt**: Try Excel without sheet name (single-sheet files)
-
-### Path Input (Local Files)
-```python
-process_and_save_cleaned_referrals(
-    "data/raw/referrals.csv",  # or .xlsx
-    "data/processed"
-)
-```
-
-**Detection Flow**:
-1. **Extension Check**: `.csv` → Read as CSV directly
-2. **Other Extensions**: Try Excel with sheet name → CSV fallback → Excel without sheet
-
-### DataFrame Input (Pre-loaded Data)
-```python
-df = pd.read_csv("data.csv")
-process_and_save_cleaned_referrals(
-    df,                # Already loaded DataFrame
-    "data/processed"
-)
-```
-
-**Processing**: Immediate processing, no format detection needed
+**Direct Processing:**
+- No format detection needed
+- DataFrame is processed directly
+- Column names are normalized (whitespace stripped)
 
 ## Examples
 
@@ -96,15 +98,15 @@ summary = process_and_save_cleaned_referrals(
 )
 ```
 
-### Local Excel Upload
+### Local CSV Upload
 ```python
 # Streamlit file uploader
-uploaded_file = st.file_uploader("Upload Excel file", type=['xlsx', 'xls'])
+uploaded_file = st.file_uploader("Upload CSV file", type=['csv'])
 if uploaded_file:
     summary = process_and_save_cleaned_referrals(
         uploaded_file.getvalue(),  # bytes
         Path("data/processed"),
-        filename=uploaded_file.name  # "data.xlsx"
+        filename=uploaded_file.name  # "data.csv"
     )
 ```
 
@@ -116,9 +118,70 @@ summary = process_and_save_cleaned_referrals(
 )
 ```
 
+## Output Format
+
+All processing functions save transformed data as CSV files:
+
+- `inbound_referrals.csv`: Inbound referral data
+- `outbound_referrals.csv`: Outbound referral data  
+- `all_referrals.csv`: Combined inbound + outbound
+- `preferred_providers.csv`: Preferred provider contacts
+
+These CSV files are:
+- Cached in `data/processed/` directory
+- Loaded into Streamlit cache with 24-hour TTL
+- Automatically refreshed from S3 on app launch
+- Gitignored (not committed to repository)
+
+## Best Practices
+
+### For S3 Exports
+- ✅ Use CSV format (smaller file size, faster processing)
+- ✅ Include `.csv` extension in S3 object key
+- ✅ Ensure column names match expected structure
+
+### For Local Uploads
+- ✅ Use CSV format exclusively
+- ✅ Use consistent column naming
+- ✅ Include all required fields (Name, Address, Lat/Long)
+
+### For Batch Processing
+- ✅ Use CSV for all data generation
+- ✅ Include filename parameter when processing bytes
+- ✅ Check `summary.warnings` for data quality issues
+
+## Cache Behavior
+
+- **Cache Duration**: 24 hours (86400 seconds)
+- **Cache Revalidation**: On app reload or after 24 hours
+- **Cache Storage**: In-memory (Streamlit cache_data)
+- **Cache Files**: CSV files in `data/processed/` (temporary, gitignored)
+
+## Error Handling
+
+The processing pipeline includes comprehensive error handling:
+
+1. **Format Detection Failures**: CSV parsing errors raise ValueError with detailed message
+2. **Missing Columns**: Warnings logged, processing continues with available data
+3. **Invalid Data**: Rows with missing critical fields filtered out, reported in summary
+4. **Unsupported Formats**: Clear error messages when non-CSV files are provided
+
+### Error Example
+```python
+try:
+    summary = process_and_save_cleaned_referrals(
+        file_bytes,
+        Path("data/processed"),
+        filename="data.xlsx"  # Will raise ValueError
+    )
+except ValueError as e:
+    print(f"Error: {e}")
+    # Output: "Only CSV files are supported. Got: .xlsx"
+```
+
 ## Expected Data Structure
 
-Both CSV and Excel files should contain the same column structure:
+CSV files should contain the following column structure:
 
 ### Referrals Data
 - `Project ID`
@@ -144,31 +207,6 @@ The system automatically handles different date formats:
 3. **CSV Numeric Strings**: String representations of Excel serials (e.g., `"44927"`)
 
 All dates are normalized to `datetime64[ns]` format during processing.
-
-## Error Handling
-
-The processing pipeline includes comprehensive error handling:
-
-1. **Format Detection Failures**: Multiple fallback attempts before raising error
-2. **Missing Columns**: Warnings logged, processing continues with available data
-3. **Invalid Data**: Rows with missing critical fields filtered out, reported in summary
-
-## Best Practices
-
-### For S3 Exports
-- ✅ Use CSV format (smaller file size, faster processing)
-- ✅ Include `.csv` extension in S3 object key
-- ✅ Ensure column names match expected structure
-
-### For Local Uploads
-- ✅ Either CSV or Excel format works equally well
-- ✅ Use consistent column naming
-- ✅ Include all required fields (Name, Address, Lat/Long)
-
-### For Batch Processing
-- ✅ Prefer CSV for programmatic generation
-- ✅ Include filename parameter when processing bytes
-- ✅ Check `summary.warnings` for data quality issues
 
 ## Validation Results
 
