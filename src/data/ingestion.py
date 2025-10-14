@@ -498,6 +498,7 @@ class DataIngestionManager:
                 "Referred To's Work Address": "Work Address",
                 "Referred To's Details: Latitude": "Latitude",
                 "Referred To's Details: Longitude": "Longitude",
+                "Referred To's Details: Last Verified Date": "Last Verified Date",
             }
 
             for old_col, new_col in column_mapping.items():
@@ -525,6 +526,7 @@ class DataIngestionManager:
                 "Referred From's Work Address": "Work Address",
                 "Referred From's Details: Latitude": "Latitude",
                 "Referred From's Details: Longitude": "Longitude",
+                "Referred From's Details: Last Verified Date": "Last Verified Date",
             }
 
             for old_col, new_col in column_mapping.items():
@@ -556,6 +558,7 @@ class DataIngestionManager:
                 outbound_row["Work Address"] = row.get("Referred To's Work Address")
                 outbound_row["Latitude"] = row.get("Referred To's Details: Latitude")
                 outbound_row["Longitude"] = row.get("Referred To's Details: Longitude")
+                outbound_row["Last Verified Date"] = row.get("Referred To's Details: Last Verified Date")
                 outbound_row["referral_type"] = "outbound"
                 processed_rows.append(outbound_row)
 
@@ -567,6 +570,7 @@ class DataIngestionManager:
                 inbound_row["Work Address"] = row.get("Referred From's Work Address")
                 inbound_row["Latitude"] = row.get("Referred From's Details: Latitude")
                 inbound_row["Longitude"] = row.get("Referred From's Details: Longitude")
+                inbound_row["Last Verified Date"] = row.get("Referred From's Details: Last Verified Date")
                 inbound_row["referral_type"] = "inbound"
                 processed_rows.append(inbound_row)
 
@@ -600,6 +604,10 @@ class DataIngestionManager:
         for col in ["Work Address", "Work Phone", "Latitude", "Longitude", "Referral Source"]:
             if col in df.columns:
                 agg_dict[col] = "first"  # Take first non-null value
+
+        # Take most recent Last Verified Date for each provider
+        if "Last Verified Date" in df.columns:
+            agg_dict["Last Verified Date"] = "max"  # Most recent verification date
 
         try:
             provider_df = df.groupby("Full Name", as_index=False).agg(agg_dict)
@@ -642,6 +650,12 @@ class DataIngestionManager:
                 df[col] = pd.to_datetime(df[col], errors="coerce")
                 # Filter out unrealistic dates (before 1990)
                 df.loc[df[col] < pd.Timestamp("1990-01-01"), col] = pd.NaT
+
+        # Standardize Last Verified Date
+        if "Last Verified Date" in df.columns:
+            df["Last Verified Date"] = pd.to_datetime(df["Last Verified Date"], errors="coerce")
+            # Filter out unrealistic dates (before 1990)
+            df.loc[df["Last Verified Date"] < pd.Timestamp("1990-01-01"), "Last Verified Date"] = pd.NaT
 
         # Create unified Referral Date column
         if "Referral Date" not in df.columns:

@@ -229,8 +229,61 @@ def display_data_quality_dashboard() -> None:
                     }
                 )
 
+            # Check for Last Verified Date
+            if "Last Verified Date" in provider_df.columns:
+                valid_verified = provider_df[provider_df["Last Verified Date"].notna()]
+                verified_completeness = (len(valid_verified) / total_records * 100) if total_records > 0 else 0
+                quality_metrics.append(
+                    {
+                        "Metric": "Last Verified Date",
+                        "Complete Records": len(valid_verified),
+                        "Total Records": total_records,
+                        "Completeness": f"{verified_completeness:.1f}%",
+                    }
+                )
+
         if quality_metrics:
             st.dataframe(pd.DataFrame(quality_metrics), width="stretch", hide_index=True)
+
+        # Data Freshness Analysis
+        if "Last Verified Date" in provider_df.columns and not provider_df.empty:
+            st.markdown("### 📅 Data Freshness Analysis")
+
+            from src.utils.freshness import get_freshness_indicator, calculate_data_age_days
+
+            # Calculate freshness statistics
+            verified_df = provider_df[provider_df["Last Verified Date"].notna()].copy()
+
+            if not verified_df.empty:
+                verified_df["Age (Days)"] = verified_df["Last Verified Date"].apply(calculate_data_age_days)
+                verified_df["Indicator"], verified_df["Status"] = zip(
+                    *verified_df["Last Verified Date"].apply(get_freshness_indicator)
+                )
+
+                # Count by status
+                status_counts = verified_df["Status"].value_counts()
+
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    fresh_count = status_counts.get("Fresh", 0)
+                    st.metric("✅ Fresh", fresh_count, help="Verified within 90 days")
+                with col2:
+                    stale_count = status_counts.get("Stale", 0)
+                    st.metric("⚠️ Stale", stale_count, help="Verified 90-180 days ago")
+                with col3:
+                    very_stale_count = status_counts.get("Very Stale", 0)
+                    st.metric("❌ Very Stale", very_stale_count, help="Verified over 180 days ago")
+                with col4:
+                    unverified = len(provider_df) - len(verified_df)
+                    st.metric("❓ Unverified", unverified, help="No verification date available")
+
+                # Show recommendation if there are stale or very stale records
+                total_stale = stale_count + very_stale_count
+                if total_stale > 0:
+                    st.warning(
+                        f"⚠️ **{total_stale} provider(s) have stale verification data.** "
+                        "Consider updating provider information to ensure accuracy."
+                    )
 
         # Show S3 sync status if configured
         from src.utils.s3_client_optimized import S3DataClient

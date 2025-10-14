@@ -4,6 +4,7 @@ import streamlit as st
 from src.app_logic import apply_time_filtering, load_application_data, run_recommendation, validate_provider_data
 from src.utils.io_utils import format_phone_number, get_word_bytes, sanitize_filename
 from src.utils.responsive import resp_columns, responsive_sidebar_toggle
+from src.utils.freshness import format_last_verified_display
 
 
 st.set_page_config(page_title="Results", page_icon=":bar_chart:", layout="wide")
@@ -136,6 +137,10 @@ with st.container():
             if "Referral Count" in best:
                 info_items.append(("📊 Cases Handled", int(best["Referral Count"])))
 
+            if "Last Verified Date" in best and pd.notna(best["Last Verified Date"]):
+                formatted_date = format_last_verified_display(best["Last Verified Date"])
+                info_items.append(("📅 Last Verified", formatted_date))
+
             # Display in a clean format
             for label, value in info_items:
                 st.write(f"**{label}:** {value}")
@@ -179,6 +184,8 @@ cols.extend(["Distance (Miles)", "Referral Count"])
 cols.append("Preferred Provider")
 if "Inbound Referral Count" in scored_df.columns:
     cols.append("Inbound Referral Count")
+if "Last Verified Date" in scored_df.columns:
+    cols.append("Last Verified Date")
 if "Score" in scored_df.columns:
     cols.append("Score")
 available = [c for c in cols if c in scored_df.columns]
@@ -199,6 +206,12 @@ if available:
     for phone_field in phone_fields:
         if phone_field in display_df.columns:
             display_df[phone_field] = display_df[phone_field].apply(format_phone_number)
+
+    # Format Last Verified Date with freshness indicator
+    if "Last Verified Date" in display_df.columns:
+        display_df["Last Verified Date"] = display_df["Last Verified Date"].apply(
+            lambda x: format_last_verified_display(x, include_age=False)
+        )
 
     # Format boolean Preferred Provider column for better display
     if "Preferred Provider" in display_df.columns:
