@@ -422,11 +422,15 @@ class DataIngestionManager:
             lat_col: "Latitude",
             lon_col: "Longitude",
             "Contact's Details: Specialty": "Specialty",
+            "Contact's Details: Last Verified Date": "Last Verified Date",
         }
 
         for old_col, new_col in column_mapping.items():
             if old_col in df.columns:
                 df[new_col] = df[old_col]
+
+        # Standardize dates for preferred providers
+        df = self._standardize_dates(df)
 
         return df
 

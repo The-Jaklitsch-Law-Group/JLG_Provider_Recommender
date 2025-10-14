@@ -1157,11 +1157,16 @@ def process_preferred_providers(
         "Contact's Work Address": "Work Address",
         lat_col: "Latitude",
         lon_col: "Longitude",
+        "Contact's Details: Last Verified Date": "Last Verified Date",
     }
 
     for old_col, new_col in column_mapping.items():
         if old_col in df_cleaned.columns:
             df_cleaned[new_col] = df_cleaned[old_col]
+
+    # Normalize Last Verified Date
+    if "Last Verified Date" in df_cleaned.columns:
+        df_cleaned["Last Verified Date"] = _normalize_date_series(df_cleaned["Last Verified Date"])
 
     logger.info(
         "Processed preferred providers: %d records (dropped %d missing geo data)",
