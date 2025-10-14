@@ -3,7 +3,8 @@ from pathlib import Path
 
 import streamlit as st
 
-from src.data import process_and_save_cleaned_referrals, process_and_save_preferred_providers, refresh_data_cache
+from src.data import process_referral_data, process_preferred_providers, refresh_data_cache
+from src.data.ingestion import DataIngestionManager, DataSource
 from src.utils.s3_client_optimized import (
     S3DataClient,
     get_latest_s3_file,
@@ -21,9 +22,41 @@ st.markdown("### 🔄 Update Referral Data")
 
 st.markdown(
     """
-Use this page to upload new referral data and automatically refresh the optimized datasets that power the app.
+**High-Level Overview for Non-Technical Users**
+
+This page shows a summary of your current referral data and provides tools to update it from the S3 bucket.
+
+Data is downloaded from S3, processed, and cached for optimal performance.
+
 """
 )
+
+st.markdown("#### 📊 Current Data Overview")
+
+@st.cache_data
+def get_data_summary():
+    dim = DataIngestionManager()
+    try:
+        referrals_df = dim.load_data(DataSource.ALL_REFERRALS)
+        providers_df = dim.load_data(DataSource.PREFERRED_PROVIDERS)
+        return len(referrals_df), len(providers_df)
+    except Exception:
+        return None, None
+
+referrals_count, providers_count = get_data_summary()
+
+if referrals_count is not None and providers_count is not None:
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("📄 Total Referrals", f"{referrals_count:,}")
+    with col2:
+        st.metric("👥 Preferred Providers", f"{providers_count:,}")
+else:
+    st.info("Data not yet loaded or S3 not configured.")
+
+st.markdown("---")
+
+st.markdown("**Technical Details**")
 
 # Check S3 configuration
 s3_client = S3DataClient()
@@ -119,17 +152,15 @@ if s3_enabled:
             st.info("Folder overrides cleared — defaults/config will be used")
 else:
     st.warning(
-        "⚠️ AWS S3 is not configured. Only manual file upload is available. "
-        "Configure S3 credentials in secrets to enable automatic data pull."
+        "⚠️ AWS S3 is not configured. Configure S3 credentials in secrets to enable data updates from the bucket."
     )
 
-# S3 Data Management Section
+    # S3 Data Management Section
 if s3_enabled:
     st.markdown("#### 📥 S3 Data Management")
     performance_note = "⚡ Optimized performance mode" if OPTIMIZED_S3_AVAILABLE else "Standard mode"
     st.markdown(f"Download and process the latest files from your S3 bucket. *{performance_note}*")
-
-    # Get file information for both types using optimized client
+    st.markdown("Data is downloaded from S3, processed, and cached for fast access.")    # Get file information for both types using optimized client
     try:
         # Use optimized batch file listing for better performance
         files_data = get_s3_files_optimized(
@@ -183,63 +214,54 @@ if s3_enabled:
             else:
                 try:
                     with st.spinner("🔄 Refreshing data from S3..."):
-                        s3_client = S3DataClient(folder_map=effective_folder_map)
-
-                        # Process both files
-                        summary_ref = None
-                        summary_prov = None
-                        processed_files = []
-
-                        # Download and process referrals
-                        if referrals_files:
-                            referrals_result = s3_client.download_latest_file("referrals")
-                            if referrals_result:
-                                referrals_bytes, referrals_name = referrals_result
-                                summary_ref = process_and_save_cleaned_referrals(
-                                    referrals_bytes,
-                                    Path("data/processed"),
-                                    filename=referrals_name,
-                                )
-                                processed_files.append(f"referrals ({referrals_name})")
-
-                        # Download and process providers
-                        if providers_files:
-                            providers_result = s3_client.download_latest_file("preferred_providers")
-                            if providers_result:
-                                providers_bytes, providers_name = providers_result
-                                summary_prov = process_and_save_preferred_providers(
-                                    providers_bytes,
-                                    Path("data/processed"),
-                                    filename=providers_name,
-                                )
-                                processed_files.append(f"providers ({providers_name})")
-
-                        # Refresh cached datasets
+                        # Clear cache to force fresh downloads
                         refresh_data_cache()
+                        
+                        # Use DataIngestionManager to load fresh data
+                        dim = DataIngestionManager()
+                        processed_files = []
+                        
+                        referrals_df = None
+                        inbound_df = None
+                        outbound_df = None
+                        providers_df = None
+
+                        # Load referrals data
+                        if referrals_files:
+                            referrals_df = dim.load_data(DataSource.ALL_REFERRALS, show_status=False)
+                            inbound_df = dim.load_data(DataSource.INBOUND_REFERRALS, show_status=False)
+                            outbound_df = dim.load_data(DataSource.OUTBOUND_REFERRALS, show_status=False)
+                            processed_files.append("referrals")
+
+                        # Load providers data
+                        if providers_files:
+                            providers_df = dim.load_data(DataSource.PREFERRED_PROVIDERS, show_status=False)
+                            processed_files.append("providers")
 
                     # Show results
                     if processed_files:
                         st.success(f"✅ Successfully updated: {', '.join(processed_files)}")
 
                         # Compact metrics display
-                        if summary_ref and summary_prov:
+                        if referrals_df is not None and providers_df is not None and not referrals_df.empty and not providers_df.empty:
                             metrics_col1, metrics_col2 = st.columns(2)
                             with metrics_col1:
+                                inbound_count = len(inbound_df) if inbound_df is not None else 0
+                                outbound_count = len(outbound_df) if outbound_df is not None else 0
                                 st.metric(
                                     "📄 Referrals",
-                                    f"{summary_ref.all_count:,}",
-                                    delta=f"In: {summary_ref.inbound_count:,}, Out: {summary_ref.outbound_count:,}",
+                                    f"{len(referrals_df):,}",
+                                    delta=f"In: {inbound_count:,}, Out: {outbound_count:,}",
                                 )
                             with metrics_col2:
                                 st.metric(
                                     "👥 Providers",
-                                    f"{summary_prov.cleaned_count:,}",
-                                    delta=f"Total: {summary_prov.total_count:,}",
+                                    f"{len(providers_df):,}",
                                 )
-                        elif summary_ref:
-                            st.metric("📄 Referrals Processed", f"{summary_ref.all_count:,}")
-                        elif summary_prov:
-                            st.metric("👥 Providers Processed", f"{summary_prov.cleaned_count:,}")
+                        elif referrals_df is not None and not referrals_df.empty:
+                            st.metric("📄 Referrals Processed", f"{len(referrals_df):,}")
+                        elif providers_df is not None and not providers_df.empty:
+                            st.metric("👥 Providers Processed", f"{len(providers_df):,}")
                     else:
                         st.warning("⚠️ No files were successfully processed.")
 
@@ -256,8 +278,8 @@ if s3_enabled:
                         s3_client = S3DataClient(folder_map=effective_folder_map)
                         file_bytes = s3_client.download_file("referrals", referrals_files[0][0])
                         if file_bytes:
-                            summary = process_and_save_cleaned_referrals(
-                                file_bytes, Path("data/processed"), filename=referrals_files[0][0]
+                            inbound_df, outbound_df, combined_df, summary = process_referral_data(
+                                file_bytes, filename=referrals_files[0][0]
                             )
                             refresh_data_cache()
                             st.success(f"✅ Referrals: {summary.all_count:,} records")
@@ -275,8 +297,8 @@ if s3_enabled:
                         s3_client = S3DataClient(folder_map=effective_folder_map)
                         file_bytes = s3_client.download_file("preferred_providers", providers_files[0][0])
                         if file_bytes:
-                            summary = process_and_save_preferred_providers(
-                                file_bytes, Path("data/processed"), filename=providers_files[0][0]
+                            df_cleaned, summary = process_preferred_providers(
+                                file_bytes, filename=providers_files[0][0]
                             )
                             refresh_data_cache()
                             st.success(f"✅ Providers: {summary.cleaned_count:,} records")
@@ -306,142 +328,6 @@ if s3_enabled:
                         st.warning("⚠️ S3 connection works, but no files found in configured folders")
             except Exception as e:
                 st.error(f"❌ S3 connection test failed: {e}")
-
-st.markdown("---")
-
-st.markdown("#### 📤 Upload Raw Referral File (Excel)")
-st.markdown("Upload a file manually if S3 is not configured or if you want to process a specific file.")
-uploaded_file = st.file_uploader(
-    "Upload new referral data (Excel format)",
-    type=["xlsx", "xls"],
-    help="Upload an Excel export with referrals and provider info",
-)
-
-if uploaded_file is not None:
-    try:
-        with st.spinner("Processing uploaded file and generating optimized Parquet files…"):
-            # Process directly from memory without saving raw file to disk
-            file_bytes = uploaded_file.getbuffer()
-            summary = process_and_save_cleaned_referrals(
-                file_bytes, Path("data/processed"), filename=uploaded_file.name
-            )
-            refresh_data_cache()
-
-        st.success("✅ Upload complete and cleaned datasets refreshed.")
-        st.caption(f"Processed file: `{uploaded_file.name}` ({uploaded_file.size:,} bytes)")
-
-        metrics = st.columns(3)
-        metrics[0].metric(label="Inbound rows", value=f"{summary.inbound_count:,}")
-        metrics[1].metric(label="Outbound rows", value=f"{summary.outbound_count:,}")
-        metrics[2].metric(label="All referrals", value=f"{summary.all_count:,}")
-
-        if summary.skipped_configs:
-            st.warning("Skipped sections during processing: " + ", ".join(summary.skipped_configs))
-
-        if summary.warnings:
-            for message in summary.warnings:
-                st.info(message)
-
-        if summary.issue_records:
-            st.markdown("#### Records Requiring Attention")
-            for key, issue_df in summary.issue_records.items():
-                display_name = key.replace("_", " ").title()
-                total_rows = len(issue_df)
-                st.markdown(f"**{display_name}** — {total_rows} record(s) flagged")
-                if total_rows > 200:
-                    st.caption("Showing the first 200 rows")
-                    st.dataframe(issue_df.head(200))
-                else:
-                    st.dataframe(issue_df)
-    except Exception:
-        st.error("Failed to save the uploaded file.")
-        st.code(traceback.format_exc())
-
-st.markdown("---")
-
-st.markdown("#### 📤 Upload Preferred Providers File (Excel)")
-st.markdown(
-    """
-Upload the preferred providers list with contact information. Records missing latitude and/or longitude
-will be identified and excluded from the cleaned dataset.
-"""
-)
-
-preferred_providers_file = st.file_uploader(
-    "Upload preferred providers data (Excel format)",
-    type=["xlsx", "xls"],
-    help="Upload an Excel file with preferred provider contact information",
-    key="preferred_providers_uploader",
-)
-
-if preferred_providers_file is not None:
-    try:
-        with st.spinner("Processing preferred providers file…"):
-            # Process directly from memory without saving raw file to disk
-            file_bytes = preferred_providers_file.getbuffer()
-            summary = process_and_save_preferred_providers(
-                file_bytes, Path("data/processed"), filename=preferred_providers_file.name
-            )
-            refresh_data_cache()
-
-        st.success("✅ Preferred providers upload complete and dataset refreshed.")
-        st.caption(f"Processed file: `{preferred_providers_file.name}` ({preferred_providers_file.size:,} bytes)")
-
-        # Display metrics
-        metrics = st.columns(3)
-        metrics[0].metric(label="Total records", value=f"{summary.total_count:,}")
-        metrics[1].metric(label="Cleaned records", value=f"{summary.cleaned_count:,}")
-        metrics[2].metric(label="Missing geo data", value=f"{summary.missing_geo_count:,}")
-
-        # Show completion percentage
-        if summary.total_count > 0:
-            completion_rate = (summary.cleaned_count / summary.total_count) * 100
-            st.progress(completion_rate / 100)
-            st.caption(f"Data completeness: {completion_rate:.1f}%")
-
-        # Display warnings if any
-        if summary.warnings:
-            for warning in summary.warnings:
-                st.warning(warning)
-
-        # Show records missing geo data if any
-        if summary.missing_geo_count > 0 and summary.missing_records is not None:
-            st.markdown("#### Records Missing Geographic Data")
-            st.warning(
-                f"The following {summary.missing_geo_count} record(s) were excluded due to missing "
-                "latitude and/or longitude information:"
-            )
-
-            # Display the records (limit to reasonable number for display)
-            display_records = summary.missing_records
-            if len(display_records) > 50:
-                st.caption("Showing the first 50 records")
-                display_records = display_records.head(50)
-
-            st.dataframe(display_records, width="stretch")
-
-            # Optionally offer to download the missing records
-            if st.button("📥 Download Missing Records as Excel", key="download_missing_geo"):
-                try:
-                    # Create Excel file in memory
-                    from io import BytesIO
-
-                    excel_buffer = BytesIO()
-                    summary.missing_records.to_excel(excel_buffer, index=False, engine="openpyxl")
-                    excel_buffer.seek(0)
-
-                    st.download_button(
-                        label="📥 Download Missing Records",
-                        data=excel_buffer.getvalue(),
-                        file_name="Preferred_Providers_Missing_LatLong.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    )
-                except Exception as e:
-                    st.error(f"Failed to create Excel download: {e}")
-
-    except Exception:
-        st.error("Failed to process the preferred providers file.")
-        st.code(traceback.format_exc())
 
 st.markdown("---")
 

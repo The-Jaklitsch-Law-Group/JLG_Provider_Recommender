@@ -1,12 +1,53 @@
 """
 Streamlit app entrypoint — Landing page for the Provider Recommender.
 
-This module now serves as the lightweight home/landing page in a proper
-Streamlit multipage app. It provides clear navigation to the core pages:
-Search, Data Dashboard, and Update Data. Heavy logic (data loading,
-geocoding, scoring) lives in the dedicated pages and utils.
+This module serves as the lightweight home/landing page in a proper Streamlit
+multipage app. It provides clear navigation to the core pages: Search, Data
+Dashboard, and Update Data.
 
-Note: We still expose a few symbols for tests that import from `app.py`.
+**ETL Process Orchestration:**
+
+This module is responsible for triggering the complete ETL pipeline on app startup:
+
+1. **Extract**: Downloads latest data from S3 bucket (CSV or Excel format)
+   - Referrals data (inbound/outbound)
+   - Preferred providers contact list
+   - Handled by src.data.ingestion.DataIngestionManager._get_s3_data()
+
+2. **Transform**: Processes and cleans the raw data
+   - Normalizes column names and data types
+   - Applies deduplication logic (normalized name + address)
+   - Prepares geocoding data
+   - Handled by src.data.preparation.process_referral_data()
+
+3. **Load**: Stores processed DataFrames in Streamlit's cache
+   - Uses @st.cache_data decorator for performance
+   - Invalidates cache based on S3 file modification timestamps
+   - Cache TTL: 1 hour (configurable in DataIngestionManager)
+   - Handled by src.data.ingestion.DataIngestionManager._load_and_process_data_cached()
+
+**ETL Triggers:**
+
+- **On app startup**: Background thread runs auto_update_data_from_s3()
+  - Calls DataIngestionManager.preload_data()
+  - Warms cache for immediate app responsiveness
+  - Status written to data/processed/s3_auto_update_status.txt
+
+- **Daily refresh (4 AM)**: Main thread checks check_and_refresh_daily_cache()
+  - Clears cache and re-runs full ETL if after 4 AM and not refreshed today
+  - Ensures app always has fresh data each day
+
+**Data Flow:**
+
+S3 Bucket → auto_update_data_from_s3() → DataIngestionManager.preload_data() →
+_load_and_process_data() → _load_and_process_data_cached() (Extract from S3) →
+process_referral_data() (Transform) → @st.cache_data (Load) → App usage
+
+**Notes:**
+
+- Heavy logic (data loading, geocoding, scoring) lives in dedicated pages and utils
+- Tests expect certain symbols to be exported from this module (filter_providers_by_radius,
+  geocode_address_with_cache, etc.) for backward compatibility
 """
 
 from __future__ import annotations
@@ -87,92 +128,82 @@ def show_auto_update_status():
 
 def auto_update_data_from_s3():
     """
-    Automatically update data from S3 on app launch if configured.
+    Automatically trigger the ETL process on app launch.
 
-    This function runs once per session and updates the data files
-    from S3 if S3 is properly configured. It runs silently in the
-    background without blocking the UI.
+    This function orchestrates the complete ETL pipeline:
+    1. **Extract**: Downloads latest data from S3 (CSV or Excel format)
+    2. **Transform**: Processes and cleans data via src.data.preparation.process_referral_data
+    3. **Load**: Stores processed DataFrames in Streamlit's st.cache_data for app usage
+
+    The ETL process is handled by DataIngestionManager.preload_data() which:
+    - Downloads referrals and preferred providers from S3
+    - Applies data transformations (normalization, deduplication, geocoding prep)
+    - Caches results in st.cache_data with S3 metadata-based invalidation
+    - Warms the cache for immediate app responsiveness
+    
+    If S3 is not configured, falls back to local parquet cache files.
+
+    This function runs once per session in a background thread to avoid blocking
+    the initial page render. Daily refresh checks are handled separately in the
+    main thread via check_and_refresh_daily_cache().
+
+    Status is written to data/processed/s3_auto_update_status.txt for UI display.
     """
     # Background worker: avoid using Streamlit APIs here (no st.* calls).
     # Write a status file into data/processed/ that the main thread can read.
     status_file = Path("data/processed/s3_auto_update_status.txt")
     try:
-        from src.data import (
-            process_and_save_cleaned_referrals,
-            process_and_save_preferred_providers,
-            refresh_data_cache,
-        )
-        from src.utils.s3_client_optimized import S3DataClient
+        from src.data.ingestion import get_data_manager
 
-        s3_client = S3DataClient()
-        if not s3_client.is_configured():
-            logger.info("S3 not configured - skipping auto data update")
+        data_manager = get_data_manager()
+
+        # Check if S3 is configured
+        from src.utils.config import is_api_enabled
+        if not is_api_enabled("s3"):
+            logger.info("S3 not configured - using local cache files if available")
             try:
                 status_file.parent.mkdir(parents=True, exist_ok=True)
-                status_file.write_text("ℹ️ S3 not configured — auto-update skipped", encoding="utf-8")
+                status_file.write_text(
+                    "ℹ️ S3 not configured — using local cache files. "
+                    "Configure S3 in .streamlit/secrets.toml for production use.", 
+                    encoding="utf-8"
+                )
             except Exception:
                 pass
+            # Still try to preload data from local files
+            try:
+                data_manager.preload_data()
+            except Exception as e:
+                logger.warning(f"Failed to preload data from local files: {e}")
             return
 
-        issues = s3_client.validate_configuration()
-        if issues:
-            logger.info(f"S3 configuration issues detected - skipping auto data update: {issues}")
-            try:
-                status_file.parent.mkdir(parents=True, exist_ok=True)
-                status_file.write_text("⚠️ S3 configuration issues — auto-update skipped", encoding="utf-8")
-            except Exception:
-                pass
-            return
-
-        latest_files = s3_client.download_latest_files_batch(["referrals", "preferred_providers"])
-
-        updated_files = []
-
-        referrals_result = latest_files.get("referrals")
-        if referrals_result:
-            referrals_bytes, referrals_name = referrals_result
-            try:
-                process_and_save_cleaned_referrals(referrals_bytes, Path("data/processed"), filename=referrals_name)
-                updated_files.append(f"referrals ({referrals_name})")
-            except Exception as e:
-                logger.error(f"Failed to process referrals data: {e}")
-
-        providers_result = latest_files.get("preferred_providers")
-        if providers_result:
-            providers_bytes, providers_name = providers_result
-            try:
-                process_and_save_preferred_providers(providers_bytes, Path("data/processed"), filename=providers_name)
-                updated_files.append(f"providers ({providers_name})")
-            except Exception as e:
-                logger.error(f"Failed to process providers data: {e}")
-
-        if updated_files:
-            try:
-                refresh_data_cache()
-            except Exception:
-                logger.exception("Failed to refresh data cache after auto-update")
-            msg = f"✅ Data automatically updated from S3: {', '.join(updated_files)}"
+        # Trigger the ETL process (Extract → Transform → Load)
+        logger.info("Starting ETL process: Extract from S3 → Transform → Load to cache...")
+        try:
+            # This triggers the full ETL pipeline via DataIngestionManager
+            data_manager.preload_data()
+            msg = "✅ ETL complete: Data extracted from S3, transformed, and loaded to cache"
             logger.info(msg)
             try:
                 status_file.parent.mkdir(parents=True, exist_ok=True)
                 status_file.write_text(msg, encoding="utf-8")
             except Exception:
-                logger.exception("Failed to write s3 auto-update status file")
-        else:
-            logger.info("S3 auto-update: No files found to update")
+                logger.exception("Failed to write ETL status file")
+        except Exception as e:
+            logger.exception(f"ETL process failed: {e}")
             try:
                 status_file.parent.mkdir(parents=True, exist_ok=True)
-                status_file.write_text("ℹ️ S3 auto-update ran: no files to process", encoding="utf-8")
+                status_file.write_text(f"❌ ETL process failed: {e}", encoding="utf-8")
             except Exception:
                 pass
 
     except ImportError as e:
-        logger.info(f"S3 client not available - skipping auto data update: {e}")
+        logger.info(f"Data ingestion module not available - skipping ETL process: {e}")
     except Exception as e:
-        logger.exception(f"Unexpected error during S3 auto-update: {e}")
+        logger.exception(f"Unexpected error during ETL process: {e}")
         try:
             status_file.parent.mkdir(parents=True, exist_ok=True)
-            status_file.write_text(f"❌ S3 auto-update failed: {e}", encoding="utf-8")
+            status_file.write_text(f"❌ ETL process failed: {e}", encoding="utf-8")
         except Exception:
             pass
 
@@ -191,18 +222,45 @@ _nav_items = [
 
 
 def _build_and_run_app():
-    """Build navigation pages and kick off the auto-update thread, then run Streamlit navigation.
+    """Build navigation pages and trigger ETL processes on app startup.
 
-    This is intentionally encapsulated so importing `app` from a page module
-    does not execute the navigation or auto-update logic (which would cause
-    duplicate rendering)."""
+    This function orchestrates two ETL-related processes:
+    
+    1. **Daily cache refresh check**: Runs synchronously on every app load.
+       - If it's after 4 AM and cache hasn't been refreshed today, clears cache
+       - Then re-runs the full ETL pipeline to get fresh data from S3
+    
+    2. **Background ETL on app launch**: Runs asynchronously in a background thread.
+       - Triggers the complete ETL pipeline (Extract → Transform → Load)
+       - Warms the cache without blocking the initial page render
+       - Status is written to a file for UI display
+
+    The ETL pipeline is handled by src.data.ingestion.DataIngestionManager which:
+    - Extracts data from S3 (CSV or Excel format)
+    - Transforms data via src.data.preparation.process_referral_data
+    - Loads processed DataFrames into Streamlit's st.cache_data
+
+    Note: This is intentionally encapsulated so importing `app` from a page module
+    does not execute the navigation or ETL logic (which would cause duplicate rendering).
+    """
+
+    # Check for daily refresh on each app load (Streamlit reruns frequently)
+    # This may trigger a full ETL pipeline if it's time for daily refresh
+    try:
+        from src.data.ingestion import get_data_manager
+        data_manager = get_data_manager()
+        refreshed = data_manager.check_and_refresh_daily_cache()
+        if refreshed:
+            logger.info("Daily cache refresh triggered full ETL pipeline")
+    except Exception as e:
+        logger.warning(f"Could not check daily refresh on app load: {e}")
 
     # Only include pages whose path does not point to this module file.
     nav_pages = [st.Page(path, title=title, icon=icon) for path, title, icon in _nav_items if path != _current_file]
 
     import threading
 
-    # Run auto-update on app launch (before navigation setup) in a background thread
+    # Run ETL pipeline on app launch (before navigation setup) in a background thread
     # so it doesn't block Streamlit's startup or the initial page render.
     try:
         thread = threading.Thread(target=auto_update_data_from_s3, daemon=True)

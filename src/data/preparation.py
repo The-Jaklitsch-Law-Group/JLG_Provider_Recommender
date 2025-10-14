@@ -922,4 +922,79 @@ def process_and_save_preferred_providers(
     )
 
 
-__all__ = ["PreparationSummary", "PreferredProvidersSummary", "process_and_save_cleaned_referrals", "process_referral_data", "process_and_save_preferred_providers"]
+def process_preferred_providers(
+    raw_input: Union[Path, str, BytesIO, bytes, BinaryIO, pd.DataFrame, Any],
+    *,
+    filename: Optional[str] = None,
+) -> tuple[pd.DataFrame, PreferredProvidersSummary]:
+    """Process preferred providers data and return DataFrame without saving.
+    
+    Args:
+        raw_input: Same input types as process_and_save_preferred_providers
+        filename: Optional filename for logging
+        
+    Returns:
+        Tuple of (cleaned_dataframe, summary) containing processed data
+    """
+    # Use the helper function to load the data
+    df = _load_excel(raw_input, filename)
+
+    # Normalize column names (strip whitespace)
+    df.columns = df.columns.str.strip()
+
+    # Process the data following the notebook logic
+    total_count = len(df)
+    
+    # Remove duplicates
+    df = df.drop_duplicates(ignore_index=True)
+    
+    # Identify records missing latitude/longitude
+    lat_col = "Contact's Details: Latitude"
+    lon_col = "Contact's Details: Longitude"
+    
+    warnings = []
+    missing_records = None
+    
+    if {lat_col, lon_col}.issubset(df.columns):
+        missing_records = df[df[[lat_col, lon_col]].isna().any(axis=1)]
+        df_cleaned = df.dropna(subset=[lat_col, lon_col])
+    else:
+        warnings.append(f"Missing expected geo columns: {lat_col}, {lon_col}")
+        missing_records = pd.DataFrame()
+        df_cleaned = df.copy()
+
+    missing_geo_count = len(missing_records) if missing_records is not None else 0
+    cleaned_count = len(df_cleaned)
+    
+    # Rename columns to match expected schema
+    column_mapping = {
+        "Contact Full Name": "Full Name",
+        "Contact's Work Phone": "Work Phone",
+        "Contact's Work Address": "Work Address",
+        lat_col: "Latitude",
+        lon_col: "Longitude",
+    }
+
+    for old_col, new_col in column_mapping.items():
+        if old_col in df_cleaned.columns:
+            df_cleaned[new_col] = df_cleaned[old_col]
+
+    logger.info(
+        "Processed preferred providers: %d records (dropped %d missing geo data)",
+        cleaned_count,
+        missing_geo_count,
+    )
+    
+    summary = PreferredProvidersSummary(
+        total_count=total_count,
+        cleaned_count=cleaned_count,
+        missing_geo_count=missing_geo_count,
+        saved_file=None,  # No file saved
+        missing_records=missing_records,
+        warnings=warnings,
+    )
+    
+    return df_cleaned, summary
+
+
+__all__ = ["PreparationSummary", "PreferredProvidersSummary", "process_and_save_cleaned_referrals", "process_referral_data", "process_and_save_preferred_providers", "process_preferred_providers"]

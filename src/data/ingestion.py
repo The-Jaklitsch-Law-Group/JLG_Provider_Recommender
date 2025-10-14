@@ -2,30 +2,38 @@
 Optimized Data Ingestion Module for JLG Provider Recommender
 
 This module provides a streamlined, high-performance data ingestion system that:
-- Prioritizes cleaned Parquet files for optimal performance (10x faster than Excel)
+- Downloads data directly from S3 for optimal freshness (CSV and Excel formats supported)
 - Provides centralized data loading with consistent error handling
 - Implements smart caching strategies with Streamlit's cache system
-- Minimizes redundant processing through format prioritization
+- Minimizes redundant processing through S3 metadata-based cache invalidation
 - Offers unified data validation and quality checks
-- Supports the complete data workflow from raw Excel to processed Parquet files
+- Supports the complete data workflow from S3 download to processed DataFrames
+
+Supported Data Formats:
+    - CSV (.csv) - Primary format for S3 data exports
+    - Excel (.xlsx, .xls) - Legacy format with automatic fallback support
 
 Data Flow:
-    Raw Excel → Jupyter Notebook Processing → Cleaned Parquet → Application Usage
+    S3 Bucket (CSV/Excel) → Direct Download → Format Detection → 
+    Processing → Streamlit Cache → Application Usage
 
 Performance Strategy:
-    1. Try cleaned Parquet files first (fastest, ~10x faster than Excel)
-    2. Fallback to raw Excel files if needed
-    3. Cache all operations for 1 hour
+    1. Download latest data from S3 on first access (CSV or Excel)
+    2. Automatically detect and parse file format (CSV preferred, Excel fallback)
+    3. Cache processed DataFrames with S3 metadata for invalidation
     4. Use enum-based data source management for type safety
+    5. Process data on-demand without intermediate file storage
 
-Key Improvements in v2.0:
-    - Added ALL_REFERRALS data source for comprehensive analysis
-    - Fixed provider data aggregation to always create unique providers
+Key Improvements in v3.0:
+    - Direct S3 integration without local Parquet file dependencies
+    - CSV and Excel format support with intelligent detection
+    - S3 metadata-based cache invalidation for data freshness
+    - Simplified architecture with reduced file I/O
     - Enhanced error handling and logging throughout
     - Added data integrity validation methods
     - Improved documentation and type hints
-    - Better separation of raw vs. processed data handling
-    - More robust column mapping for different data sources
+    - Better separation of download vs. processing logic
+    - More robust S3 integration with fallback handling
 """
 
 import logging
@@ -35,6 +43,9 @@ from typing import Dict, Optional, Tuple, Union
 
 import pandas as pd
 import streamlit as st
+
+from src.data.preparation import process_referral_data
+from src.utils.s3_client_optimized import S3DataClient
 
 logger = logging.getLogger(__name__)
 
@@ -57,139 +68,317 @@ class DataSource(Enum):
 
 
 class DataFormat(Enum):
-    """Enumeration of supported data formats with performance characteristics."""
+    """Enumeration of supported data formats with performance characteristics.
+    
+    The ingestion system automatically detects and handles both CSV and Excel formats
+    from S3. CSV is the preferred format for S3 data exports.
+    """
 
-    PARQUET = ".parquet"  # Fastest: Columnar format, ~10x faster than Excel
-    EXCEL = ".xlsx"  # Slowest: Legacy format, but most common input
-    CSV = ".csv"  # Medium: Text format, good for debugging
+    CSV = ".csv"  # Primary format: Text-based, fast parsing, S3 standard export format
+    EXCEL = ".xlsx"  # Legacy format: Slower to parse, but supported with automatic fallback
+    PARQUET = ".parquet"  # Internal cache format only (not used for S3 ingestion)
 
 
 class DataIngestionManager:
     """
     Centralized data ingestion manager with optimized loading strategies.
 
-    This manager handles the complete data pipeline from raw Excel files to
-    optimized Parquet files, with intelligent format selection and caching.
+    This manager handles the complete data pipeline from S3 downloads to
+    processed DataFrames, with intelligent caching using Streamlit's cache system.
 
     Key Features:
-    - Automatic format prioritization (Parquet > Excel > CSV)
-    - Streamlit cache integration with 1-hour TTL
-    - Graceful fallbacks when preferred formats aren't available
-    - Source-specific post-processing only when needed
+    - Direct S3 download and processing without intermediate file storage
+    - Automatic CSV and Excel format detection and parsing
+    - Streamlit cache integration with S3 metadata-based invalidation
+    - Source-specific post-processing for provider aggregation
     - Built-in data validation and quality checks
+
+    Supported Formats:
+    - CSV files (.csv) - Primary format with fast parsing
+    - Excel files (.xlsx, .xls) - Legacy format with automatic fallback
 
     Usage:
         manager = DataIngestionManager()
         df = manager.load_data(DataSource.OUTBOUND_REFERRALS)
+        # Automatically handles CSV or Excel format from S3
     """
 
-    def __init__(self, data_dir: str = "data"):
+    def __init__(self):
         """
         Initialize the data ingestion manager.
-
-        Args:
-            data_dir: Base directory containing raw/ and processed/ subdirectories
         """
-        self.data_dir = Path(data_dir)
         self.cache_ttl = 3600  # 1 hour cache for optimal performance
+        self._s3_client = S3DataClient()
 
-        self._file_registry = self._build_file_registry()
-
-    def _build_file_registry(self) -> Dict[DataSource, Dict[str, Path]]:
+    def _get_s3_data(self, folder_type: str) -> Tuple[Optional[bytes], Optional[str], Optional[str]]:
         """
-        Build a registry of available data files with format priorities.
-
-        File Priority Order:
-        1. cleaned_*.parquet (fastest, preprocessed)
-        2. raw Excel files (slowest, but authoritative source)
-
-        Returns:
-            Registry mapping data sources to available file paths
-        """
-        processed_dir = self.data_dir / "processed"
-        raw_dir = self.data_dir / "raw"
-
-        registry = {
-            DataSource.INBOUND_REFERRALS: {
-                "cleaned": processed_dir / "cleaned_inbound_referrals.parquet",
-                # prefer CSV raw exports for S3/raw
-                "raw_combined": raw_dir / "Referrals_App_Full_Contacts.csv",
-            },
-            DataSource.OUTBOUND_REFERRALS: {
-                "cleaned": processed_dir / "cleaned_outbound_referrals.parquet",
-                "raw_combined": raw_dir / "Referrals_App_Full_Contacts.csv",
-            },
-            DataSource.ALL_REFERRALS: {
-                "cleaned": processed_dir / "cleaned_all_referrals.parquet",
-                "raw_combined": raw_dir / "Referrals_App_Full_Contacts.csv",
-            },
-            DataSource.PROVIDER_DATA: {
-                # Provider data is derived from outbound referrals
-                "cleaned": processed_dir / "cleaned_outbound_referrals.parquet",
-                "raw_combined": raw_dir / "Referrals_App_Full_Contacts.csv",
-            },
-            DataSource.PREFERRED_PROVIDERS: {
-                "cleaned": processed_dir / "cleaned_preferred_providers.parquet",
-                "raw": raw_dir / "Referral_App_Preferred_Providers.csv",
-            },
-        }
-        return registry
-
-    def _get_best_available_file(self, source: DataSource) -> Tuple[Optional[Path], str]:
-        """
-        Get the best available file for a data source with performance priority.
-
-        Strategy:
-        1. Try cleaned Parquet files first (10x faster, preprocessed)
-        2. Fallback to raw Excel files (slower, but authoritative)
+        Download the latest data from S3 for the given folder type.
+        
+        Supports both CSV and Excel formats. The S3 client automatically lists
+        files with extensions: .csv, .xlsx, .xls
 
         Args:
-            source: The data source to find files for
+            folder_type: Type of data to download ('referrals' or 'preferred_providers')
 
         Returns:
-            Tuple of (file_path, file_type) or (None, "none") if no files found
-        """
-        files = self._file_registry[source]
-
-        # Priority order: cleaned parquet > raw excel
-        for file_type, file_path in files.items():
-            if file_path.exists():
-                return file_path, file_type
-
-        return None, "none"
-
-    @st.cache_data(ttl=3600, show_spinner=False)
-    def _load_dataframe(_self, file_path: Path, file_type: str) -> pd.DataFrame:
-        """
-        Load DataFrame with optimized format handling and error recovery.
-
-        Args:
-            file_path: Path to the data file
-            file_type: Type identifier for logging purposes
-
-        Returns:
-            Loaded DataFrame or empty DataFrame if loading fails
+            Tuple of (data_bytes, filename, last_modified_iso) or (None, None, None) if download fails
+            The filename extension determines the parsing method (CSV preferred, Excel fallback)
         """
         try:
-            file_suffix = file_path.suffix.lower()
+            files = self._s3_client.list_files_batch([folder_type]).get(folder_type, [])
+            if not files:
+                logger.warning(f"No files found in S3 folder '{folder_type}'")
+                return None, None, None
 
-            if file_suffix == DataFormat.PARQUET.value:
-                df = pd.read_parquet(file_path)
-                logger.info(f"Loaded {len(df)} records from Parquet: {file_path.name}")
-            elif file_suffix in [".xlsx", ".xls"]:
-                df = pd.read_excel(file_path, engine="openpyxl")
-                logger.info(f"Loaded {len(df)} records from Excel: {file_path.name}")
-            elif file_suffix == DataFormat.CSV.value:
-                df = pd.read_csv(file_path)
-                logger.info(f"Loaded {len(df)} records from CSV: {file_path.name}")
+            latest_filename, last_modified = files[0]
+            logger.info(f"Found latest file '{latest_filename}' from S3 (modified: {last_modified})")
+
+            file_bytes = self._s3_client.download_file(folder_type, latest_filename)
+            if file_bytes:
+                # Return ISO format string for cache key
+                last_modified_iso = last_modified.isoformat() if last_modified else None
+                return file_bytes, latest_filename, last_modified_iso
+            return None, None, None
+        except Exception as e:
+            logger.error(f"Failed to download {folder_type} from S3: {str(e)}")
+            return None, None, None
+
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def _load_and_process_data_cached(_self, source: DataSource, last_modified: str, data_bytes: bytes, filename: str) -> pd.DataFrame:
+        """
+        Process downloaded data into a clean DataFrame with Streamlit caching.
+
+        This method is cached based on source, last_modified timestamp, and data content.
+        The cache automatically invalidates when:
+        - The S3 file is updated (detected via last_modified timestamp)
+        - The TTL expires (1 hour)
+        - Manual cache refresh is triggered
+
+        File Format Handling:
+        - CSV files: Parsed using pd.read_csv() for optimal performance
+        - Excel files: Parsed using pd.read_excel() with automatic fallback
+        - Format detection: Based on filename extension from S3
+
+        Args:
+            source: Data source to process
+            last_modified: Last modified timestamp for cache invalidation
+            data_bytes: Raw data bytes from S3 (CSV or Excel format)
+            filename: Filename for logging and format detection
+
+        Returns:
+            Processed DataFrame cached in Streamlit's st.cache_data
+        """
+        try:
+            # Process the data based on source type
+            if source == DataSource.PREFERRED_PROVIDERS:
+                # Process preferred providers
+                df = _self._process_preferred_providers_data(data_bytes, filename)
             else:
-                raise ValueError(f"Unsupported file format: {file_suffix}")
+                # Process referral data
+                df = _self._process_referral_data(source, data_bytes, filename)
 
+            logger.info(f"Processed {len(df)} records for {source.value}")
             return df
 
         except Exception as e:
-            logger.error(f"Failed to load {file_path}: {str(e)}")
+            logger.error(f"Failed to process {source.value}: {str(e)}")
             return pd.DataFrame()
+
+    def _load_and_process_data(self, source: DataSource) -> pd.DataFrame:
+        """
+        Download data from S3 and process it into a clean DataFrame.
+        
+        If S3 is not configured or fails, falls back to local parquet files as cache.
+
+        This method handles the complete pipeline from S3 download to processed DataFrame,
+        cached in Streamlit's cache system.
+
+        Args:
+            source: Data source to load and process
+
+        Returns:
+            Processed DataFrame or empty DataFrame if processing fails
+        """
+        try:
+            # Determine which S3 folder to use
+            if source == DataSource.PREFERRED_PROVIDERS:
+                folder_type = "preferred_providers"
+            else:
+                folder_type = "referrals"
+
+            # Download data from S3
+            data_bytes, filename, last_modified = self._get_s3_data(folder_type)
+            if not data_bytes:
+                logger.warning(f"No S3 data available for {source.value}, attempting local fallback")
+                # Try to load from local parquet files as fallback
+                return self._load_from_local_parquet(source)
+
+            # Use the cached processing method with last_modified as cache key
+            return self._load_and_process_data_cached(source, last_modified or "unknown", data_bytes, filename or "unknown")
+
+        except Exception as e:
+            logger.error(f"Failed to load and process {source.value}: {str(e)}")
+            # Try to load from local parquet files as fallback
+            logger.info(f"Attempting local parquet fallback for {source.value}")
+            return self._load_from_local_parquet(source)
+
+    def _load_from_local_parquet(self, source: DataSource) -> pd.DataFrame:
+        """
+        Load data from local parquet cache files when S3 is unavailable.
+        
+        This serves as a fallback mechanism for development and testing when S3 is not configured.
+        
+        Args:
+            source: Data source to load
+
+        Returns:
+            DataFrame from local parquet file, or empty DataFrame if not found
+        """
+        from pathlib import Path
+        
+        # Map data sources to parquet filenames
+        parquet_map = {
+            DataSource.INBOUND_REFERRALS: "cleaned_inbound_referrals.parquet",
+            DataSource.OUTBOUND_REFERRALS: "cleaned_outbound_referrals.parquet",
+            DataSource.ALL_REFERRALS: "cleaned_all_referrals.parquet",
+            DataSource.PREFERRED_PROVIDERS: "cleaned_preferred_providers.parquet",
+            DataSource.PROVIDER_DATA: "cleaned_outbound_referrals.parquet",  # Will be processed
+        }
+        
+        parquet_filename = parquet_map.get(source)
+        if not parquet_filename:
+            logger.error(f"No parquet mapping for source: {source.value}")
+            return pd.DataFrame()
+        
+        parquet_path = Path("data/processed") / parquet_filename
+        
+        if not parquet_path.exists():
+            logger.warning(f"Local parquet file not found: {parquet_path}")
+            return pd.DataFrame()
+        
+        try:
+            df = pd.read_parquet(parquet_path)
+            logger.info(f"Loaded {len(df)} rows from local parquet: {parquet_path}")
+            
+            # For provider data, apply aggregation processing
+            if source == DataSource.PROVIDER_DATA:
+                df = self._process_provider_data(df)
+            
+            return df
+        except Exception as e:
+            logger.error(f"Failed to read local parquet {parquet_path}: {e}")
+            return pd.DataFrame()
+
+    def _process_referral_data(self, source: DataSource, data_bytes: bytes, filename: str) -> pd.DataFrame:
+        """
+        Process referral data from S3 bytes (CSV or Excel format).
+        
+        The preparation module automatically detects file format based on filename
+        and applies appropriate parsing (pd.read_csv or pd.read_excel).
+
+        Args:
+            source: The specific referral data source
+            data_bytes: Raw data bytes from S3 (CSV or Excel format)
+            filename: Filename for logging and format detection
+
+        Returns:
+            Processed DataFrame with standardized schema
+        """
+        # Use the preparation function to process the data
+        # It handles both CSV and Excel formats automatically
+        inbound_df, outbound_df, combined_df, _ = process_referral_data(data_bytes, filename=filename)
+
+        # Return the appropriate DataFrame based on source
+        if source == DataSource.INBOUND_REFERRALS:
+            return inbound_df
+        elif source == DataSource.OUTBOUND_REFERRALS:
+            return outbound_df
+        elif source == DataSource.ALL_REFERRALS:
+            return combined_df
+        elif source == DataSource.PROVIDER_DATA:
+            # For provider data, aggregate from outbound referrals
+            return self._process_provider_data(outbound_df)
+        else:
+            return pd.DataFrame()
+
+    def _process_preferred_providers_data(self, data_bytes: bytes, filename: str) -> pd.DataFrame:
+        """
+        Process preferred providers data from S3 bytes (CSV or Excel format).
+        
+        Automatically detects format based on filename extension:
+        - .csv files: Parsed with pd.read_csv()
+        - .xlsx/.xls files: Parsed with pd.read_excel()
+        
+        Falls back to CSV parsing if Excel parsing fails.
+
+        Args:
+            data_bytes: Raw data bytes from S3 (CSV or Excel format)
+            filename: Filename for logging and format detection
+
+        Returns:
+            Processed DataFrame with standardized schema
+        """
+        from io import BytesIO
+        import pandas as pd
+
+        # Load the data with format detection
+        buffer = BytesIO(data_bytes)
+        
+        # Detect format from filename
+        is_csv = filename.lower().endswith('.csv') if filename else False
+        
+        if is_csv:
+            # CSV format (preferred)
+            try:
+                df = pd.read_csv(buffer)
+            except Exception:
+                # Fallback to Excel if CSV parsing fails
+                buffer.seek(0)
+                try:
+                    df = pd.read_excel(buffer, sheet_name="Referral_App_Preferred_Providers")
+                except ValueError:
+                    buffer.seek(0)
+                    df = pd.read_excel(buffer)
+        else:
+            # Excel format (with CSV fallback)
+            try:
+                df = pd.read_excel(buffer, sheet_name="Referral_App_Preferred_Providers")
+            except ValueError:
+                buffer.seek(0)
+                try:
+                    df = pd.read_excel(buffer)
+                except Exception:
+                    # Final fallback to CSV
+                    buffer.seek(0)
+                    df = pd.read_csv(buffer)
+
+        # Normalize column names
+        df.columns = df.columns.str.strip()
+
+        # Process following the notebook logic
+        df = df.drop_duplicates(ignore_index=True)
+
+        # Clean geo data
+        lat_col = "Contact's Details: Latitude"
+        lon_col = "Contact's Details: Longitude"
+
+        if {lat_col, lon_col}.issubset(df.columns):
+            df = df.dropna(subset=[lat_col, lon_col])
+
+        # Rename columns to match expected schema
+        column_mapping = {
+            "Contact Full Name": "Full Name",
+            "Contact's Work Phone": "Work Phone",
+            "Contact's Work Address": "Work Address",
+            lat_col: "Latitude",
+            lon_col: "Longitude",
+        }
+
+        for old_col, new_col in column_mapping.items():
+            if old_col in df.columns:
+                df[new_col] = df[old_col]
+
+        return df
 
     def _post_process_data(self, df: pd.DataFrame, source: DataSource, file_type: str) -> pd.DataFrame:
         """
@@ -418,7 +607,7 @@ class DataIngestionManager:
         """
         Get comprehensive status of all data sources.
 
-        Returns information about file availability, types, and optimization status
+        Returns information about S3 availability and data processing status
         for all configured data sources.
 
         Returns:
@@ -427,13 +616,17 @@ class DataIngestionManager:
         status = {}
 
         for source in DataSource:
-            file_path, file_type = self._get_best_available_file(source)
+            # Check if S3 data is available
+            folder_type = "preferred_providers" if source == DataSource.PREFERRED_PROVIDERS else "referrals"
+            data_bytes, filename, last_modified = self._get_s3_data(folder_type)
+            available = data_bytes is not None
+
             status[source.value] = {
-                "available": file_path is not None,
-                "file_type": file_type,
-                "path": str(file_path) if file_path else None,
-                "optimized": file_type == "cleaned",
-                "performance_tier": "fast" if file_type == "cleaned" else "slow",
+                "available": available,
+                "file_type": "s3" if available else "none",
+                "filename": filename if available else None,
+                "optimized": True,  # Always processed fresh from S3
+                "performance_tier": "fast",  # Direct processing from S3
             }
 
         return status
@@ -442,82 +635,69 @@ class DataIngestionManager:
         """
         Public method to load data for a given DataSource.
 
-        This is the compatibility entrypoint expected by the rest of the
-        application. It chooses the best available file, loads it (with
-        Streamlit caching) and applies any necessary post-processing.
+        This method downloads data directly from S3 (CSV or Excel format), processes it,
+        and caches the result in Streamlit's cache system using st.cache_data.
 
-        Data must be loaded from S3 and cached to local processed/ folder
-        by the S3 auto-update mechanism. If files don't exist, we provide
-        clear error messages.
+        File Format Support:
+        - Automatically detects CSV (.csv) or Excel (.xlsx, .xls) format
+        - CSV files are parsed with pd.read_csv() for optimal performance
+        - Excel files are parsed with pd.read_excel() with CSV fallback
+        - Format detection based on S3 filename extension
+
+        Caching Behavior:
+        - Cached with st.cache_data decorator (TTL: 1 hour)
+        - Cache key includes: source, last_modified timestamp, data_bytes hash, filename
+        - Automatic cache invalidation when S3 file is updated
+        - Manual refresh available via refresh_data_cache()
+
+        Data must be available in S3. If S3 is not configured or data is unavailable,
+        clear error messages are provided.
 
         Args:
             source: DataSource enum value identifying which dataset to load
             show_status: If True, logs or displays the data source selection
 
         Returns:
-            pd.DataFrame with the requested data (may be empty on failure)
+            pd.DataFrame with the requested data cached in st.cache_data (may be empty on failure)
         """
         # Check if S3 is configured
         from src.utils.config import is_api_enabled
 
         if not is_api_enabled("s3"):
             error_msg = (
-                "❌ S3 is not configured.\n\n"
-                "To use this app, you must configure S3 credentials in .streamlit/secrets.toml:\n"
-                "- s3.aws_access_key_id\n"
-                "- s3.aws_secret_access_key\n"
-                "- s3.bucket_name\n\n"
-                "S3 is the only supported data source.\n"
-                "See docs/S3_MIGRATION_GUIDE.md for setup instructions."
+                "⚠️ S3 is not configured — using local cache files as fallback.\n\n"
+                "**For production use**, configure S3 credentials in `.streamlit/secrets.toml`:\n"
+                "- `s3.aws_access_key_id`\n"
+                "- `s3.aws_secret_access_key`\n"
+                "- `s3.bucket_name`\n\n"
+                "**For development**, local parquet cache files will be used if available.\n"
+                "See `docs/S3_MIGRATION_GUIDE.md` for setup instructions."
             )
-            logger.error(error_msg)
-            if show_status:
-                st.error(error_msg)
-            return pd.DataFrame()
-
-        file_path, file_type = self._get_best_available_file(source)
-
-        if show_status:
-            logger.debug(f"Loading data for {source.value}: file={file_path}, type={file_type}")
-
-        if not file_path:
-            # Provide helpful error message
-            error_msg = (
-                f"❌ No data file found for {source.value}.\n\n"
-                f"Data files should be automatically downloaded from S3 on app launch.\n"
-                f"If this is your first time running the app, please:\n"
-                f"1. Ensure S3 is properly configured with credentials\n"
-                f"2. Navigate to the '🔄 Update Data' page\n"
-                f"3. Click 'Refresh Both Files' to download data from S3\n\n"
-                f"If S3 auto-update failed, check the S3 bucket contains the required files."
-            )
-            logger.warning(error_msg)
+            logger.warning("S3 not configured, attempting local fallback")
             if show_status:
                 st.warning(error_msg)
-            return pd.DataFrame()
+            
+            # Try to load from local parquet files
+            df = self._load_from_local_parquet(source)
+            if df.empty and show_status:
+                st.error(
+                    "❌ No data available. S3 is not configured and local cache files are not found.\n\n"
+                    "Please configure S3 or ensure data cache files exist in `data/processed/`."
+                )
+            return df
 
-        # Use the cached loader to read the dataframe
-        df = self._load_dataframe(file_path, file_type)
+        if show_status:
+            logger.debug(f"Loading data for {source.value} from S3")
 
-        # Apply post-processing to standardize columns and produce provider view
-        df = self._post_process_data(df, source, file_type)
+        # Use the cached processing method
+        df = self._load_and_process_data(source)
 
-        # If requesting provider data, ensure aggregation is applied
-        if source == DataSource.PROVIDER_DATA:
-            # If the cleaned provider file exists and is already aggregated, _process_provider_data will
-            # return it unchanged; otherwise, aggregate from the underlying referrals
+        # Apply any additional post-processing if needed
+        if source == DataSource.PROVIDER_DATA and not df.empty:
+            # Ensure provider aggregation is applied
             df = self._process_provider_data(df)
 
         return df
-
-    def refresh_file_registry(self):
-        """
-        Refresh the file registry to detect new files.
-
-        Call this after adding new data files or running the preprocessing notebook.
-        """
-        self._file_registry = self._build_file_registry()
-        logger.info("File registry refreshed - new files will be detected")
 
     def validate_data_integrity(self, source: DataSource) -> Dict[str, Union[bool, str, int, float, list]]:
         """
@@ -575,6 +755,99 @@ class DataIngestionManager:
             ),
         }
 
+    def preload_data(self) -> None:
+        """
+        Preload all critical data sources into Streamlit cache on app startup.
+
+        This method loads the most commonly used data sources (referrals and providers)
+        from S3 (CSV or Excel format) to ensure they're cached in st.cache_data and
+        ready for immediate use when the app starts.
+        
+        Cache Warming Benefits:
+        - Reduces first-page-load latency
+        - Downloads latest CSV/Excel files from S3
+        - Processes and transforms data once
+        - Stores in Streamlit cache for fast subsequent access
+        """
+        logger.info("Preloading data from S3 into Streamlit cache...")
+
+        # Load the most critical data sources that are used across the app
+        critical_sources = [
+            DataSource.ALL_REFERRALS,
+            DataSource.PREFERRED_PROVIDERS,
+            DataSource.PROVIDER_DATA,
+        ]
+
+        loaded_sources = []
+        for source in critical_sources:
+            try:
+                df = self.load_data(source, show_status=False)
+                if not df.empty:
+                    loaded_sources.append(source.value)
+                    logger.info(f"Preloaded {source.value}: {len(df)} records")
+                else:
+                    logger.warning(f"Failed to preload {source.value}: empty dataset")
+            except Exception as e:
+                logger.error(f"Failed to preload {source.value}: {e}")
+
+        if loaded_sources:
+            logger.info(f"Successfully preloaded data sources: {', '.join(loaded_sources)}")
+        else:
+            logger.warning("No data sources were successfully preloaded")
+
+    def check_and_refresh_daily_cache(self) -> bool:
+        """
+        Check if it's time for daily cache refresh (4 AM) and refresh if needed.
+
+        This method checks the current time and compares it to the last refresh time.
+        If it's after 4 AM and we haven't refreshed today, it clears the cache
+        to force fresh downloads from S3.
+
+        Returns:
+            True if cache was refreshed, False otherwise
+        """
+        from datetime import datetime, time
+
+        # Get current time
+        now = datetime.now()
+        current_time = now.time()
+        today = now.date()
+
+        # Check if it's after 4 AM
+        refresh_time = time(4, 0, 0)  # 4:00 AM
+        is_after_refresh_time = current_time >= refresh_time
+
+        # Get the last refresh date from session state or cache
+        last_refresh_key = "last_daily_refresh_date"
+        last_refresh_date = st.session_state.get(last_refresh_key)
+
+        # If no last refresh date or it's a different day and after 4 AM, refresh
+        should_refresh = (
+            last_refresh_date is None or
+            last_refresh_date != today
+        ) and is_after_refresh_time
+
+        if should_refresh:
+            logger.info(f"Performing daily cache refresh at {now.strftime('%Y-%m-%d %H:%M:%S')}")
+            try:
+                # Clear the cache to force fresh downloads
+                refresh_data_cache()
+
+                # Update the last refresh date
+                st.session_state[last_refresh_key] = today
+
+                # Preload data again after cache clear
+                self.preload_data()
+
+                logger.info("Daily cache refresh completed successfully")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to perform daily cache refresh: {e}")
+                return False
+        else:
+            logger.debug("Daily cache refresh not needed at this time")
+            return False
+
 
 # ============================================================================
 # Global Instance and Compatibility Functions
@@ -623,16 +896,19 @@ data_manager = _DataManagerProxy()
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_detailed_referrals(filepath: Optional[str] = None) -> pd.DataFrame:
     """
-    Load detailed referral data (outbound referrals).
+    Load detailed referral data (outbound referrals) from S3 into Streamlit cache.
+
+    Downloads the latest CSV or Excel file from S3, processes it, and caches
+    the result in st.cache_data for fast subsequent access.
 
     Maintained for backward compatibility. New code should use:
     data_manager.load_data(DataSource.OUTBOUND_REFERRALS)
 
     Args:
-        filepath: Ignored - automatic file selection is used
+        filepath: Ignored - automatic file selection from S3 is used
 
     Returns:
-        DataFrame with outbound referral data
+        DataFrame with outbound referral data cached in st.cache_data
     """
     return get_data_manager().load_data(DataSource.OUTBOUND_REFERRALS, show_status=False)
 
@@ -640,16 +916,19 @@ def load_detailed_referrals(filepath: Optional[str] = None) -> pd.DataFrame:
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_inbound_referrals(filepath: Optional[str] = None) -> pd.DataFrame:
     """
-    Load inbound referral data.
+    Load inbound referral data from S3 into Streamlit cache.
+
+    Downloads the latest CSV or Excel file from S3, processes it, and caches
+    the result in st.cache_data for fast subsequent access.
 
     Maintained for backward compatibility. New code should use:
     data_manager.load_data(DataSource.INBOUND_REFERRALS)
 
     Args:
-        filepath: Ignored - automatic file selection is used
+        filepath: Ignored - automatic file selection from S3 is used
 
     Returns:
-        DataFrame with inbound referral data
+        DataFrame with inbound referral data cached in st.cache_data
     """
     return get_data_manager().load_data(DataSource.INBOUND_REFERRALS, show_status=False)
 
@@ -657,16 +936,19 @@ def load_inbound_referrals(filepath: Optional[str] = None) -> pd.DataFrame:
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_provider_data(filepath: Optional[str] = None) -> pd.DataFrame:
     """
-    Load provider data with referral counts.
+    Load provider data with referral counts from S3 into Streamlit cache.
+
+    Downloads the latest CSV or Excel file from S3, aggregates provider data,
+    and caches the result in st.cache_data for fast subsequent access.
 
     Maintained for backward compatibility. New code should use:
     data_manager.load_data(DataSource.PROVIDER_DATA)
 
     Args:
-        filepath: Ignored - automatic file selection is used
+        filepath: Ignored - automatic file selection from S3 is used
 
     Returns:
-        DataFrame with unique providers and referral counts
+        DataFrame with unique providers and referral counts cached in st.cache_data
     """
     return get_data_manager().load_data(DataSource.PROVIDER_DATA, show_status=False)
 
@@ -674,15 +956,18 @@ def load_provider_data(filepath: Optional[str] = None) -> pd.DataFrame:
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_all_referrals(filepath: Optional[str] = None) -> pd.DataFrame:
     """
-    Load combined referral data (inbound + outbound).
+    Load combined referral data (inbound + outbound) from S3 into Streamlit cache.
+
+    Downloads the latest CSV or Excel file from S3, processes both inbound and
+    outbound referrals, and caches the combined result in st.cache_data.
 
     New function providing access to the combined dataset.
 
     Args:
-        filepath: Ignored - automatic file selection is used
+        filepath: Ignored - automatic file selection from S3 is used
 
     Returns:
-        DataFrame with all referral data combined
+        DataFrame with all referral data combined, cached in st.cache_data
     """
     return get_data_manager().load_data(DataSource.ALL_REFERRALS, show_status=False)
 
@@ -690,13 +975,16 @@ def load_all_referrals(filepath: Optional[str] = None) -> pd.DataFrame:
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_preferred_providers(filepath: Optional[str] = None) -> pd.DataFrame:
     """
-    Load preferred providers contact data.
+    Load preferred providers contact data from S3 into Streamlit cache.
+
+    Downloads the latest CSV or Excel file from S3, processes contact information,
+    and caches the result in st.cache_data for fast subsequent access.
 
     Args:
-        filepath: Ignored - automatic file selection is used
+        filepath: Ignored - automatic file selection from S3 is used
 
     Returns:
-        DataFrame with preferred provider contact information
+        DataFrame with preferred provider contact information cached in st.cache_data
     """
     return get_data_manager().load_data(DataSource.PREFERRED_PROVIDERS, show_status=False)
 
@@ -718,17 +1006,25 @@ def get_data_ingestion_status() -> Dict[str, Dict[str, Union[bool, str]]]:
 
 def refresh_data_cache():
     """
-    Clear data cache and refresh file registry.
+    Clear Streamlit data cache to force fresh downloads from S3.
+
+    This clears all st.cache_data cached DataFrames, forcing the next load_data()
+    call to download fresh CSV/Excel files from S3 and reprocess them.
 
     Call this after:
-    - Running the preprocessing notebook
-    - Adding new data files
+    - Uploading new CSV or Excel data to S3
     - Data structure changes
+    - When you want to ensure fresh data is loaded
+    - Manual cache refresh requested by user
+
+    Cache Clearing Strategy:
+    - Clears st.cache_data (DataFrames, processed data)
+    - Clears st.cache_resource (S3 client connections, sessions)
+    - Next data load will re-download from S3 and rebuild cache
     """
-    # Clear cached data (dataframes, listings, downloads) and cached resources
-    # (client instances, sessions). This ensures that after processing new
-    # files or performing an auto-update the app will reload fresh copies of
-    # datasets and recreate any resource objects like S3 clients.
+    # Clear cached data (dataframes, downloads) and cached resources
+    # (client instances, sessions). This ensures that the app will reload
+    # fresh copies of datasets from S3 and recreate any resource objects.
     try:
         st.cache_data.clear()
     except Exception:
@@ -738,8 +1034,7 @@ def refresh_data_cache():
         st.cache_resource.clear()
     except Exception:
         pass
-    get_data_manager().refresh_file_registry()
-    logger.info("Data cache cleared and file registry refreshed")
+    logger.info("Data cache cleared - next loads will fetch fresh CSV/Excel data from S3")
 
 
 def validate_all_data_sources() -> Dict[str, Dict[str, Union[bool, str, int, float, list]]]:

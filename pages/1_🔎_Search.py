@@ -84,7 +84,29 @@ try:
     provider_df, detailed_referrals_df = load_application_data()
 except Exception as e:
     st.error("❌ Failed to load provider data. Please ensure data files are available or contact support.")
-    st.info(f"Technical details: {str(e)}")
+    st.info(f"**Error Type:** {type(e).__name__}")
+    st.info(f"**Technical details:** {str(e)}")
+    
+    # Show more helpful context
+    with st.expander("🔍 Troubleshooting Information"):
+        st.markdown("""
+        **Common causes:**
+        - S3 credentials not configured in `.streamlit/secrets.toml`
+        - Network connection issues preventing S3 access
+        - Data format issues in S3 files
+        - Missing required Python packages (openpyxl, pandas, etc.)
+        
+        **Next steps:**
+        1. Check S3 configuration in `.streamlit/secrets.toml`
+        2. Verify network connectivity
+        3. Check Streamlit logs for detailed error messages
+        4. Try refreshing the page or restarting the app
+        """)
+        
+        # Show the full exception for debugging
+        import traceback
+        st.code(traceback.format_exc(), language="python")
+    
     st.stop()
 
 # Validate data is available before proceeding

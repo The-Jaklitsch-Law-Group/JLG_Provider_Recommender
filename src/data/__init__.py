@@ -9,7 +9,7 @@ from .ingestion import (
     load_preferred_providers,
     refresh_data_cache,
 )
-from .preparation import PreparationSummary, PreferredProvidersSummary, process_and_save_cleaned_referrals, process_referral_data, process_and_save_preferred_providers
+from .preparation import PreparationSummary, PreferredProvidersSummary, process_and_save_cleaned_referrals, process_referral_data, process_and_save_preferred_providers, process_preferred_providers
 
 __all__ = [
     "get_data_ingestion_status",
@@ -23,4 +23,5 @@ __all__ = [
     "process_and_save_cleaned_referrals",
     "process_referral_data",
     "process_and_save_preferred_providers",
+    "process_preferred_providers",
 ]

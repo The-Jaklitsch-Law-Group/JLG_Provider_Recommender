@@ -42,15 +42,22 @@ def load_application_data():
     Raises:
         Exception: If data loading fails completely (caught by calling code)
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     provider_df = load_and_validate_provider_data()
 
     if provider_df.empty:
+        logger.warning("load_and_validate_provider_data() returned empty DataFrame, trying fallback loader")
         try:
             from src.data.ingestion import load_provider_data as _fallback_loader
 
             provider_df = _fallback_loader()
-        except Exception:
-            pass
+            logger.info(f"Fallback loader returned {len(provider_df)} providers")
+        except Exception as e:
+            logger.error(f"Fallback loader failed: {type(e).__name__}: {e}")
+            # Don't silently swallow the exception - let calling code handle it
+            raise
 
     if not provider_df.empty:
         provider_df = validate_and_clean_coordinates(provider_df)

@@ -279,32 +279,37 @@ def load_and_validate_provider_data(
 
     Returns:
         Validated provider dataframe
+
+    Raises:
+        Exception: If data loading or validation fails
     """
-    try:
-        from ..data.ingestion import DataIngestionManager, DataSource
+    from ..data.ingestion import DataIngestionManager, DataSource
 
-        manager = DataIngestionManager()
-        df = manager.load_data(DataSource.PROVIDER_DATA)
+    manager = DataIngestionManager()
+    df = manager.load_data(DataSource.PROVIDER_DATA, show_status=False)
 
-        if start_date or end_date:
-            logger.debug("Time filtering requested but should be performed during data preparation")
-
-        is_valid, issues = validate_provider_data(df)
-
-        # Normalize coordinates
-        if "Latitude" in df.columns:
-            df["Latitude"] = df["Latitude"].apply(lambda x: safe_numeric_conversion(x, 0.0))
-        if "Longitude" in df.columns:
-            df["Longitude"] = df["Longitude"].apply(lambda x: safe_numeric_conversion(x, 0.0))
-
-        if "Latitude" in df.columns and "Longitude" in df.columns:
-            df = df[(df["Latitude"] != 0) & (df["Longitude"] != 0)]
-
+    if df.empty:
+        logger.warning("DataIngestionManager returned empty DataFrame for PROVIDER_DATA")
         return df
-    except Exception as exc:  # pragma: no cover - surface errors to Streamlit at runtime
-        logger.exception("Error loading provider data: %s", exc)
-        st.error(f"Error loading provider data: {exc}")
-        return pd.DataFrame()
+
+    if start_date or end_date:
+        logger.debug("Time filtering requested but should be performed during data preparation")
+
+    is_valid, issues = validate_provider_data(df)
+    if not is_valid:
+        logger.warning(f"Provider data validation issues: {issues}")
+
+    # Normalize coordinates
+    if "Latitude" in df.columns:
+        df["Latitude"] = df["Latitude"].apply(lambda x: safe_numeric_conversion(x, 0.0))
+    if "Longitude" in df.columns:
+        df["Longitude"] = df["Longitude"].apply(lambda x: safe_numeric_conversion(x, 0.0))
+
+    if "Latitude" in df.columns and "Longitude" in df.columns:
+        df = df[(df["Latitude"] != 0) & (df["Longitude"] != 0)]
+
+    logger.info(f"Loaded and validated {len(df)} providers with valid coordinates")
+    return df
 
 
 def handle_streamlit_error(error: Exception, context: str = "operation") -> None:
