@@ -320,12 +320,29 @@ class DataIngestionManager:
         """
         from io import BytesIO
         import pandas as pd
+        from src.data.preparation import _looks_like_excel_bytes
 
         # Load the data with format detection
         buffer = BytesIO(data_bytes)
         
-        # Detect format from filename
+        # Detect format from filename and bytes
         is_csv = filename.lower().endswith('.csv') if filename else False
+        
+        # Determine Excel engine if needed
+        engine = None
+        if filename and not is_csv:
+            fname_lower = filename.lower()
+            if fname_lower.endswith('.xlsx'):
+                engine = 'openpyxl'
+            elif fname_lower.endswith('.xls'):
+                engine = 'xlrd'
+        
+        # If no engine determined from filename, try to detect from bytes
+        if not engine and not is_csv:
+            if _looks_like_excel_bytes(buffer):
+                # Default to openpyxl for modern Excel files
+                engine = 'openpyxl'
+            buffer.seek(0)
         
         if is_csv:
             # CSV format (preferred)
@@ -335,18 +352,46 @@ class DataIngestionManager:
                 # Fallback to Excel if CSV parsing fails
                 buffer.seek(0)
                 try:
-                    df = pd.read_excel(buffer, sheet_name="Referral_App_Preferred_Providers")
+                    if engine:
+                        df = pd.read_excel(buffer, sheet_name="Referral_App_Preferred_Providers", engine=engine)
+                    else:
+                        try:
+                            df = pd.read_excel(buffer, sheet_name="Referral_App_Preferred_Providers", engine='openpyxl')
+                        except Exception:
+                            buffer.seek(0)
+                            df = pd.read_excel(buffer, sheet_name="Referral_App_Preferred_Providers", engine='xlrd')
                 except ValueError:
                     buffer.seek(0)
-                    df = pd.read_excel(buffer)
+                    if engine:
+                        df = pd.read_excel(buffer, engine=engine)
+                    else:
+                        try:
+                            df = pd.read_excel(buffer, engine='openpyxl')
+                        except Exception:
+                            buffer.seek(0)
+                            df = pd.read_excel(buffer, engine='xlrd')
         else:
             # Excel format (with CSV fallback)
             try:
-                df = pd.read_excel(buffer, sheet_name="Referral_App_Preferred_Providers")
+                if engine:
+                    df = pd.read_excel(buffer, sheet_name="Referral_App_Preferred_Providers", engine=engine)
+                else:
+                    try:
+                        df = pd.read_excel(buffer, sheet_name="Referral_App_Preferred_Providers", engine='openpyxl')
+                    except Exception:
+                        buffer.seek(0)
+                        df = pd.read_excel(buffer, sheet_name="Referral_App_Preferred_Providers", engine='xlrd')
             except ValueError:
                 buffer.seek(0)
                 try:
-                    df = pd.read_excel(buffer)
+                    if engine:
+                        df = pd.read_excel(buffer, engine=engine)
+                    else:
+                        try:
+                            df = pd.read_excel(buffer, engine='openpyxl')
+                        except Exception:
+                            buffer.seek(0)
+                            df = pd.read_excel(buffer, engine='xlrd')
                 except Exception:
                     # Final fallback to CSV
                     buffer.seek(0)

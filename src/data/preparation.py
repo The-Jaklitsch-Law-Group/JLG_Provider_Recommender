@@ -416,6 +416,9 @@ def process_and_save_cleaned_referrals(
     processed_path = Path(processed_dir)
     processed_path.mkdir(parents=True, exist_ok=True)
 
+    # Initialize df_all to satisfy type checker
+    df_all: pd.DataFrame
+    
     # Handle different input types
     if isinstance(raw_input, pd.DataFrame):
         logger.info("Processing DataFrame with %d rows (source: %s)", len(raw_input), filename or "unknown")
@@ -444,10 +447,28 @@ def process_and_save_cleaned_referrals(
                 excel_buffer = BytesIO(bytes(raw_input))  # type: ignore
             except Exception as e:
                 raise TypeError(f"Cannot convert {type(raw_input)} to BytesIO for Excel processing: {e}")
-        # If filename suggests CSV prefer CSV parsing (S3 often provides CSV exports)
+        # Determine engine based on filename extension for Excel files
         excel_buffer.seek(0)
+        engine = None
+        is_csv_file = filename and isinstance(filename, str) and filename.lower().endswith('.csv')
+        
+        if filename and isinstance(filename, str):
+            fname_lower = filename.lower()
+            if fname_lower.endswith('.xlsx'):
+                engine = 'openpyxl'
+            elif fname_lower.endswith('.xls'):
+                engine = 'xlrd'
+        
+        # If no engine determined from filename, try to detect from bytes
+        if not engine and not is_csv_file:
+            if _looks_like_excel_bytes(excel_buffer):
+                # Default to openpyxl for modern Excel files
+                engine = 'openpyxl'
+            excel_buffer.seek(0)
+        
+        # If filename suggests CSV prefer CSV parsing (S3 often provides CSV exports)
         tried_csv = False
-        if filename and isinstance(filename, str) and filename.lower().endswith('.csv'):
+        if is_csv_file:
             try:
                 df_all = pd.read_csv(excel_buffer)
                 tried_csv = True
@@ -460,7 +481,10 @@ def process_and_save_cleaned_referrals(
             excel_error = None
             csv_error = None
             try:
-                df_all = pd.read_excel(excel_buffer, sheet_name="Referrals_App_Full_Contacts")
+                if engine:
+                    df_all = pd.read_excel(excel_buffer, sheet_name="Referrals_App_Full_Contacts", engine=engine)
+                else:
+                    df_all = pd.read_excel(excel_buffer, sheet_name="Referrals_App_Full_Contacts")
             except Exception as e:
                 excel_error = e
                 try:
@@ -471,7 +495,15 @@ def process_and_save_cleaned_referrals(
                     # As a last resort try reading Excel without sheet name which may work for single-sheet files
                     try:
                         excel_buffer.seek(0)
-                        df_all = pd.read_excel(excel_buffer)
+                        if engine:
+                            df_all = pd.read_excel(excel_buffer, engine=engine)
+                        else:
+                            # Try openpyxl first, then xlrd as fallback
+                            try:
+                                df_all = pd.read_excel(excel_buffer, engine='openpyxl')
+                            except Exception:
+                                excel_buffer.seek(0)
+                                df_all = pd.read_excel(excel_buffer, engine='xlrd')
                     except Exception as e3:
                         # All attempts failed - raise informative error
                         raise ValueError(
@@ -492,18 +524,38 @@ def process_and_save_cleaned_referrals(
                 raise FileNotFoundError(f"Raw referral file not found: {raw_path}")
             logger.info("Loading raw referrals from %s", raw_path)
             suffix = raw_path.suffix.lower()
+            
+            # Determine engine for Excel files
+            engine = None
+            if suffix == '.xlsx':
+                engine = 'openpyxl'
+            elif suffix == '.xls':
+                engine = 'xlrd'
+            
             if suffix == '.csv':
                 df_all = pd.read_csv(raw_path)
             else:
                 # Try Excel first; if it fails, attempt CSV fallback (some exports are CSV without .csv extension)
                 try:
-                    df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts")
+                    if engine:
+                        df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts", engine=engine)
+                    else:
+                        try:
+                            df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts", engine='openpyxl')
+                        except Exception:
+                            df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts", engine='xlrd')
                 except Exception:
                     try:
                         df_all = pd.read_csv(raw_path)
                     except Exception:
                         # Final fallback: try read_excel without sheet
-                        df_all = pd.read_excel(raw_path)
+                        if engine:
+                            df_all = pd.read_excel(raw_path, engine=engine)
+                        else:
+                            try:
+                                df_all = pd.read_excel(raw_path, engine='openpyxl')
+                            except Exception:
+                                df_all = pd.read_excel(raw_path, engine='xlrd')
             # Normalize column names (strip whitespace)
             df_all.columns = df_all.columns.str.strip()
         else:
@@ -686,12 +738,62 @@ def process_referral_data(
                 except Exception as e:
                     raise TypeError(f"Cannot convert {type(raw_input)} to BytesIO for Excel processing: {e}")
             
-            try:
-                df_all = pd.read_excel(excel_buffer, sheet_name="Referrals_App_Full_Contacts")
-            except ValueError:
-                # Reset position and try again
+            # Determine engine based on filename extension for Excel files
+            excel_buffer.seek(0)
+            engine = None
+            is_csv_file = filename and isinstance(filename, str) and filename.lower().endswith('.csv')
+            
+            if filename and isinstance(filename, str):
+                fname_lower = filename.lower()
+                if fname_lower.endswith('.xlsx'):
+                    engine = 'openpyxl'
+                elif fname_lower.endswith('.xls'):
+                    engine = 'xlrd'
+            
+            # If no engine determined from filename, try to detect from bytes
+            if not engine and not is_csv_file:
+                if _looks_like_excel_bytes(excel_buffer):
+                    # Default to openpyxl for modern Excel files
+                    engine = 'openpyxl'
                 excel_buffer.seek(0)
-                df_all = pd.read_excel(excel_buffer)
+            
+            # Try to read as CSV first if filename suggests it
+            if is_csv_file:
+                try:
+                    df_all = pd.read_csv(excel_buffer)
+                except Exception:
+                    # Fall back to Excel
+                    excel_buffer.seek(0)
+                    if engine:
+                        df_all = pd.read_excel(excel_buffer, sheet_name="Referrals_App_Full_Contacts", engine=engine)
+                    else:
+                        try:
+                            df_all = pd.read_excel(excel_buffer, sheet_name="Referrals_App_Full_Contacts", engine='openpyxl')
+                        except Exception:
+                            excel_buffer.seek(0)
+                            df_all = pd.read_excel(excel_buffer, sheet_name="Referrals_App_Full_Contacts", engine='xlrd')
+            else:
+                # Try Excel first
+                try:
+                    if engine:
+                        df_all = pd.read_excel(excel_buffer, sheet_name="Referrals_App_Full_Contacts", engine=engine)
+                    else:
+                        try:
+                            df_all = pd.read_excel(excel_buffer, sheet_name="Referrals_App_Full_Contacts", engine='openpyxl')
+                        except Exception:
+                            excel_buffer.seek(0)
+                            df_all = pd.read_excel(excel_buffer, sheet_name="Referrals_App_Full_Contacts", engine='xlrd')
+                except ValueError:
+                    # Reset position and try again without sheet name
+                    excel_buffer.seek(0)
+                    if engine:
+                        df_all = pd.read_excel(excel_buffer, engine=engine)
+                    else:
+                        try:
+                            df_all = pd.read_excel(excel_buffer, engine='openpyxl')
+                        except Exception:
+                            excel_buffer.seek(0)
+                            df_all = pd.read_excel(excel_buffer, engine='xlrd')
             # Normalize column names (strip whitespace)
             df_all.columns = df_all.columns.str.strip()
         else:
@@ -701,10 +803,34 @@ def process_referral_data(
                 if not raw_path.exists():
                     raise FileNotFoundError(f"Raw referral file not found: {raw_path}")
                 logger.info("Loading raw referrals from %s", raw_path)
-                try:
-                    df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts")
-                except ValueError:
-                    df_all = pd.read_excel(raw_path)
+                suffix = raw_path.suffix.lower()
+                
+                # Determine engine for Excel files
+                engine = None
+                if suffix == '.xlsx':
+                    engine = 'openpyxl'
+                elif suffix == '.xls':
+                    engine = 'xlrd'
+                
+                if suffix == '.csv':
+                    df_all = pd.read_csv(raw_path)
+                else:
+                    try:
+                        if engine:
+                            df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts", engine=engine)
+                        else:
+                            try:
+                                df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts", engine='openpyxl')
+                            except Exception:
+                                df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts", engine='xlrd')
+                    except ValueError:
+                        if engine:
+                            df_all = pd.read_excel(raw_path, engine=engine)
+                        else:
+                            try:
+                                df_all = pd.read_excel(raw_path, engine='openpyxl')
+                            except Exception:
+                                df_all = pd.read_excel(raw_path, engine='xlrd')
                 # Normalize column names (strip whitespace)
                 df_all.columns = df_all.columns.str.strip()
             else:
@@ -800,12 +926,26 @@ def _load_excel(raw_input: Any, filename: Optional[str] = None) -> pd.DataFrame:
             raise FileNotFoundError(f"File not found: {raw_path}")
         logger.info("Loading data from %s", raw_path)
         suffix = raw_path.suffix.lower()
+        
+        # Determine engine for Excel files
+        engine = None
+        if suffix == '.xlsx':
+            engine = 'openpyxl'
+        elif suffix == '.xls':
+            engine = 'xlrd'
+        
         if suffix == '.csv':
             df = pd.read_csv(raw_path)
         else:
             # Try Excel first, but fallback to CSV if that fails (some S3 exports are CSV)
             try:
-                df = pd.read_excel(raw_path)
+                if engine:
+                    df = pd.read_excel(raw_path, engine=engine)
+                else:
+                    try:
+                        df = pd.read_excel(raw_path, engine='openpyxl')
+                    except Exception:
+                        df = pd.read_excel(raw_path, engine='xlrd')
             except Exception:
                 df = pd.read_csv(raw_path)
         # Normalize column names (strip whitespace)
@@ -823,17 +963,49 @@ def _load_excel(raw_input: Any, filename: Optional[str] = None) -> pd.DataFrame:
         else:
             raise TypeError(f"Unsupported input type: {type(raw_input)}")
 
-        # Prefer CSV when filename suggests it, otherwise try Excel then fallback to CSV
+        # Determine engine based on filename extension for Excel files
         excel_buffer.seek(0)
-        if filename and isinstance(filename, str) and filename.lower().endswith('.csv'):
+        engine = None
+        is_csv_file = filename and isinstance(filename, str) and filename.lower().endswith('.csv')
+        
+        if filename and isinstance(filename, str):
+            fname_lower = filename.lower()
+            if fname_lower.endswith('.xlsx'):
+                engine = 'openpyxl'
+            elif fname_lower.endswith('.xls'):
+                engine = 'xlrd'
+        
+        # If no engine determined from filename, try to detect from bytes
+        if not engine and not is_csv_file:
+            if _looks_like_excel_bytes(excel_buffer):
+                # Default to openpyxl for modern Excel files
+                engine = 'openpyxl'
+            excel_buffer.seek(0)
+
+        # Prefer CSV when filename suggests it, otherwise try Excel then fallback to CSV
+        if is_csv_file:
             try:
                 df = pd.read_csv(excel_buffer)
             except Exception:
                 excel_buffer.seek(0)
-                df = pd.read_excel(excel_buffer)
+                if engine:
+                    df = pd.read_excel(excel_buffer, engine=engine)
+                else:
+                    try:
+                        df = pd.read_excel(excel_buffer, engine='openpyxl')
+                    except Exception:
+                        excel_buffer.seek(0)
+                        df = pd.read_excel(excel_buffer, engine='xlrd')
         else:
             try:
-                df = pd.read_excel(excel_buffer)
+                if engine:
+                    df = pd.read_excel(excel_buffer, engine=engine)
+                else:
+                    try:
+                        df = pd.read_excel(excel_buffer, engine='openpyxl')
+                    except Exception:
+                        excel_buffer.seek(0)
+                        df = pd.read_excel(excel_buffer, engine='xlrd')
             except Exception:
                 excel_buffer.seek(0)
                 df = pd.read_csv(excel_buffer)
