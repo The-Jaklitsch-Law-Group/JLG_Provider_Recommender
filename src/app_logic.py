@@ -118,6 +118,10 @@ def load_application_data():
                 pref_cols.append("Specialty")
             pref_data = preferred_df[pref_cols].drop_duplicates(subset=["Full Name"], keep="first")
 
+            # Log preferred providers information for verification
+            logger.info(f"Loaded {len(pref_data)} unique preferred providers from preferred providers file")
+            logger.debug(f"Preferred providers: {pref_data['Full Name'].tolist()[:10]}...")  # Show first 10
+
             # Merge outer so preferred-only providers are included
             provider_df = provider_df.merge(
                 pref_data, on="Full Name", how="outer", indicator=True, suffixes=("", "_pref")
@@ -126,6 +130,23 @@ def load_application_data():
             provider_df["Preferred Provider"] = provider_df["_merge"].apply(
                 lambda v: True if v in ("both", "right_only") else False
             )
+
+            # Count and log preferred provider attribution
+            preferred_count = provider_df["Preferred Provider"].sum()
+            total_count = len(provider_df)
+            preferred_pct = (preferred_count / total_count * 100) if total_count > 0 else 0
+
+            logger.info(f"Marked {preferred_count} out of {total_count} providers as preferred ({preferred_pct:.1f}%)")
+
+            # Validation: Warn if suspiciously high percentage of providers are marked as preferred
+            if preferred_pct > 80:
+                logger.warning(
+                    f"WARNING: {preferred_pct:.1f}% of providers are marked as preferred. "
+                    "This is unusually high and may indicate that the preferred providers file "
+                    "contains all providers instead of just the preferred ones. "
+                    "Please verify the preferred providers data source."
+                )
+
             provider_df = provider_df.drop(columns=["_merge"])
 
             # If Specialty column exists from preferred providers, use it
@@ -136,9 +157,13 @@ def load_application_data():
         else:
             # No preferred list available or no Full Name column
             # Ensure the column exists as boolean; default to False when missing
-            provider_df["Preferred Provider"] = provider_df.get("Preferred Provider", False)
-    except Exception:
-        provider_df["Preferred Provider"] = provider_df.get("Preferred Provider", False)
+            if "Preferred Provider" not in provider_df.columns:
+                provider_df["Preferred Provider"] = False
+            logger.info("No preferred providers list available - all providers marked as not preferred")
+    except Exception as e:
+        logger.error(f"Error processing preferred providers: {e}")
+        if "Preferred Provider" not in provider_df.columns:
+            provider_df["Preferred Provider"] = False
 
     # Ensure referral counts are numeric and fill missing with zero (important when preferred list added new rows)
     if "Referral Count" in provider_df.columns:

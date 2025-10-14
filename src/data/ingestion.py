@@ -432,6 +432,25 @@ class DataIngestionManager:
         # Standardize dates for preferred providers
         df = self._standardize_dates(df)
 
+        # Log information about the preferred providers data loaded
+        if not df.empty and "Full Name" in df.columns:
+            unique_providers = df["Full Name"].nunique()
+            logger.info(
+                f"Loaded preferred providers file '{filename}': "
+                f"{len(df)} rows, {unique_providers} unique providers"
+            )
+
+            # Validation: Check if this looks like it might be the wrong file
+            # Preferred providers lists are typically smaller than the full provider database
+            # If we see more than 100 unique providers, log a warning
+            if unique_providers > 100:
+                logger.warning(
+                    f"WARNING: Preferred providers file contains {unique_providers} unique providers. "
+                    "This is unusually high. Please verify that the correct file was uploaded to the "
+                    "preferred_providers folder in S3. The preferred providers list should contain "
+                    "only the firm's preferred provider contacts, not all providers."
+                )
+
         return df
 
     def _post_process_data(self, df: pd.DataFrame, source: DataSource, file_type: str) -> pd.DataFrame:
