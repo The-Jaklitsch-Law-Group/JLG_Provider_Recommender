@@ -71,8 +71,6 @@ def load_provider_data(filepath: str) -> pd.DataFrame:
         df = pd.read_csv(path)
     elif suffix == ".xlsx":
         df = pd.read_excel(path)
-    elif suffix == ".csv":
-        df = pd.read_csv(path)
     elif suffix == ".feather":
         df = pd.read_feather(path)
     elif suffix == ".parquet":
@@ -152,12 +150,12 @@ def build_full_address(df: pd.DataFrame) -> pd.DataFrame:
 
     # If Work Address exists, use it to fill empty Full Address entries
     if "Work Address" in df.columns:
-        work_empty_mask = _is_empty_series(df["Work Address"]) == False
-        use_work_mask = empty_mask & work_empty_mask
+        work_not_empty_mask = ~_is_empty_series(df["Work Address"])
+        use_work_mask = empty_mask & work_not_empty_mask
         if use_work_mask.any():
             df.loc[use_work_mask, "Full Address"] = df.loc[use_work_mask, "Work Address"].astype(str).str.strip()
             # Update empty mask after filling
-            empty_mask = _is_empty_series(df["Full Address"]) 
+            empty_mask = _is_empty_series(df["Full Address"])
 
     # Fill any remaining empty Full Address entries with constructed components
     if empty_mask.any():
