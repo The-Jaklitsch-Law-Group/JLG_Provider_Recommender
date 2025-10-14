@@ -18,6 +18,9 @@ if "max_radius_miles" in st.session_state:
     st.sidebar.write(f"📍 Radius: {st.session_state['max_radius_miles']} miles")
 if "min_referrals" in st.session_state:
     st.sidebar.write(f"📊 Min. Experience: {st.session_state['min_referrals']} cases")
+if "selected_specialties" in st.session_state and st.session_state["selected_specialties"]:
+    specialties_str = ", ".join(st.session_state["selected_specialties"])
+    st.sidebar.write(f"🏥 Specialties: {specialties_str}")
 if "street" in st.session_state and "city" in st.session_state:
     st.sidebar.write(f"🏠 From: {st.session_state.get('city', 'N/A')}, {st.session_state.get('state', 'N/A')}")
 
@@ -74,6 +77,7 @@ if best is None or scored_df is None or (isinstance(scored_df, pd.DataFrame) and
             gamma=st.session_state.get("gamma", 0.0),
             # Prefer normalized preferred weight when available (preferred_norm); fall back to preferred_weight
             preferred_weight=st.session_state.get("preferred_norm", st.session_state.get("preferred_weight", 0.1)),
+            selected_specialties=st.session_state.get("selected_specialties"),
         )
         st.session_state["last_best"] = best
         st.session_state["last_scored_df"] = scored_df
@@ -123,6 +127,9 @@ with st.container():
             if phone_value:
                 info_items.append(("📞 Phone", phone_value))
 
+            if "Specialty" in best and best["Specialty"]:
+                info_items.append(("🩺 Specialty", best["Specialty"]))
+
             if "Distance (Miles)" in best:
                 info_items.append(("📍 Distance", f"{best['Distance (Miles)']:.1f} miles"))
 
@@ -165,7 +172,10 @@ st.divider()
 # All results in a clean table
 st.subheader("📋 All Matching Providers")
 
-cols = ["Full Name", "Work Phone Number", "Full Address", "Distance (Miles)", "Referral Count"]
+cols = ["Full Name", "Work Phone Number", "Full Address"]
+if "Specialty" in scored_df.columns:
+    cols.append("Specialty")
+cols.extend(["Distance (Miles)", "Referral Count"])
 cols.append("Preferred Provider")
 if "Inbound Referral Count" in scored_df.columns:
     cols.append("Inbound Referral Count")

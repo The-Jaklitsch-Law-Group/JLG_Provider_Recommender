@@ -417,6 +417,7 @@ class DataIngestionManager:
             "Contact's Work Address": "Work Address",
             lat_col: "Latitude",
             lon_col: "Longitude",
+            "Contact's Details: Specialty": "Specialty",
         }
 
         for old_col, new_col in column_mapping.items():

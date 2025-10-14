@@ -19,6 +19,8 @@ __all__ = [
     "load_application_data",
     "apply_time_filtering",
     "filter_providers_by_radius",
+    "get_unique_specialties",
+    "filter_providers_by_specialty",
     "run_recommendation",
     "validate_provider_data",
 ]
@@ -110,14 +112,24 @@ def load_application_data():
 
         preferred_df = load_preferred_providers()
         if preferred_df is not None and not preferred_df.empty and "Full Name" in preferred_df.columns:
-            pref_names = preferred_df[["Full Name"]].drop_duplicates()
+            # Select columns to merge from preferred providers (include Specialty if available)
+            pref_cols = ["Full Name"]
+            if "Specialty" in preferred_df.columns:
+                pref_cols.append("Specialty")
+            pref_data = preferred_df[pref_cols].drop_duplicates(subset=["Full Name"], keep="first")
+            
             # Merge outer so preferred-only providers are included
-            provider_df = provider_df.merge(pref_names, on="Full Name", how="outer", indicator=True)
+            provider_df = provider_df.merge(pref_data, on="Full Name", how="outer", indicator=True, suffixes=("", "_pref"))
             # Mark preferred where the merge shows presence in preferred list (boolean)
             provider_df["Preferred Provider"] = provider_df["_merge"].apply(
                 lambda v: True if v in ("both", "right_only") else False
             )
             provider_df = provider_df.drop(columns=["_merge"])
+            
+            # If Specialty column exists from preferred providers, use it (prioritize preferred provider specialty)
+            if "Specialty_pref" in provider_df.columns:
+                provider_df["Specialty"] = provider_df["Specialty_pref"]
+                provider_df = provider_df.drop(columns=["Specialty_pref"])
         else:
             # No preferred list available or no Full Name column
             # Ensure the column exists as boolean; default to False when missing
@@ -196,6 +208,72 @@ def filter_providers_by_radius(df: pd.DataFrame, max_radius_miles: float) -> pd.
     return df[df["Distance (Miles)"] <= max_radius_miles].copy()
 
 
+def get_unique_specialties(provider_df: pd.DataFrame) -> list[str]:
+    """Extract unique specialties from provider DataFrame.
+    
+    Handles multiple specialties per provider (comma-separated values).
+    
+    Args:
+        provider_df: Provider DataFrame with optional "Specialty" column
+        
+    Returns:
+        Sorted list of unique specialty strings
+    """
+    if provider_df.empty or "Specialty" not in provider_df.columns:
+        return []
+    
+    # Get all non-null specialty values
+    specialties_series = provider_df["Specialty"].dropna()
+    
+    if specialties_series.empty:
+        return []
+    
+    # Split comma-separated specialties and collect unique values
+    unique_specialties = set()
+    for specialty_str in specialties_series:
+        if pd.notna(specialty_str) and str(specialty_str).strip():
+            # Split by comma and strip whitespace from each specialty
+            parts = [s.strip() for s in str(specialty_str).split(",")]
+            unique_specialties.update(part for part in parts if part)
+    
+    return sorted(list(unique_specialties))
+
+
+def filter_providers_by_specialty(df: pd.DataFrame, selected_specialties: list[str]) -> pd.DataFrame:
+    """Filter providers by selected specialties.
+    
+    Providers with multiple specialties (comma-separated) match if ANY of their
+    specialties is in the selected list.
+    
+    Args:
+        df: Provider DataFrame with optional "Specialty" column
+        selected_specialties: List of specialty strings to filter by
+        
+    Returns:
+        pd.DataFrame: Filtered DataFrame with providers matching selected specialties
+    """
+    if df is None or df.empty:
+        return df
+    
+    # If no specialties selected or Specialty column doesn't exist, return all providers
+    if not selected_specialties or "Specialty" not in df.columns:
+        return df
+    
+    # Create a boolean mask for providers that match any selected specialty
+    def matches_specialty(specialty_value):
+        if pd.isna(specialty_value):
+            return False
+        
+        # Split comma-separated specialties
+        provider_specialties = [s.strip() for s in str(specialty_value).split(",")]
+        
+        # Check if any provider specialty matches any selected specialty
+        return any(ps in selected_specialties for ps in provider_specialties if ps)
+    
+    mask = df["Specialty"].apply(matches_specialty)
+    return df[mask].copy()
+
+
 def run_recommendation(
     provider_df: pd.DataFrame,
     user_lat: float,
@@ -207,15 +285,17 @@ def run_recommendation(
     beta: float,
     gamma: float,
     preferred_weight: float = 0.1,
+    selected_specialties: list[str] = None,
 ):
     """Run the complete provider recommendation workflow.
 
     This orchestrates the core recommendation algorithm:
-    1. Filter by minimum referral threshold
-    2. Calculate distances from client location
-    3. Filter by maximum radius
-    4. Score providers using weighted criteria
-    5. Return best match and ranked results
+    1. Filter by specialty (if specified)
+    2. Filter by minimum referral threshold
+    3. Calculate distances from client location
+    4. Filter by maximum radius
+    5. Score providers using weighted criteria
+    6. Return best match and ranked results
 
     Args:
         provider_df: Provider data with referral counts
@@ -227,19 +307,33 @@ def run_recommendation(
         beta: Normalized weight for outbound referrals (0-1)
         gamma: Normalized weight for inbound referrals (0-1)
         preferred_weight: Normalized weight for preferred status (0-1)
+        selected_specialties: Optional list of specialties to filter by
 
     Returns:
         Tuple[Optional[pd.Series], pd.DataFrame]:
             - best: Top-ranked provider (or None if no matches)
             - scored_df: All matching providers with scores (or empty DataFrame)
     """
-    working = provider_df[provider_df["Referral Count"] >= min_referrals].copy()
+    working = provider_df.copy()
+    
+    # Apply specialty filter first (before other filters)
+    if selected_specialties:
+        working = filter_providers_by_specialty(working, selected_specialties)
+        if working.empty:
+            return None, pd.DataFrame()
+    
+    # Apply referral count filter
+    working = working[working["Referral Count"] >= min_referrals].copy()
     if working.empty:
         return None, pd.DataFrame()
+    
+    # Calculate distances and filter by radius
     working["Distance (Miles)"] = calculate_distances(user_lat, user_lon, working)
     working = filter_providers_by_radius(working, max_radius_miles)
     if working.empty:
         return None, pd.DataFrame()
+    
+    # Score and rank providers
     best, scored_df = recommend_provider(
         working,
         distance_weight=alpha,

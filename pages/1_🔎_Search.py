@@ -3,7 +3,7 @@ import datetime as dt
 import streamlit as st
 
 from app import show_auto_update_status
-from src.app_logic import load_application_data
+from src.app_logic import get_unique_specialties, load_application_data
 from src.utils.addressing import validate_address_input
 from src.utils.responsive import resp_columns, responsive_sidebar_toggle
 
@@ -288,6 +288,24 @@ with st.expander("⚙️ Advanced Filters (Optional)"):
         use_time_filter = st.checkbox(
             "Enable", value=st.session_state.get("use_time_filter", True), help="Apply time period filter"
         )
+    
+    # Specialty filter
+    st.caption("**Provider Specialties**")
+    available_specialties = get_unique_specialties(provider_df)
+    
+    if available_specialties:
+        # Get previously selected specialties from session state, default to all
+        default_selected = st.session_state.get("selected_specialties", available_specialties)
+        
+        selected_specialties = st.multiselect(
+            "Filter by Specialty",
+            options=available_specialties,
+            default=default_selected,
+            help="Select one or more provider specialties. Leave all selected to include all providers.",
+        )
+    else:
+        selected_specialties = []
+        st.info("ℹ️ No specialty information available in provider data.")
 
 st.divider()
 
@@ -350,6 +368,7 @@ if search_clicked:
             "time_period": time_period,
             "use_time_filter": bool(use_time_filter),
             "max_radius_miles": int(max_radius_miles),
+            "selected_specialties": selected_specialties,
         }
     )
 
