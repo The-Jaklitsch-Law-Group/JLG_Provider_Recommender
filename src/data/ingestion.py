@@ -14,7 +14,7 @@ Supported Data Formats:
     - Excel (.xlsx, .xls) - Legacy format with automatic fallback support
 
 Data Flow:
-    S3 Bucket (CSV/Excel) → Direct Download → Format Detection → 
+    S3 Bucket (CSV/Excel) → Direct Download → Format Detection →
     Processing → Streamlit Cache → Application Usage
 
 Performance Strategy:
@@ -69,7 +69,7 @@ class DataSource(Enum):
 
 class DataFormat(Enum):
     """Enumeration of supported data formats with performance characteristics.
-    
+
     The ingestion system automatically detects and handles both CSV and Excel formats
     from S3. CSV is the preferred format for S3 data exports.
     """
@@ -113,7 +113,7 @@ class DataIngestionManager:
     def _get_s3_data(self, folder_type: str) -> Tuple[Optional[bytes], Optional[str], Optional[str]]:
         """
         Download the latest data from S3 for the given folder type.
-        
+
         Supports both CSV and Excel formats. The S3 client automatically lists
         files with extensions: .csv, .xlsx, .xls
 
@@ -144,7 +144,9 @@ class DataIngestionManager:
             return None, None, None
 
     @st.cache_data(ttl=3600, show_spinner=False)
-    def _load_and_process_data_cached(_self, source: DataSource, last_modified: str, data_bytes: bytes, filename: str) -> pd.DataFrame:
+    def _load_and_process_data_cached(
+        _self, source: DataSource, last_modified: str, data_bytes: bytes, filename: str
+    ) -> pd.DataFrame:
         """
         Process downloaded data into a clean DataFrame with Streamlit caching.
 
@@ -187,7 +189,7 @@ class DataIngestionManager:
     def _load_and_process_data(self, source: DataSource) -> pd.DataFrame:
         """
         Download data from S3 and process it into a clean DataFrame.
-        
+
         If S3 is not configured or fails, falls back to local parquet files as cache.
 
         This method handles the complete pipeline from S3 download to processed DataFrame,
@@ -214,7 +216,9 @@ class DataIngestionManager:
                 return self._load_from_local_parquet(source)
 
             # Use the cached processing method with last_modified as cache key
-            return self._load_and_process_data_cached(source, last_modified or "unknown", data_bytes, filename or "unknown")
+            return self._load_and_process_data_cached(
+                source, last_modified or "unknown", data_bytes, filename or "unknown"
+            )
 
         except Exception as e:
             logger.error(f"Failed to load and process {source.value}: {str(e)}")
@@ -225,17 +229,15 @@ class DataIngestionManager:
     def _load_from_local_parquet(self, source: DataSource) -> pd.DataFrame:
         """
         Load data from local parquet cache files when S3 is unavailable.
-        
+
         This serves as a fallback mechanism for development and testing when S3 is not configured.
-        
+
         Args:
             source: Data source to load
 
         Returns:
             DataFrame from local parquet file, or empty DataFrame if not found
         """
-        from pathlib import Path
-        
         # Map data sources to parquet filenames
         parquet_map = {
             DataSource.INBOUND_REFERRALS: "cleaned_inbound_referrals.parquet",
@@ -244,26 +246,28 @@ class DataIngestionManager:
             DataSource.PREFERRED_PROVIDERS: "cleaned_preferred_providers.parquet",
             DataSource.PROVIDER_DATA: "cleaned_outbound_referrals.parquet",  # Will be processed
         }
-        
+
         parquet_filename = parquet_map.get(source)
         if not parquet_filename:
             logger.error(f"No parquet mapping for source: {source.value}")
             return pd.DataFrame()
-        
+
         parquet_path = Path("data/processed") / parquet_filename
-        
+
         if not parquet_path.exists():
             logger.warning(f"Local parquet file not found: {parquet_path}")
             return pd.DataFrame()
-        
+
         try:
             df = pd.read_parquet(parquet_path)
-            logger.info(f"Loaded {len(df)} rows from local parquet: {parquet_path}")
-            
+            logger.info(
+                f"Loaded {len(df)} rows from local parquet: {parquet_path}"
+            )
+
             # For provider data, apply aggregation processing
             if source == DataSource.PROVIDER_DATA:
                 df = self._process_provider_data(df)
-            
+
             return df
         except Exception as e:
             logger.error(f"Failed to read local parquet {parquet_path}: {e}")
@@ -272,7 +276,7 @@ class DataIngestionManager:
     def _process_referral_data(self, source: DataSource, data_bytes: bytes, filename: str) -> pd.DataFrame:
         """
         Process referral data from S3 bytes (CSV or Excel format).
-        
+
         The preparation module automatically detects file format based on filename
         and applies appropriate parsing (pd.read_csv or pd.read_excel).
 
@@ -304,11 +308,11 @@ class DataIngestionManager:
     def _process_preferred_providers_data(self, data_bytes: bytes, filename: str) -> pd.DataFrame:
         """
         Process preferred providers data from S3 bytes (CSV or Excel format).
-        
+
         Automatically detects format based on filename extension:
         - .csv files: Parsed with pd.read_csv()
         - .xlsx/.xls files: Parsed with pd.read_excel()
-        
+
         Falls back to CSV parsing if Excel parsing fails.
 
         Args:
@@ -324,10 +328,10 @@ class DataIngestionManager:
 
         # Load the data with format detection
         buffer = BytesIO(data_bytes)
-        
+
         # Detect format from filename and bytes
         is_csv = filename.lower().endswith('.csv') if filename else False
-        
+
         # Determine Excel engine if needed
         engine = None
         if filename and not is_csv:
@@ -336,14 +340,14 @@ class DataIngestionManager:
                 engine = 'openpyxl'
             elif fname_lower.endswith('.xls'):
                 engine = 'xlrd'
-        
+
         # If no engine determined from filename, try to detect from bytes
         if not engine and not is_csv:
             if _looks_like_excel_bytes(buffer):
                 # Default to openpyxl for modern Excel files
                 engine = 'openpyxl'
             buffer.seek(0)
-        
+
         if is_csv:
             # CSV format (preferred)
             try:
@@ -722,7 +726,7 @@ class DataIngestionManager:
             logger.warning("S3 not configured, attempting local fallback")
             if show_status:
                 st.warning(error_msg)
-            
+
             # Try to load from local parquet files
             df = self._load_from_local_parquet(source)
             if df.empty and show_status:
@@ -808,7 +812,7 @@ class DataIngestionManager:
         This method loads the most commonly used data sources (referrals and providers)
         from S3 (CSV or Excel format) to ensure they're cached in st.cache_data and
         ready for immediate use when the app starts.
-        
+
         Cache Warming Benefits:
         - Reduces first-page-load latency
         - Downloads latest CSV/Excel files from S3

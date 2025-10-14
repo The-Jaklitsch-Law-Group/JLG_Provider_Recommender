@@ -86,7 +86,7 @@ except Exception as e:
     st.error("❌ Failed to load provider data. Please ensure data files are available or contact support.")
     st.info(f"**Error Type:** {type(e).__name__}")
     st.info(f"**Technical details:** {str(e)}")
-    
+
     # Show more helpful context
     with st.expander("🔍 Troubleshooting Information"):
         st.markdown("""
@@ -95,18 +95,18 @@ except Exception as e:
         - Network connection issues preventing S3 access
         - Data format issues in S3 files
         - Missing required Python packages (openpyxl, pandas, etc.)
-        
+
         **Next steps:**
         1. Check S3 configuration in `.streamlit/secrets.toml`
         2. Verify network connectivity
         3. Check Streamlit logs for detailed error messages
         4. Try refreshing the page or restarting the app
         """)
-        
+
         # Show the full exception for debugging
         import traceback
         st.code(traceback.format_exc(), language="python")
-    
+
     st.stop()
 
 # Validate data is available before proceeding
@@ -288,15 +288,15 @@ with st.expander("⚙️ Advanced Filters (Optional)"):
         use_time_filter = st.checkbox(
             "Enable", value=st.session_state.get("use_time_filter", True), help="Apply time period filter"
         )
-    
+
     # Specialty filter
     st.caption("**Provider Specialties**")
     available_specialties = get_unique_specialties(provider_df)
-    
+
     if available_specialties:
         # Get previously selected specialties from session state, default to all
         default_selected = st.session_state.get("selected_specialties", available_specialties)
-        
+
         selected_specialties = st.multiselect(
             "Filter by Specialty",
             options=available_specialties,
