@@ -924,8 +924,16 @@ def process_referral_data(
         return inbound_combined, outbound, combined, summary
 
 
-def _load_excel(raw_input: Any, filename: Optional[str] = None) -> pd.DataFrame:
-    """Load Excel data from various input types."""
+def _load_data(raw_input: Any, filename: Optional[str] = None) -> pd.DataFrame:
+    """Load data from various input types (Excel, CSV, or DataFrame).
+    
+    Args:
+        raw_input: Can be Path/str to file, BytesIO/bytes buffer, or pd.DataFrame
+        filename: Optional filename for logging and format detection
+    
+    Returns:
+        pd.DataFrame with normalized column names (whitespace stripped)
+    """
     if isinstance(raw_input, pd.DataFrame):
         logger.info("Processing DataFrame with %d rows (source: %s)", len(raw_input), filename or "unknown")
         df = raw_input.copy()
@@ -1037,8 +1045,8 @@ def process_and_save_preferred_providers(
     
     Args:
         raw_input: Can be:
-            - Path/str: Path to Excel file
-            - BytesIO/bytes: Raw Excel file data in memory
+            - Path/str: Path to Excel or CSV file
+            - BytesIO/bytes: Raw Excel or CSV file data in memory
             - pd.DataFrame: Already loaded DataFrame
         processed_dir: Directory to save processed Parquet file
         filename: Optional filename for logging (used with BytesIO/bytes/DataFrame inputs)
@@ -1051,7 +1059,7 @@ def process_and_save_preferred_providers(
     processed_path.mkdir(parents=True, exist_ok=True)
 
     # Use the helper function to load the data
-    df = _load_excel(raw_input, filename)
+    df = _load_data(raw_input, filename)
 
     # Normalize column names (strip whitespace)
     df.columns = df.columns.str.strip()
@@ -1121,7 +1129,7 @@ def process_preferred_providers(
         Tuple of (cleaned_dataframe, summary) containing processed data
     """
     # Use the helper function to load the data
-    df = _load_excel(raw_input, filename)
+    df = _load_data(raw_input, filename)
 
     # Normalize column names (strip whitespace)
     df.columns = df.columns.str.strip()
