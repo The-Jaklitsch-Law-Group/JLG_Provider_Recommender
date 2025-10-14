@@ -248,6 +248,7 @@ _REFERRAL_CONFIGS: Dict[str, Dict[str, Any]] = {
             "Referred From's Work Address": "Work Address",
             "Referred From's Details: Latitude": "Latitude",
             "Referred From's Details: Longitude": "Longitude",
+            "Referred From's Details: Last Verified Date": "Last Verified Date",
         },
         "filters": [
             lambda df: df["Referral Source"] == "Referral - Doctor's Office",
@@ -267,6 +268,7 @@ _REFERRAL_CONFIGS: Dict[str, Dict[str, Any]] = {
             "Secondary Referred From's Work Address": "Work Address",
             "Secondary Referred From's Details: Latitude": "Latitude",
             "Secondary Referred From's Details: Longitude": "Longitude",
+            "Secondary Referred From's Details: Last Verified Date": "Last Verified Date",
         },
         "filters": [
             lambda df: df["Referral Source"] == "Referral - Doctor's Office",
@@ -285,6 +287,7 @@ _REFERRAL_CONFIGS: Dict[str, Dict[str, Any]] = {
             "Dr/Facility Referred To's Work Address": "Work Address",
             "Dr/Facility Referred To's Details: Latitude": "Latitude",
             "Dr/Facility Referred To's Details: Longitude": "Longitude",
+            "Dr/Facility Referred To's Details: Last Verified Date": "Last Verified Date",
         },
         "filters": [
             lambda df: df["Full Name"].notna(),
@@ -306,6 +309,15 @@ def _normalize_input_dataframe(df_all: pd.DataFrame) -> pd.DataFrame:
 
     if "Date of Intake" in df_all.columns and "Create Date" in df_all.columns:
         df_all["Date of Intake"] = df_all["Date of Intake"].fillna(df_all["Create Date"])
+
+    # Normalize Last Verified Date fields from different sources
+    for col in [
+        "Referred From's Details: Last Verified Date",
+        "Secondary Referred From's Details: Last Verified Date",
+        "Dr/Facility Referred To's Details: Last Verified Date",
+    ]:
+        if col in df_all.columns:
+            df_all[col] = _normalize_date_series(df_all[col])
 
     return df_all
 
@@ -1145,11 +1157,16 @@ def process_preferred_providers(
         "Contact's Work Address": "Work Address",
         lat_col: "Latitude",
         lon_col: "Longitude",
+        "Contact's Details: Last Verified Date": "Last Verified Date",
     }
 
     for old_col, new_col in column_mapping.items():
         if old_col in df_cleaned.columns:
             df_cleaned[new_col] = df_cleaned[old_col]
+
+    # Normalize Last Verified Date
+    if "Last Verified Date" in df_cleaned.columns:
+        df_cleaned["Last Verified Date"] = _normalize_date_series(df_cleaned["Last Verified Date"])
 
     logger.info(
         "Processed preferred providers: %d records (dropped %d missing geo data)",
