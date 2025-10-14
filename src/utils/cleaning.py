@@ -60,7 +60,7 @@ STATE_MAPPING = {
 }
 
 
-@st.cache_data(ttl=86400)
+@st.cache_data(ttl=3600)
 def load_provider_data(filepath: str) -> pd.DataFrame:
     path = Path(filepath)
     if not path.exists():
@@ -69,8 +69,16 @@ def load_provider_data(filepath: str) -> pd.DataFrame:
     suffix = path.suffix.lower()
     if suffix == ".csv":
         df = pd.read_csv(path)
+    elif suffix == ".xlsx":
+        df = pd.read_excel(path)
+    elif suffix == ".csv":
+        df = pd.read_csv(path)
+    elif suffix == ".feather":
+        df = pd.read_feather(path)
+    elif suffix == ".parquet":
+        df = pd.read_parquet(path)
     else:
-        raise ValueError(f"Unsupported file type: {suffix}. Only CSV files are supported.")
+        raise ValueError(f"Unsupported file type: {suffix}")
 
     df.columns = [col.strip() for col in df.columns]
     df = df.drop(columns="Preference", errors="ignore")

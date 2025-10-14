@@ -35,7 +35,7 @@ def _get_rate_limited_geocoder(min_delay_seconds: float = 1.0, max_retries: int 
         return _RATE_LIMITED_GEOCODER
 
 
-@st.cache_data(ttl=86400)
+@st.cache_data(ttl=3600)
 def geocode_address_with_cache(address: str) -> Optional[Tuple[float, float]]:
     try:
         geocode_fn = _get_rate_limited_geocoder()
