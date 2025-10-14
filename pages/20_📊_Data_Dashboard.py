@@ -153,15 +153,15 @@ def display_data_quality_dashboard() -> None:
 
         processed_dir = Path("data/processed")
 
-        # Check for parquet files and their metadata
-        parquet_files = {
-            "Cleaned Referrals": processed_dir / "cleaned_all_referrals.parquet",
-            "Cleaned Providers": processed_dir / "cleaned_outbound_referrals.parquet",
-            "Preferred Providers": processed_dir / "cleaned_preferred_providers.parquet",
+        # Check for CSV cache files and their metadata
+        csv_files = {
+            "Processed Referrals": processed_dir / "all_referrals.csv",
+            "Processed Providers": processed_dir / "outbound_referrals.csv",
+            "Preferred Providers": processed_dir / "preferred_providers.csv",
         }
 
         file_info = []
-        for name, path in parquet_files.items():
+        for name, path in csv_files.items():
             if path.exists():
                 import os
 

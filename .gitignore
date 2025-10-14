@@ -224,8 +224,9 @@ data/raw/
 *.csv.bak
 *.xlsx.bak
 
-# Processed parquet files (deprecated - now loaded from S3 only)
+# Processed data files (cache files from S3 - not source files)
 data/processed/*.parquet
+data/processed/*.csv
 
 # Ignore secrets file
 .streamlit/secrets.toml

@@ -309,17 +309,17 @@ if s3_enabled:
 
 st.markdown("---")
 
-st.markdown("#### 📤 Upload Raw Referral File (Excel)")
-st.markdown("Upload a file manually if S3 is not configured or if you want to process a specific file.")
+st.markdown("#### 📤 Upload Raw Referral File (CSV)")
+st.markdown("Upload a CSV file manually if S3 is not configured or if you want to process a specific file.")
 uploaded_file = st.file_uploader(
-    "Upload new referral data (Excel format)",
-    type=["xlsx", "xls"],
-    help="Upload an Excel export with referrals and provider info",
+    "Upload new referral data (CSV format)",
+    type=["csv"],
+    help="Upload a CSV export with referrals and provider info",
 )
 
 if uploaded_file is not None:
     try:
-        with st.spinner("Processing uploaded file and generating optimized Parquet files…"):
+        with st.spinner("Processing uploaded file and generating CSV datasets…"):
             # Process directly from memory without saving raw file to disk
             file_bytes = uploaded_file.getbuffer()
             summary = process_and_save_cleaned_referrals(
@@ -368,9 +368,9 @@ will be identified and excluded from the cleaned dataset.
 )
 
 preferred_providers_file = st.file_uploader(
-    "Upload preferred providers data (Excel format)",
-    type=["xlsx", "xls"],
-    help="Upload an Excel file with preferred provider contact information",
+    "Upload preferred providers data (CSV format)",
+    type=["csv"],
+    help="Upload a CSV file with preferred provider contact information",
     key="preferred_providers_uploader",
 )
 
@@ -421,23 +421,23 @@ if preferred_providers_file is not None:
             st.dataframe(display_records, width="stretch")
 
             # Optionally offer to download the missing records
-            if st.button("📥 Download Missing Records as Excel", key="download_missing_geo"):
+            if st.button("📥 Download Missing Records as CSV", key="download_missing_geo"):
                 try:
-                    # Create Excel file in memory
+                    # Create CSV file in memory
                     from io import BytesIO
 
-                    excel_buffer = BytesIO()
-                    summary.missing_records.to_excel(excel_buffer, index=False, engine="openpyxl")
-                    excel_buffer.seek(0)
+                    csv_buffer = BytesIO()
+                    summary.missing_records.to_csv(csv_buffer, index=False)
+                    csv_buffer.seek(0)
 
                     st.download_button(
                         label="📥 Download Missing Records",
-                        data=excel_buffer.getvalue(),
-                        file_name="Preferred_Providers_Missing_LatLong.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        data=csv_buffer.getvalue(),
+                        file_name="Preferred_Providers_Missing_LatLong.csv",
+                        mime="text/csv",
                     )
                 except Exception as e:
-                    st.error(f"Failed to create Excel download: {e}")
+                    st.error(f"Failed to create CSV download: {e}")
 
     except Exception:
         st.error("Failed to process the preferred providers file.")

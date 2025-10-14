@@ -1,4 +1,4 @@
-"""Utilities for preparing cleaned referral datasets from raw Excel exports."""
+"""Utilities for preparing cleaned referral datasets from raw CSV data from S3."""
 
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ import time
 from pathlib import PurePath
 
 
-def _safe_to_parquet(df: pd.DataFrame, dest: Path, *, compression: str = "snappy", attempts: int = 5, backoff: float = 0.2) -> None:
-    """Write a DataFrame to Parquet atomically with retries.
+def _safe_to_csv(df: pd.DataFrame, dest: Path, *, attempts: int = 5, backoff: float = 0.2) -> None:
+    """Write a DataFrame to CSV atomically with retries.
 
     This writes to a temporary file in the same directory and then
     atomically replaces the destination. On Windows a concurrent
@@ -34,7 +34,7 @@ def _safe_to_parquet(df: pd.DataFrame, dest: Path, *, compression: str = "snappy
                     tmp.unlink()
                 except Exception:
                     pass
-            df.to_parquet(tmp, compression=compression)
+            df.to_csv(tmp, index=False)
             try:
                 # Atomic replace; may raise on Windows if dest is locked
                 os.replace(tmp, dest)
@@ -50,32 +50,6 @@ def _safe_to_parquet(df: pd.DataFrame, dest: Path, *, compression: str = "snappy
             continue
     # If we get here, attempts exhausted
     raise last_exc  # type: ignore
-
-
-def _looks_like_excel_bytes(buffer: BytesIO) -> bool:
-    """Quick heuristic: check first bytes to see if data looks like an Excel file.
-
-    - XLSX files are ZIP archives and start with PK signature (b'PK\x03\x04')
-    - Older XLS BIFF files begin with bytes 0xD0 0xCF 0x11 0xE0
-    """
-    try:
-        pos = buffer.tell()
-    except Exception:
-        pos = None
-    try:
-        buffer.seek(0)
-        head = buffer.read(4)
-        buffer.seek(0)
-    except Exception:
-        return False
-    if not head:
-        return False
-    if head.startswith(b"PK"):
-        return True
-    # BIFF header (xls)
-    if head[:4] == b"\xD0\xCF\x11\xE0":
-        return True
-    return False
 
 logger = logging.getLogger(__name__)
 
@@ -399,14 +373,14 @@ def process_and_save_cleaned_referrals(
     *,
     filename: Optional[str] = None,
 ) -> PreparationSummary:
-    """Generate cleaned parquet datasets from raw referral data.
+    """Generate cleaned CSV datasets from raw referral data.
     
     Args:
         raw_input: Can be:
-            - Path/str: Path to Excel file (existing behavior)
-            - BytesIO/bytes: Raw Excel file data in memory
+            - Path/str: Path to CSV file
+            - BytesIO/bytes: Raw CSV file data in memory
             - pd.DataFrame: Already loaded DataFrame
-        processed_dir: Directory to save processed Parquet files
+        processed_dir: Directory to save processed CSV files
         filename: Optional filename for logging (used with BytesIO/bytes/DataFrame inputs)
     
     Returns:
@@ -416,7 +390,7 @@ def process_and_save_cleaned_referrals(
     processed_path = Path(processed_dir)
     processed_path.mkdir(parents=True, exist_ok=True)
 
-    # Handle different input types
+    # Handle different input types - CSV only
     if isinstance(raw_input, pd.DataFrame):
         logger.info("Processing DataFrame with %d rows (source: %s)", len(raw_input), filename or "unknown")
         df_all = raw_input.copy()
@@ -427,83 +401,44 @@ def process_and_save_cleaned_referrals(
         logger.info("Loading raw referrals from memory (source: %s)", filename or "uploaded file")
         
         # Convert buffer types to BytesIO for pandas compatibility
-        excel_buffer: BytesIO
+        csv_buffer: BytesIO
         
         if isinstance(raw_input, BytesIO):
-            excel_buffer = raw_input
+            csv_buffer = raw_input
         elif isinstance(raw_input, bytes):
-            excel_buffer = BytesIO(raw_input)
+            csv_buffer = BytesIO(raw_input)
         elif type(raw_input).__name__ == 'memoryview':
             # Handle memoryview objects (from Streamlit getbuffer())
-            excel_buffer = BytesIO(bytes(raw_input))  # type: ignore
+            csv_buffer = BytesIO(bytes(raw_input))  # type: ignore
         elif isinstance(raw_input, bytearray):
-            excel_buffer = BytesIO(raw_input)
+            csv_buffer = BytesIO(raw_input)
         else:
             # Last resort: assume it's some kind of buffer
             try:
-                excel_buffer = BytesIO(bytes(raw_input))  # type: ignore
+                csv_buffer = BytesIO(bytes(raw_input))  # type: ignore
             except Exception as e:
-                raise TypeError(f"Cannot convert {type(raw_input)} to BytesIO for Excel processing: {e}")
-        # If filename suggests CSV prefer CSV parsing (S3 often provides CSV exports)
-        excel_buffer.seek(0)
-        tried_csv = False
-        if filename and isinstance(filename, str) and filename.lower().endswith('.csv'):
-            try:
-                df_all = pd.read_csv(excel_buffer)
-                tried_csv = True
-            except Exception:
-                excel_buffer.seek(0)
-                # fall through to try Excel
-
-        if not tried_csv:
-            # Try Excel first (sheet may be present); on failure, try CSV as a fallback
-            excel_error = None
-            csv_error = None
-            try:
-                df_all = pd.read_excel(excel_buffer, sheet_name="Referrals_App_Full_Contacts")
-            except Exception as e:
-                excel_error = e
-                try:
-                    excel_buffer.seek(0)
-                    df_all = pd.read_csv(excel_buffer)
-                except Exception as e2:
-                    csv_error = e2
-                    # As a last resort try reading Excel without sheet name which may work for single-sheet files
-                    try:
-                        excel_buffer.seek(0)
-                        df_all = pd.read_excel(excel_buffer)
-                    except Exception as e3:
-                        # All attempts failed - raise informative error
-                        raise ValueError(
-                            f"Could not read file as Excel or CSV. "
-                            f"Excel (with sheet) error: {excel_error}. "
-                            f"CSV error: {csv_error}. "
-                            f"Excel (no sheet) error: {e3}. "
-                            f"Filename hint: {filename}"
-                        )
+                raise TypeError(f"Cannot convert {type(raw_input)} to BytesIO for CSV processing: {e}")
+        
+        # Load CSV data only
+        csv_buffer.seek(0)
+        try:
+            df_all = pd.read_csv(csv_buffer)
+        except Exception as e:
+            raise ValueError(f"Could not read file as CSV. Error: {e}. Filename hint: {filename}")
 
         # Normalize column names (strip whitespace)
         df_all.columns = df_all.columns.str.strip()
     else:
-        # Handle Path/str (existing behavior)
+        # Handle Path/str - CSV only
         if isinstance(raw_input, (Path, str)):
             raw_path = Path(raw_input)
             if not raw_path.exists():
                 raise FileNotFoundError(f"Raw referral file not found: {raw_path}")
             logger.info("Loading raw referrals from %s", raw_path)
             suffix = raw_path.suffix.lower()
-            if suffix == '.csv':
-                df_all = pd.read_csv(raw_path)
-            else:
-                # Try Excel first; if it fails, attempt CSV fallback (some exports are CSV without .csv extension)
-                try:
-                    df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts")
-                except Exception:
-                    try:
-                        df_all = pd.read_csv(raw_path)
-                    except Exception:
-                        # Final fallback: try read_excel without sheet
-                        df_all = pd.read_excel(raw_path)
+            if suffix != '.csv':
+                raise ValueError(f"Only CSV files are supported. Got: {suffix}")
+            df_all = pd.read_csv(raw_path)
             # Normalize column names (strip whitespace)
             df_all.columns = df_all.columns.str.strip()
         else:
@@ -540,11 +475,11 @@ def process_and_save_cleaned_referrals(
 
     saved_files: Dict[str, Path] = {}
 
-    inbound_path = processed_path / "cleaned_inbound_referrals.parquet"
-    outbound_path = processed_path / "cleaned_outbound_referrals.parquet"
-    all_path = processed_path / "cleaned_all_referrals.parquet"
-    def _safe_to_parquet(df: pd.DataFrame, dest: Path, *, compression: str = "snappy", attempts: int = 5, backoff: float = 0.2) -> None:
-        """Write a DataFrame to Parquet atomically with retries.
+    inbound_path = processed_path / "inbound_referrals.csv"
+    outbound_path = processed_path / "outbound_referrals.csv"
+    all_path = processed_path / "all_referrals.csv"
+    def _safe_to_csv(df: pd.DataFrame, dest: Path, *, attempts: int = 5, backoff: float = 0.2) -> None:
+        """Write a DataFrame to CSV atomically with retries.
 
         This writes to a temporary file in the same directory and then
         atomically replaces the destination. On Windows a concurrent
@@ -562,7 +497,7 @@ def process_and_save_cleaned_referrals(
                         tmp.unlink()
                     except Exception:
                         pass
-                df.to_parquet(tmp, compression=compression)
+                df.to_csv(tmp, index=False)
                 try:
                     # Atomic replace; may raise on Windows if dest is locked
                     os.replace(tmp, dest)
@@ -588,9 +523,9 @@ def process_and_save_cleaned_referrals(
             except PermissionError:
                 logger.warning("Could not remove existing file (locked): %s", path)
 
-    _safe_to_parquet(inbound_combined, inbound_path, compression="snappy")
-    _safe_to_parquet(outbound, outbound_path, compression="snappy")
-    _safe_to_parquet(combined, all_path, compression="snappy")
+    _safe_to_csv(inbound_combined, inbound_path)
+    _safe_to_csv(outbound, outbound_path)
+    _safe_to_csv(combined, all_path)
 
     saved_files.update({"inbound": inbound_path, "outbound": outbound_path, "all": all_path})
 
@@ -668,43 +603,42 @@ def process_referral_data(
             logger.info("Loading raw referrals from memory (source: %s)", filename or "uploaded file")
             
             # Convert buffer types to BytesIO for pandas compatibility
-            excel_buffer: BytesIO
+            csv_buffer: BytesIO
             
             if isinstance(raw_input, BytesIO):
-                excel_buffer = raw_input
+                csv_buffer = raw_input
             elif isinstance(raw_input, bytes):
-                excel_buffer = BytesIO(raw_input)
+                csv_buffer = BytesIO(raw_input)
             elif type(raw_input).__name__ == 'memoryview':
                 # Handle memoryview objects (from Streamlit getbuffer())
-                excel_buffer = BytesIO(bytes(raw_input))  # type: ignore
+                csv_buffer = BytesIO(bytes(raw_input))  # type: ignore
             elif isinstance(raw_input, bytearray):
-                excel_buffer = BytesIO(raw_input)
+                csv_buffer = BytesIO(raw_input)
             else:
                 # Last resort: assume it's some kind of buffer
                 try:
-                    excel_buffer = BytesIO(bytes(raw_input))  # type: ignore
+                    csv_buffer = BytesIO(bytes(raw_input))  # type: ignore
                 except Exception as e:
-                    raise TypeError(f"Cannot convert {type(raw_input)} to BytesIO for Excel processing: {e}")
+                    raise TypeError(f"Cannot convert {type(raw_input)} to BytesIO for CSV processing: {e}")
             
+            csv_buffer.seek(0)
             try:
-                df_all = pd.read_excel(excel_buffer, sheet_name="Referrals_App_Full_Contacts")
-            except ValueError:
-                # Reset position and try again
-                excel_buffer.seek(0)
-                df_all = pd.read_excel(excel_buffer)
+                df_all = pd.read_csv(csv_buffer)
+            except Exception as e:
+                raise ValueError(f"Could not read file as CSV. Error: {e}")
             # Normalize column names (strip whitespace)
             df_all.columns = df_all.columns.str.strip()
         else:
-            # Handle Path/str
+            # Handle Path/str - CSV only
             if isinstance(raw_input, (Path, str)):
                 raw_path = Path(raw_input)
                 if not raw_path.exists():
                     raise FileNotFoundError(f"Raw referral file not found: {raw_path}")
                 logger.info("Loading raw referrals from %s", raw_path)
-                try:
-                    df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts")
-                except ValueError:
-                    df_all = pd.read_excel(raw_path)
+                suffix = raw_path.suffix.lower()
+                if suffix != '.csv':
+                    raise ValueError(f"Only CSV files are supported. Got: {suffix}")
+                df_all = pd.read_csv(raw_path)
                 # Normalize column names (strip whitespace)
                 df_all.columns = df_all.columns.str.strip()
             else:
@@ -786,8 +720,8 @@ def process_referral_data(
         return inbound_combined, outbound, combined, summary
 
 
-def _load_excel(raw_input: Any, filename: Optional[str] = None) -> pd.DataFrame:
-    """Load Excel data from various input types."""
+def _load_csv(raw_input: Any, filename: Optional[str] = None) -> pd.DataFrame:
+    """Load CSV data from various input types."""
     if isinstance(raw_input, pd.DataFrame):
         logger.info("Processing DataFrame with %d rows (source: %s)", len(raw_input), filename or "unknown")
         df = raw_input.copy()
@@ -800,14 +734,9 @@ def _load_excel(raw_input: Any, filename: Optional[str] = None) -> pd.DataFrame:
             raise FileNotFoundError(f"File not found: {raw_path}")
         logger.info("Loading data from %s", raw_path)
         suffix = raw_path.suffix.lower()
-        if suffix == '.csv':
-            df = pd.read_csv(raw_path)
-        else:
-            # Try Excel first, but fallback to CSV if that fails (some S3 exports are CSV)
-            try:
-                df = pd.read_excel(raw_path)
-            except Exception:
-                df = pd.read_csv(raw_path)
+        if suffix != '.csv':
+            raise ValueError(f"Only CSV files are supported. Got: {suffix}")
+        df = pd.read_csv(raw_path)
         # Normalize column names (strip whitespace)
         df.columns = df.columns.str.strip()
         return df
@@ -815,28 +744,17 @@ def _load_excel(raw_input: Any, filename: Optional[str] = None) -> pd.DataFrame:
         # Handle buffer-like objects
         logger.info("Loading data from memory (source: %s)", filename or "uploaded file")
         if isinstance(raw_input, BytesIO):
-            excel_buffer = raw_input
+            csv_buffer = raw_input
         elif isinstance(raw_input, bytes):
-            excel_buffer = BytesIO(raw_input)
+            csv_buffer = BytesIO(raw_input)
         elif isinstance(raw_input, (memoryview, bytearray)):
-            excel_buffer = BytesIO(bytes(raw_input))
+            csv_buffer = BytesIO(bytes(raw_input))
         else:
             raise TypeError(f"Unsupported input type: {type(raw_input)}")
 
-        # Prefer CSV when filename suggests it, otherwise try Excel then fallback to CSV
-        excel_buffer.seek(0)
-        if filename and isinstance(filename, str) and filename.lower().endswith('.csv'):
-            try:
-                df = pd.read_csv(excel_buffer)
-            except Exception:
-                excel_buffer.seek(0)
-                df = pd.read_excel(excel_buffer)
-        else:
-            try:
-                df = pd.read_excel(excel_buffer)
-            except Exception:
-                excel_buffer.seek(0)
-                df = pd.read_csv(excel_buffer)
+        # Load CSV data
+        csv_buffer.seek(0)
+        df = pd.read_csv(csv_buffer)
 
         # Normalize column names (strip whitespace)
         df.columns = df.columns.str.strip()
@@ -849,14 +767,14 @@ def process_and_save_preferred_providers(
     *,
     filename: Optional[str] = None,
 ) -> PreferredProvidersSummary:
-    """Process preferred providers data and save cleaned Parquet file.
+    """Process preferred providers data and save cleaned CSV file.
     
     Args:
         raw_input: Can be:
-            - Path/str: Path to Excel file
-            - BytesIO/bytes: Raw Excel file data in memory
+            - Path/str: Path to CSV file
+            - BytesIO/bytes: Raw CSV file data in memory
             - pd.DataFrame: Already loaded DataFrame
-        processed_dir: Directory to save processed Parquet file
+        processed_dir: Directory to save processed CSV file
         filename: Optional filename for logging (used with BytesIO/bytes/DataFrame inputs)
     
     Returns:
@@ -867,7 +785,7 @@ def process_and_save_preferred_providers(
     processed_path.mkdir(parents=True, exist_ok=True)
 
     # Use the helper function to load the data
-    df = _load_excel(raw_input, filename)
+    df = _load_csv(raw_input, filename)
 
     # Normalize column names (strip whitespace)
     df.columns = df.columns.str.strip()
@@ -896,15 +814,15 @@ def process_and_save_preferred_providers(
     missing_geo_count = len(missing_records) if missing_records is not None else 0
     cleaned_count = len(df_cleaned)
     
-    # Save cleaned data to parquet
-    output_path = processed_path / "cleaned_preferred_providers.parquet"
+    # Save cleaned data to CSV
+    output_path = processed_path / "preferred_providers.csv"
     if output_path.exists():
         try:
             output_path.unlink()
         except PermissionError:
             logger.warning("Could not remove existing preferred providers file (locked): %s", output_path)
 
-    _safe_to_parquet(df_cleaned, output_path, compression="snappy")
+    _safe_to_csv(df_cleaned, output_path)
     
     logger.info(
         "Saved cleaned preferred providers: %d records (dropped %d missing geo data)",
