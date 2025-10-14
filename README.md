@@ -1176,6 +1176,70 @@ print(f"Providers with >0 referrals: {(providers['outbound_referral_count'] > 0)
 
 ---
 
+#### ⭐ Preferred Provider Issues
+
+**See detailed documentation**: [Preferred Providers Attribution Guide](docs/PREFERRED_PROVIDERS_ATTRIBUTION.md)
+
+**Symptom 1**: All providers marked as preferred (⭐ Yes)
+
+**Root Cause**: Preferred providers file in S3 contains ALL providers instead of just preferred ones
+
+**Diagnostic Steps**:
+```bash
+# Check S3 preferred providers file
+aws s3 ls s3://jlg-provider-recommender-bucket/990047553/
+
+# Download and inspect
+aws s3 cp s3://jlg-provider-recommender-bucket/990047553/Preferred_Providers_latest.csv ./
+wc -l Preferred_Providers_latest.csv  # Should be 10-100 rows, not 1000+
+```
+
+**Solution**:
+1. Verify the correct file is uploaded to S3 `preferred_providers` folder
+2. File should contain only firm's preferred provider contacts (typically 10-50)
+3. Upload correct file if needed
+4. Refresh app data (Update Data page → Pull Latest from S3)
+5. Check logs for validation warnings:
+   ```
+   WARNING: 85.0% of providers are marked as preferred. This is unusually high...
+   ```
+
+**Symptom 2**: No providers marked as preferred (all show "No")
+
+**Root Causes**:
+1. No file in S3 `preferred_providers` folder
+2. Provider names don't match between files
+3. Wrong column structure in preferred file
+
+**Diagnostic Steps**:
+```bash
+# Check if file exists
+aws s3 ls s3://jlg-provider-recommender-bucket/990047553/
+
+# Download and check structure
+aws s3 cp s3://jlg-provider-recommender-bucket/990047553/Preferred_Providers_latest.csv ./
+head -n 5 Preferred_Providers_latest.csv
+
+# Should have column: "Contact Full Name"
+```
+
+**Solution**:
+1. Upload preferred providers file to correct S3 folder
+2. Ensure column "Contact Full Name" exists
+3. Verify names match exactly (case-sensitive) with referrals data
+4. Check logs:
+   ```
+   INFO: Loaded X unique preferred providers from preferred providers file
+   INFO: Marked Y out of Z providers as preferred (P%)
+   ```
+
+**Expected Values**:
+- 10-100 unique preferred providers (typically)
+- 10-30% of total providers marked as preferred
+- Warning logged if >80% are preferred
+
+---
+
 #### 🧪 Test Failures
 
 **Error**: `pytest` tests fail or hang
