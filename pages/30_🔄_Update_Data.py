@@ -421,23 +421,23 @@ if preferred_providers_file is not None:
             st.dataframe(display_records, width="stretch")
 
             # Optionally offer to download the missing records
-            if st.button("📥 Download Missing Records as Excel", key="download_missing_geo"):
+            if st.button("📥 Download Missing Records as CSV", key="download_missing_geo"):
                 try:
-                    # Create Excel file in memory
+                    # Create CSV file in memory
                     from io import BytesIO
 
-                    excel_buffer = BytesIO()
-                    summary.missing_records.to_excel(excel_buffer, index=False, engine="openpyxl")
-                    excel_buffer.seek(0)
+                    csv_buffer = BytesIO()
+                    summary.missing_records.to_csv(csv_buffer, index=False)
+                    csv_buffer.seek(0)
 
                     st.download_button(
                         label="📥 Download Missing Records",
-                        data=excel_buffer.getvalue(),
-                        file_name="Preferred_Providers_Missing_LatLong.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        data=csv_buffer.getvalue(),
+                        file_name="Preferred_Providers_Missing_LatLong.csv",
+                        mime="text/csv",
                     )
                 except Exception as e:
-                    st.error(f"Failed to create Excel download: {e}")
+                    st.error(f"Failed to create CSV download: {e}")
 
     except Exception:
         st.error("Failed to process the preferred providers file.")

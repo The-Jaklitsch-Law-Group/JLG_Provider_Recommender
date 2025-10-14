@@ -51,32 +51,6 @@ def _safe_to_csv(df: pd.DataFrame, dest: Path, *, attempts: int = 5, backoff: fl
     # If we get here, attempts exhausted
     raise last_exc  # type: ignore
 
-
-def _looks_like_excel_bytes(buffer: BytesIO) -> bool:
-    """Quick heuristic: check first bytes to see if data looks like an Excel file.
-
-    - XLSX files are ZIP archives and start with PK signature (b'PK\x03\x04')
-    - Older XLS BIFF files begin with bytes 0xD0 0xCF 0x11 0xE0
-    """
-    try:
-        pos = buffer.tell()
-    except Exception:
-        pos = None
-    try:
-        buffer.seek(0)
-        head = buffer.read(4)
-        buffer.seek(0)
-    except Exception:
-        return False
-    if not head:
-        return False
-    if head.startswith(b"PK"):
-        return True
-    # BIFF header (xls)
-    if head[:4] == b"\xD0\xCF\x11\xE0":
-        return True
-    return False
-
 logger = logging.getLogger(__name__)
 
 
