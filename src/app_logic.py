@@ -24,7 +24,7 @@ __all__ = [
 ]
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=86400)
 def load_application_data():
     """Load and enrich provider and referral data for the application.
 

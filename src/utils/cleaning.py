@@ -60,7 +60,7 @@ STATE_MAPPING = {
 }
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=86400)
 def load_provider_data(filepath: str) -> pd.DataFrame:
     path = Path(filepath)
     if not path.exists():
