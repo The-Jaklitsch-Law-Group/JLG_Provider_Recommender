@@ -25,9 +25,9 @@ with col1:
     st.markdown(
         """
 **📥 1. Data Collection**
-- Export referral data from Filevine to CSV
+- Export referral data from Filevine to Excel
 - Includes provider contacts, referral counts, and dates
-- Raw file stored in S3 bucket
+- Raw file stored in `data/raw/` directory
 
 **🧹 2. Data Cleaning & Processing**
 - Split into inbound/outbound referral datasets
@@ -47,7 +47,7 @@ with col2:
     st.markdown(
         """
 **💾 4. Data Optimization**
-- Save cleaned data as CSV files (cached for 24 hours)
+- Save cleaned data as Parquet files (10x faster than Excel)
 - Create aggregated provider dataset with referral counts
 - Store in `data/processed/` for application use
 

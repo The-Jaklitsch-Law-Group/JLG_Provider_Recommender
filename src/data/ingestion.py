@@ -2,24 +2,25 @@
 Optimized Data Ingestion Module for JLG Provider Recommender
 
 This module provides a streamlined, high-performance data ingestion system that:
-- Loads CSV data exclusively from S3 buckets
-- Transforms data in-memory for optimal performance
-- Implements 24-hour caching with Streamlit's cache system
+- Prioritizes cleaned Parquet files for optimal performance (10x faster than Excel)
 - Provides centralized data loading with consistent error handling
+- Implements smart caching strategies with Streamlit's cache system
+- Minimizes redundant processing through format prioritization
 - Offers unified data validation and quality checks
+- Supports the complete data workflow from raw Excel to processed Parquet files
 
 Data Flow:
-    S3 CSV Files → Download → In-Memory Transform → 24-Hour Cache → Application Usage
+    Raw Excel → Jupyter Notebook Processing → Cleaned Parquet → Application Usage
 
 Performance Strategy:
-    1. Download CSV files from S3
-    2. Transform data in-memory (no intermediate files)
-    3. Cache all operations for 24 hours
+    1. Try cleaned Parquet files first (fastest, ~10x faster than Excel)
+    2. Fallback to raw Excel files if needed
+    3. Cache all operations for 1 hour
     4. Use enum-based data source management for type safety
 
-Key Features:
-    - CSV-only workflow (no Excel or Parquet files)
-    - 24-hour cache TTL for transformed data
+Key Improvements in v2.0:
+    - Added ALL_REFERRALS data source for comprehensive analysis
+    - Fixed provider data aggregation to always create unique providers
     - Enhanced error handling and logging throughout
     - Added data integrity validation methods
     - Improved documentation and type hints
@@ -58,21 +59,23 @@ class DataSource(Enum):
 class DataFormat(Enum):
     """Enumeration of supported data formats with performance characteristics."""
 
-    CSV = ".csv"  # Primary format: Text format from S3, cached in-memory for 24 hours
+    PARQUET = ".parquet"  # Fastest: Columnar format, ~10x faster than Excel
+    EXCEL = ".xlsx"  # Slowest: Legacy format, but most common input
+    CSV = ".csv"  # Medium: Text format, good for debugging
 
 
 class DataIngestionManager:
     """
-    Centralized data ingestion manager with CSV-only loading strategies.
+    Centralized data ingestion manager with optimized loading strategies.
 
-    This manager handles the complete data pipeline from S3 CSV files to
-    in-memory cached DataFrames, with 24-hour cache TTL.
+    This manager handles the complete data pipeline from raw Excel files to
+    optimized Parquet files, with intelligent format selection and caching.
 
     Key Features:
-    - CSV-only data loading from S3
-    - Streamlit cache integration with 24-hour TTL
-    - In-memory transformations (no intermediate files)
-    - Source-specific post-processing when needed
+    - Automatic format prioritization (Parquet > Excel > CSV)
+    - Streamlit cache integration with 1-hour TTL
+    - Graceful fallbacks when preferred formats aren't available
+    - Source-specific post-processing only when needed
     - Built-in data validation and quality checks
 
     Usage:
@@ -88,16 +91,17 @@ class DataIngestionManager:
             data_dir: Base directory containing raw/ and processed/ subdirectories
         """
         self.data_dir = Path(data_dir)
-        self.cache_ttl = 86400  # 24 hour cache as per requirements
+        self.cache_ttl = 3600  # 1 hour cache for optimal performance
 
         self._file_registry = self._build_file_registry()
 
     def _build_file_registry(self) -> Dict[DataSource, Dict[str, Path]]:
         """
-        Build a registry of available data files.
+        Build a registry of available data files with format priorities.
 
         File Priority Order:
-        1. CSV files from S3 (cached locally in processed/ directory)
+        1. cleaned_*.parquet (fastest, preprocessed)
+        2. raw Excel files (slowest, but authoritative source)
 
         Returns:
             Registry mapping data sources to available file paths
@@ -107,36 +111,37 @@ class DataIngestionManager:
 
         registry = {
             DataSource.INBOUND_REFERRALS: {
-                "csv": processed_dir / "inbound_referrals.csv",
-                "raw_csv": raw_dir / "Referrals_App_Full_Contacts.csv",
+                "cleaned": processed_dir / "cleaned_inbound_referrals.parquet",
+                # prefer CSV raw exports for S3/raw
+                "raw_combined": raw_dir / "Referrals_App_Full_Contacts.csv",
             },
             DataSource.OUTBOUND_REFERRALS: {
-                "csv": processed_dir / "outbound_referrals.csv",
-                "raw_csv": raw_dir / "Referrals_App_Full_Contacts.csv",
+                "cleaned": processed_dir / "cleaned_outbound_referrals.parquet",
+                "raw_combined": raw_dir / "Referrals_App_Full_Contacts.csv",
             },
             DataSource.ALL_REFERRALS: {
-                "csv": processed_dir / "all_referrals.csv",
-                "raw_csv": raw_dir / "Referrals_App_Full_Contacts.csv",
+                "cleaned": processed_dir / "cleaned_all_referrals.parquet",
+                "raw_combined": raw_dir / "Referrals_App_Full_Contacts.csv",
             },
             DataSource.PROVIDER_DATA: {
                 # Provider data is derived from outbound referrals
-                "csv": processed_dir / "outbound_referrals.csv",
-                "raw_csv": raw_dir / "Referrals_App_Full_Contacts.csv",
+                "cleaned": processed_dir / "cleaned_outbound_referrals.parquet",
+                "raw_combined": raw_dir / "Referrals_App_Full_Contacts.csv",
             },
             DataSource.PREFERRED_PROVIDERS: {
-                "csv": processed_dir / "preferred_providers.csv",
-                "raw_csv": raw_dir / "Referral_App_Preferred_Providers.csv",
+                "cleaned": processed_dir / "cleaned_preferred_providers.parquet",
+                "raw": raw_dir / "Referral_App_Preferred_Providers.csv",
             },
         }
         return registry
 
     def _get_best_available_file(self, source: DataSource) -> Tuple[Optional[Path], str]:
         """
-        Get the best available file for a data source.
+        Get the best available file for a data source with performance priority.
 
         Strategy:
-        1. Try processed CSV files first (transformed and cached)
-        2. Fallback to raw CSV files (from S3)
+        1. Try cleaned Parquet files first (10x faster, preprocessed)
+        2. Fallback to raw Excel files (slower, but authoritative)
 
         Args:
             source: The data source to find files for
@@ -146,20 +151,20 @@ class DataIngestionManager:
         """
         files = self._file_registry[source]
 
-        # Priority order: processed csv > raw csv
+        # Priority order: cleaned parquet > raw excel
         for file_type, file_path in files.items():
             if file_path.exists():
                 return file_path, file_type
 
         return None, "none"
 
-    @st.cache_data(ttl=86400, show_spinner=False)
+    @st.cache_data(ttl=3600, show_spinner=False)
     def _load_dataframe(_self, file_path: Path, file_type: str) -> pd.DataFrame:
         """
-        Load DataFrame from CSV with 24-hour caching.
+        Load DataFrame with optimized format handling and error recovery.
 
         Args:
-            file_path: Path to the CSV file
+            file_path: Path to the data file
             file_type: Type identifier for logging purposes
 
         Returns:
@@ -168,11 +173,17 @@ class DataIngestionManager:
         try:
             file_suffix = file_path.suffix.lower()
 
-            if file_suffix == DataFormat.CSV.value:
+            if file_suffix == DataFormat.PARQUET.value:
+                df = pd.read_parquet(file_path)
+                logger.info(f"Loaded {len(df)} records from Parquet: {file_path.name}")
+            elif file_suffix in [".xlsx", ".xls"]:
+                df = pd.read_excel(file_path, engine="openpyxl")
+                logger.info(f"Loaded {len(df)} records from Excel: {file_path.name}")
+            elif file_suffix == DataFormat.CSV.value:
                 df = pd.read_csv(file_path)
                 logger.info(f"Loaded {len(df)} records from CSV: {file_path.name}")
             else:
-                raise ValueError(f"Unsupported file format: {file_suffix}. Only CSV files are supported.")
+                raise ValueError(f"Unsupported file format: {file_suffix}")
 
             return df
 
@@ -182,12 +193,12 @@ class DataIngestionManager:
 
     def _post_process_data(self, df: pd.DataFrame, source: DataSource, file_type: str) -> pd.DataFrame:
         """
-        Apply source-specific post-processing when needed.
+        Apply source-specific post-processing only when needed.
 
         Processing Strategy:
-        - Skip post-processing for already-processed CSV files
+        - Skip post-processing for cleaned Parquet files (already processed)
         - Exception: PROVIDER_DATA always needs aggregation processing
-        - Apply transformations to raw CSV data that needs standardization
+        - Apply transformations only to raw Excel data that needs standardization
         - Ensure consistent column names and data types across all sources
 
         Args:
@@ -201,12 +212,12 @@ class DataIngestionManager:
         if df.empty:
             return df
 
-        # Provider data always needs aggregation processing, even from processed files
+        # Provider data always needs aggregation processing, even from cleaned files
         if source == DataSource.PROVIDER_DATA:
             return self._process_provider_data(df)
 
-        # Skip post-processing if this is already processed data (except for provider data)
-        if file_type == "csv" or self._is_processed_data(df):
+        # Skip post-processing if this is already cleaned data (except for provider data)
+        if file_type == "cleaned" or self._is_cleaned_data(df):
             return df
 
         df = df.copy()
@@ -221,18 +232,18 @@ class DataIngestionManager:
 
         return df
 
-    def _is_processed_data(self, df: pd.DataFrame) -> bool:
+    def _is_cleaned_data(self, df: pd.DataFrame) -> bool:
         """
-        Check if data appears to be from processed CSV files.
+        Check if data appears to be from cleaned parquet files.
 
-        Processed data characteristics:
+        Cleaned data characteristics:
         - Has standardized column names (Full Name, Work Address, etc.)
         - Contains referral_type column for type identification
         - Has proper data types and formatting
         """
-        # Key indicators of processed data
-        processed_indicators = {"Full Name", "Work Address", "Work Phone", "Latitude", "Longitude", "referral_type"}
-        return len(processed_indicators.intersection(set(df.columns))) >= 4
+        # Key indicators of cleaned data
+        cleaned_indicators = {"Full Name", "Work Address", "Work Phone", "Latitude", "Longitude", "referral_type"}
+        return len(cleaned_indicators.intersection(set(df.columns))) >= 4
 
     def _process_outbound_referrals(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -407,7 +418,7 @@ class DataIngestionManager:
         """
         Get comprehensive status of all data sources.
 
-        Returns information about file availability, types, and processing status
+        Returns information about file availability, types, and optimization status
         for all configured data sources.
 
         Returns:
@@ -421,8 +432,8 @@ class DataIngestionManager:
                 "available": file_path is not None,
                 "file_type": file_type,
                 "path": str(file_path) if file_path else None,
-                "processed": file_type == "csv",
-                "performance_tier": "cached" if file_type == "csv" else "slow",
+                "optimized": file_type == "cleaned",
+                "performance_tier": "fast" if file_type == "cleaned" else "slow",
             }
 
         return status
@@ -609,15 +620,13 @@ data_manager = _DataManagerProxy()
 # ============================================================================
 
 
-@st.cache_data(ttl=86400, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_detailed_referrals(filepath: Optional[str] = None) -> pd.DataFrame:
     """
     Load detailed referral data (outbound referrals).
 
     Maintained for backward compatibility. New code should use:
     data_manager.load_data(DataSource.OUTBOUND_REFERRALS)
-
-    Data is cached for 24 hours.
 
     Args:
         filepath: Ignored - automatic file selection is used
@@ -628,15 +637,13 @@ def load_detailed_referrals(filepath: Optional[str] = None) -> pd.DataFrame:
     return get_data_manager().load_data(DataSource.OUTBOUND_REFERRALS, show_status=False)
 
 
-@st.cache_data(ttl=86400, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_inbound_referrals(filepath: Optional[str] = None) -> pd.DataFrame:
     """
     Load inbound referral data.
 
     Maintained for backward compatibility. New code should use:
     data_manager.load_data(DataSource.INBOUND_REFERRALS)
-
-    Data is cached for 24 hours.
 
     Args:
         filepath: Ignored - automatic file selection is used
@@ -647,15 +654,13 @@ def load_inbound_referrals(filepath: Optional[str] = None) -> pd.DataFrame:
     return get_data_manager().load_data(DataSource.INBOUND_REFERRALS, show_status=False)
 
 
-@st.cache_data(ttl=86400, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_provider_data(filepath: Optional[str] = None) -> pd.DataFrame:
     """
     Load provider data with referral counts.
 
     Maintained for backward compatibility. New code should use:
     data_manager.load_data(DataSource.PROVIDER_DATA)
-
-    Data is cached for 24 hours.
 
     Args:
         filepath: Ignored - automatic file selection is used
@@ -666,14 +671,12 @@ def load_provider_data(filepath: Optional[str] = None) -> pd.DataFrame:
     return get_data_manager().load_data(DataSource.PROVIDER_DATA, show_status=False)
 
 
-@st.cache_data(ttl=86400, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_all_referrals(filepath: Optional[str] = None) -> pd.DataFrame:
     """
     Load combined referral data (inbound + outbound).
 
     New function providing access to the combined dataset.
-
-    Data is cached for 24 hours.
 
     Args:
         filepath: Ignored - automatic file selection is used
@@ -684,12 +687,10 @@ def load_all_referrals(filepath: Optional[str] = None) -> pd.DataFrame:
     return get_data_manager().load_data(DataSource.ALL_REFERRALS, show_status=False)
 
 
-@st.cache_data(ttl=86400, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_preferred_providers(filepath: Optional[str] = None) -> pd.DataFrame:
     """
     Load preferred providers contact data.
-
-    Data is cached for 24 hours.
 
     Args:
         filepath: Ignored - automatic file selection is used
