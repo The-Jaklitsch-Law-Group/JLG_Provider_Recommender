@@ -44,8 +44,8 @@ from typing import Dict, Optional, Tuple, Union
 import pandas as pd
 import streamlit as st
 
+from src.data.io_utils import load_dataframe
 from src.data.preparation import process_referral_data
-from src.data.io_utils import looks_like_excel_bytes, load_dataframe
 from src.utils.s3_client_optimized import S3DataClient
 
 logger = logging.getLogger(__name__)
@@ -261,9 +261,7 @@ class DataIngestionManager:
 
         try:
             df = pd.read_parquet(parquet_path)
-            logger.info(
-                f"Loaded {len(df)} rows from local parquet: {parquet_path}"
-            )
+            logger.info(f"Loaded {len(df)} rows from local parquet: {parquet_path}")
 
             # For provider data, apply aggregation processing
             if source == DataSource.PROVIDER_DATA:
@@ -321,11 +319,7 @@ class DataIngestionManager:
             Processed DataFrame with standardized schema
         """
         # Load the data using shared utility (handles CSV and Excel automatically)
-        df = load_dataframe(
-            data_bytes,
-            filename=filename,
-            sheet_name="Referral_App_Preferred_Providers"
-        )
+        df = load_dataframe(data_bytes, filename=filename, sheet_name="Referral_App_Preferred_Providers")
 
         # Process following the notebook logic
         # Deduplicate by Person ID if available, otherwise use generic deduplication
@@ -368,8 +362,7 @@ class DataIngestionManager:
         if not df.empty and "Full Name" in df.columns:
             unique_providers = df["Full Name"].nunique()
             logger.info(
-                f"Loaded preferred providers file '{filename}': "
-                f"{len(df)} rows, {unique_providers} unique providers"
+                f"Loaded preferred providers file '{filename}': " f"{len(df)} rows, {unique_providers} unique providers"
             )
 
             # Validation: Check if this looks like it might be the wrong file
@@ -841,10 +834,7 @@ class DataIngestionManager:
         last_refresh_date = st.session_state.get(last_refresh_key)
 
         # If no last refresh date or it's a different day and after 4 AM, refresh
-        should_refresh = (
-            last_refresh_date is None or
-            last_refresh_date != today
-        ) and is_after_refresh_time
+        should_refresh = (last_refresh_date is None or last_refresh_date != today) and is_after_refresh_time
 
         if should_refresh:
             logger.info(f"Performing daily cache refresh at {now.strftime('%Y-%m-%d %H:%M:%S')}")

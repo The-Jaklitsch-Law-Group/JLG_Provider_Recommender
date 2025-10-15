@@ -3,24 +3,39 @@
 from __future__ import annotations
 
 import logging
+import os
+import time
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, MutableMapping, Optional, Sequence, Union, cast, overload, BinaryIO
 from io import BytesIO
+from pathlib import Path, PurePath
+from typing import (
+    Any,
+    BinaryIO,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Sequence,
+    Union,
+    cast,
+    overload,
+)
 
 import numpy as np
 import pandas as pd
-import os
-import time
-from pathlib import PurePath
 
 # Import shared I/O utilities
-from src.data.io_utils import looks_like_excel_bytes as _looks_like_excel_bytes, load_dataframe
+from src.data.io_utils import load_dataframe
+from src.data.io_utils import looks_like_excel_bytes as _looks_like_excel_bytes
 
 logger = logging.getLogger(__name__)
 
 
-def _safe_to_parquet(df: pd.DataFrame, dest: Path, *, compression: str = "snappy", attempts: int = 5, backoff: float = 0.2) -> None:
+def _safe_to_parquet(
+    df: pd.DataFrame, dest: Path, *, compression: str = "snappy", attempts: int = 5, backoff: float = 0.2
+) -> None:
     """Write a DataFrame to Parquet atomically with retries.
 
     This writes to a temporary file in the same directory and then
@@ -127,6 +142,7 @@ def _normalize_date_series(series: pd.Series) -> pd.Series:
 
     # Attempt Excel serial conversion for numeric leftovers (and numeric-like strings from CSV)
     if converted.isna().any():
+
         def _looks_numeric(v: Any) -> bool:
             if isinstance(v, (int, float)):
                 return True
@@ -182,7 +198,7 @@ def _clean_referral_frame(df: pd.DataFrame) -> pd.DataFrame:
     if "Person ID" in df.columns and df["Person ID"].notna().any():
         df = df.drop_duplicates(subset="Person ID", keep="first")
         logger.info("Deduplicated by Person ID: %d unique providers", len(df))
-    
+
     # Drop Person ID column if it's all NA (column was added but source didn't have it)
     if "Person ID" in df.columns and df["Person ID"].isna().all():
         df = df.drop(columns=["Person ID"])
@@ -386,6 +402,7 @@ def process_and_save_cleaned_referrals(
     filename: Optional[str] = None,
 ) -> PreparationSummary: ...
 
+
 @overload
 def process_and_save_cleaned_referrals(
     raw_input: Any,  # For all other types (bytes, BytesIO, DataFrame, buffers)
@@ -394,6 +411,7 @@ def process_and_save_cleaned_referrals(
     filename: Optional[str] = None,
 ) -> PreparationSummary: ...
 
+
 def process_and_save_cleaned_referrals(
     raw_input: Union[Path, str, BytesIO, bytes, BinaryIO, pd.DataFrame, Any],  # Any for Streamlit buffers
     processed_dir: Path | str,
@@ -401,7 +419,7 @@ def process_and_save_cleaned_referrals(
     filename: Optional[str] = None,
 ) -> PreparationSummary:
     """Generate cleaned parquet datasets from raw referral data.
-    
+
     Args:
         raw_input: Can be:
             - Path/str: Path to Excel file (existing behavior)
@@ -409,7 +427,7 @@ def process_and_save_cleaned_referrals(
             - pd.DataFrame: Already loaded DataFrame
         processed_dir: Directory to save processed Parquet files
         filename: Optional filename for logging (used with BytesIO/bytes/DataFrame inputs)
-    
+
     Returns:
         PreparationSummary with processing results and file locations
     """
@@ -419,7 +437,7 @@ def process_and_save_cleaned_referrals(
 
     # Initialize df_all to satisfy type checker
     df_all: pd.DataFrame
-    
+
     # Handle different input types
     if isinstance(raw_input, pd.DataFrame):
         logger.info("Processing DataFrame with %d rows (source: %s)", len(raw_input), filename or "unknown")
@@ -429,15 +447,15 @@ def process_and_save_cleaned_referrals(
     elif not isinstance(raw_input, (Path, str, pd.DataFrame)):
         # Handle any buffer-like object (BytesIO, bytes, Streamlit buffer, etc.)
         logger.info("Loading raw referrals from memory (source: %s)", filename or "uploaded file")
-        
+
         # Convert buffer types to BytesIO for pandas compatibility
         excel_buffer: BytesIO
-        
+
         if isinstance(raw_input, BytesIO):
             excel_buffer = raw_input
         elif isinstance(raw_input, bytes):
             excel_buffer = BytesIO(raw_input)
-        elif type(raw_input).__name__ == 'memoryview':
+        elif type(raw_input).__name__ == "memoryview":
             # Handle memoryview objects (from Streamlit getbuffer())
             excel_buffer = BytesIO(bytes(raw_input))  # type: ignore
         elif isinstance(raw_input, bytearray):
@@ -451,22 +469,22 @@ def process_and_save_cleaned_referrals(
         # Determine engine based on filename extension for Excel files
         excel_buffer.seek(0)
         engine = None
-        is_csv_file = filename and isinstance(filename, str) and filename.lower().endswith('.csv')
-        
+        is_csv_file = filename and isinstance(filename, str) and filename.lower().endswith(".csv")
+
         if filename and isinstance(filename, str):
             fname_lower = filename.lower()
-            if fname_lower.endswith('.xlsx'):
-                engine = 'openpyxl'
-            elif fname_lower.endswith('.xls'):
-                engine = 'xlrd'
-        
+            if fname_lower.endswith(".xlsx"):
+                engine = "openpyxl"
+            elif fname_lower.endswith(".xls"):
+                engine = "xlrd"
+
         # If no engine determined from filename, try to detect from bytes
         if not engine and not is_csv_file:
             if _looks_like_excel_bytes(excel_buffer):
                 # Default to openpyxl for modern Excel files
-                engine = 'openpyxl'
+                engine = "openpyxl"
             excel_buffer.seek(0)
-        
+
         # If filename suggests CSV prefer CSV parsing (S3 often provides CSV exports)
         tried_csv = False
         if is_csv_file:
@@ -501,10 +519,10 @@ def process_and_save_cleaned_referrals(
                         else:
                             # Try openpyxl first, then xlrd as fallback
                             try:
-                                df_all = pd.read_excel(excel_buffer, engine='openpyxl')
+                                df_all = pd.read_excel(excel_buffer, engine="openpyxl")
                             except Exception:
                                 excel_buffer.seek(0)
-                                df_all = pd.read_excel(excel_buffer, engine='xlrd')
+                                df_all = pd.read_excel(excel_buffer, engine="xlrd")
                     except Exception as e3:
                         # All attempts failed - raise informative error
                         raise ValueError(
@@ -525,15 +543,15 @@ def process_and_save_cleaned_referrals(
                 raise FileNotFoundError(f"Raw referral file not found: {raw_path}")
             logger.info("Loading raw referrals from %s", raw_path)
             suffix = raw_path.suffix.lower()
-            
+
             # Determine engine for Excel files
             engine = None
-            if suffix == '.xlsx':
-                engine = 'openpyxl'
-            elif suffix == '.xls':
-                engine = 'xlrd'
-            
-            if suffix == '.csv':
+            if suffix == ".xlsx":
+                engine = "openpyxl"
+            elif suffix == ".xls":
+                engine = "xlrd"
+
+            if suffix == ".csv":
                 df_all = pd.read_csv(raw_path)
             else:
                 # Try Excel first; if it fails, attempt CSV fallback (some exports are CSV without .csv extension)
@@ -542,9 +560,11 @@ def process_and_save_cleaned_referrals(
                         df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts", engine=engine)
                     else:
                         try:
-                            df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts", engine='openpyxl')
+                            df_all = pd.read_excel(
+                                raw_path, sheet_name="Referrals_App_Full_Contacts", engine="openpyxl"
+                            )
                         except Exception:
-                            df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts", engine='xlrd')
+                            df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts", engine="xlrd")
                 except Exception:
                     try:
                         df_all = pd.read_csv(raw_path)
@@ -554,14 +574,14 @@ def process_and_save_cleaned_referrals(
                             df_all = pd.read_excel(raw_path, engine=engine)
                         else:
                             try:
-                                df_all = pd.read_excel(raw_path, engine='openpyxl')
+                                df_all = pd.read_excel(raw_path, engine="openpyxl")
                             except Exception:
-                                df_all = pd.read_excel(raw_path, engine='xlrd')
+                                df_all = pd.read_excel(raw_path, engine="xlrd")
             # Normalize column names (strip whitespace)
             df_all.columns = df_all.columns.str.strip()
         else:
             raise TypeError(f"Unsupported input type: {type(raw_input)}")
-    
+
     df_all = _normalize_input_dataframe(df_all)
 
     skipped_configs: List[str] = []
@@ -584,7 +604,9 @@ def process_and_save_cleaned_referrals(
             processed = pd.DataFrame()
         results[key] = processed
 
-    inbound_combined = _combine_inbound(results.get("primary_inbound", pd.DataFrame()), results.get("secondary_inbound", pd.DataFrame()))
+    inbound_combined = _combine_inbound(
+        results.get("primary_inbound", pd.DataFrame()), results.get("secondary_inbound", pd.DataFrame())
+    )
     outbound = _prepare_outbound(results.get("outbound", pd.DataFrame()))
 
     combined = pd.concat([inbound_combined, outbound], ignore_index=False).sort_index()
@@ -596,7 +618,10 @@ def process_and_save_cleaned_referrals(
     inbound_path = processed_path / "cleaned_inbound_referrals.parquet"
     outbound_path = processed_path / "cleaned_outbound_referrals.parquet"
     all_path = processed_path / "cleaned_all_referrals.parquet"
-    def _safe_to_parquet(df: pd.DataFrame, dest: Path, *, compression: str = "snappy", attempts: int = 5, backoff: float = 0.2) -> None:
+
+    def _safe_to_parquet(
+        df: pd.DataFrame, dest: Path, *, compression: str = "snappy", attempts: int = 5, backoff: float = 0.2
+    ) -> None:
         """Write a DataFrame to Parquet atomically with retries.
 
         This writes to a temporary file in the same directory and then
@@ -695,19 +720,19 @@ def process_referral_data(
     filename: Optional[str] = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, PreparationSummary]:
     """Process referral data and return DataFrames without saving to disk.
-    
+
     This function is useful for data validation, preview, or analysis
     without creating files on disk.
-    
+
     Args:
         raw_input: Same input types as process_and_save_cleaned_referrals
         filename: Optional filename for logging (used with BytesIO/bytes/DataFrame inputs)
-        
+
     Returns:
         Tuple of (inbound_df, outbound_df, combined_df, summary) containing processed data
     """
     import tempfile
-    
+
     # Use a temporary directory that we won't actually write to
     with tempfile.TemporaryDirectory() as temp_dir:
         # Process the data but capture DataFrames before they're saved
@@ -719,15 +744,15 @@ def process_referral_data(
         elif not isinstance(raw_input, (Path, str, pd.DataFrame)):
             # Handle any buffer-like object (BytesIO, bytes, Streamlit buffer, etc.)
             logger.info("Loading raw referrals from memory (source: %s)", filename or "uploaded file")
-            
+
             # Convert buffer types to BytesIO for pandas compatibility
             excel_buffer: BytesIO
-            
+
             if isinstance(raw_input, BytesIO):
                 excel_buffer = raw_input
             elif isinstance(raw_input, bytes):
                 excel_buffer = BytesIO(raw_input)
-            elif type(raw_input).__name__ == 'memoryview':
+            elif type(raw_input).__name__ == "memoryview":
                 # Handle memoryview objects (from Streamlit getbuffer())
                 excel_buffer = BytesIO(bytes(raw_input))  # type: ignore
             elif isinstance(raw_input, bytearray):
@@ -738,26 +763,26 @@ def process_referral_data(
                     excel_buffer = BytesIO(bytes(raw_input))  # type: ignore
                 except Exception as e:
                     raise TypeError(f"Cannot convert {type(raw_input)} to BytesIO for Excel processing: {e}")
-            
+
             # Determine engine based on filename extension for Excel files
             excel_buffer.seek(0)
             engine = None
-            is_csv_file = filename and isinstance(filename, str) and filename.lower().endswith('.csv')
-            
+            is_csv_file = filename and isinstance(filename, str) and filename.lower().endswith(".csv")
+
             if filename and isinstance(filename, str):
                 fname_lower = filename.lower()
-                if fname_lower.endswith('.xlsx'):
-                    engine = 'openpyxl'
-                elif fname_lower.endswith('.xls'):
-                    engine = 'xlrd'
-            
+                if fname_lower.endswith(".xlsx"):
+                    engine = "openpyxl"
+                elif fname_lower.endswith(".xls"):
+                    engine = "xlrd"
+
             # If no engine determined from filename, try to detect from bytes
             if not engine and not is_csv_file:
                 if _looks_like_excel_bytes(excel_buffer):
                     # Default to openpyxl for modern Excel files
-                    engine = 'openpyxl'
+                    engine = "openpyxl"
                 excel_buffer.seek(0)
-            
+
             # Try to read as CSV first if filename suggests it
             if is_csv_file:
                 try:
@@ -769,10 +794,14 @@ def process_referral_data(
                         df_all = pd.read_excel(excel_buffer, sheet_name="Referrals_App_Full_Contacts", engine=engine)
                     else:
                         try:
-                            df_all = pd.read_excel(excel_buffer, sheet_name="Referrals_App_Full_Contacts", engine='openpyxl')
+                            df_all = pd.read_excel(
+                                excel_buffer, sheet_name="Referrals_App_Full_Contacts", engine="openpyxl"
+                            )
                         except Exception:
                             excel_buffer.seek(0)
-                            df_all = pd.read_excel(excel_buffer, sheet_name="Referrals_App_Full_Contacts", engine='xlrd')
+                            df_all = pd.read_excel(
+                                excel_buffer, sheet_name="Referrals_App_Full_Contacts", engine="xlrd"
+                            )
             else:
                 # Try Excel first
                 try:
@@ -780,10 +809,14 @@ def process_referral_data(
                         df_all = pd.read_excel(excel_buffer, sheet_name="Referrals_App_Full_Contacts", engine=engine)
                     else:
                         try:
-                            df_all = pd.read_excel(excel_buffer, sheet_name="Referrals_App_Full_Contacts", engine='openpyxl')
+                            df_all = pd.read_excel(
+                                excel_buffer, sheet_name="Referrals_App_Full_Contacts", engine="openpyxl"
+                            )
                         except Exception:
                             excel_buffer.seek(0)
-                            df_all = pd.read_excel(excel_buffer, sheet_name="Referrals_App_Full_Contacts", engine='xlrd')
+                            df_all = pd.read_excel(
+                                excel_buffer, sheet_name="Referrals_App_Full_Contacts", engine="xlrd"
+                            )
                 except ValueError:
                     # Reset position and try again without sheet name
                     excel_buffer.seek(0)
@@ -791,10 +824,10 @@ def process_referral_data(
                         df_all = pd.read_excel(excel_buffer, engine=engine)
                     else:
                         try:
-                            df_all = pd.read_excel(excel_buffer, engine='openpyxl')
+                            df_all = pd.read_excel(excel_buffer, engine="openpyxl")
                         except Exception:
                             excel_buffer.seek(0)
-                            df_all = pd.read_excel(excel_buffer, engine='xlrd')
+                            df_all = pd.read_excel(excel_buffer, engine="xlrd")
             # Normalize column names (strip whitespace)
             df_all.columns = df_all.columns.str.strip()
         else:
@@ -805,15 +838,15 @@ def process_referral_data(
                     raise FileNotFoundError(f"Raw referral file not found: {raw_path}")
                 logger.info("Loading raw referrals from %s", raw_path)
                 suffix = raw_path.suffix.lower()
-                
+
                 # Determine engine for Excel files
                 engine = None
-                if suffix == '.xlsx':
-                    engine = 'openpyxl'
-                elif suffix == '.xls':
-                    engine = 'xlrd'
-                
-                if suffix == '.csv':
+                if suffix == ".xlsx":
+                    engine = "openpyxl"
+                elif suffix == ".xls":
+                    engine = "xlrd"
+
+                if suffix == ".csv":
                     df_all = pd.read_csv(raw_path)
                 else:
                     try:
@@ -821,24 +854,28 @@ def process_referral_data(
                             df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts", engine=engine)
                         else:
                             try:
-                                df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts", engine='openpyxl')
+                                df_all = pd.read_excel(
+                                    raw_path, sheet_name="Referrals_App_Full_Contacts", engine="openpyxl"
+                                )
                             except Exception:
-                                df_all = pd.read_excel(raw_path, sheet_name="Referrals_App_Full_Contacts", engine='xlrd')
+                                df_all = pd.read_excel(
+                                    raw_path, sheet_name="Referrals_App_Full_Contacts", engine="xlrd"
+                                )
                     except ValueError:
                         if engine:
                             df_all = pd.read_excel(raw_path, engine=engine)
                         else:
                             try:
-                                df_all = pd.read_excel(raw_path, engine='openpyxl')
+                                df_all = pd.read_excel(raw_path, engine="openpyxl")
                             except Exception:
-                                df_all = pd.read_excel(raw_path, engine='xlrd')
+                                df_all = pd.read_excel(raw_path, engine="xlrd")
                 # Normalize column names (strip whitespace)
                 df_all.columns = df_all.columns.str.strip()
             else:
                 raise TypeError(f"Unsupported input type: {type(raw_input)}")
-        
+
         df_all = _normalize_input_dataframe(df_all)
-        
+
         # Process the data using the same logic as the main function
         skipped_configs: List[str] = []
         results: Dict[str, pd.DataFrame] = {}
@@ -860,12 +897,11 @@ def process_referral_data(
             results[key] = processed
 
         inbound_combined = _combine_inbound(
-            results.get("primary_inbound", pd.DataFrame()), 
-            results.get("secondary_inbound", pd.DataFrame())
+            results.get("primary_inbound", pd.DataFrame()), results.get("secondary_inbound", pd.DataFrame())
         )
         outbound = _prepare_outbound(results.get("outbound", pd.DataFrame()))
         combined = pd.concat([inbound_combined, outbound], ignore_index=False).sort_index()
-        
+
         if "Project ID" in combined.columns:
             combined["Project ID"] = combined["Project ID"].astype("Int64")
 
@@ -902,14 +938,14 @@ def process_referral_data(
             warnings=warnings,
             issue_records=issue_records,
         )
-        
+
         logger.info(
             "Processed datasets (not saved): inbound=%d, outbound=%d, all=%d",
             summary.inbound_count,
             summary.outbound_count,
             summary.all_count,
         )
-        
+
         return inbound_combined, outbound, combined, summary
 
 
@@ -920,7 +956,7 @@ def process_and_save_preferred_providers(
     filename: Optional[str] = None,
 ) -> PreferredProvidersSummary:
     """Process preferred providers data and save cleaned Parquet file.
-    
+
     Args:
         raw_input: Can be:
             - Path/str: Path to Excel or CSV file
@@ -928,11 +964,11 @@ def process_and_save_preferred_providers(
             - pd.DataFrame: Already loaded DataFrame
         processed_dir: Directory to save processed Parquet file
         filename: Optional filename for logging (used with BytesIO/bytes/DataFrame inputs)
-    
+
     Returns:
         PreferredProvidersSummary with processing results and file location
     """
-    
+
     processed_path = Path(processed_dir).resolve()
     processed_path.mkdir(parents=True, exist_ok=True)
 
@@ -944,7 +980,7 @@ def process_and_save_preferred_providers(
 
     # Process the data following the notebook logic
     total_count = len(df)
-    
+
     # Remove duplicates by Person ID if available, otherwise generic deduplication
     # Check for the raw column name before renaming
     person_id_col = "Contact's Details: Person ID"
@@ -954,14 +990,14 @@ def process_and_save_preferred_providers(
     else:
         df = df.drop_duplicates(ignore_index=True)
         logger.info("Deduplicated preferred providers (no Person ID column): %d unique providers", len(df))
-    
+
     # Identify records missing latitude/longitude
     lat_col = "Contact's Details: Latitude"
     lon_col = "Contact's Details: Longitude"
-    
+
     warnings = []
     missing_records = None
-    
+
     if {lat_col, lon_col}.issubset(df.columns):
         missing_records = df[df[[lat_col, lon_col]].isna().any(axis=1)]
         df_cleaned = df.dropna(subset=[lat_col, lon_col])
@@ -972,7 +1008,7 @@ def process_and_save_preferred_providers(
 
     missing_geo_count = len(missing_records) if missing_records is not None else 0
     cleaned_count = len(df_cleaned)
-    
+
     # Rename columns to match expected schema before saving
     column_mapping = {
         "Contact Full Name": "Full Name",
@@ -988,7 +1024,7 @@ def process_and_save_preferred_providers(
     for old_col, new_col in column_mapping.items():
         if old_col in df_cleaned.columns:
             df_cleaned[new_col] = df_cleaned[old_col]
-    
+
     # Save cleaned data to parquet
     output_path = processed_path / "cleaned_preferred_providers.parquet"
     if output_path.exists():
@@ -998,13 +1034,13 @@ def process_and_save_preferred_providers(
             logger.warning("Could not remove existing preferred providers file (locked): %s", output_path)
 
     _safe_to_parquet(df_cleaned, output_path, compression="snappy")
-    
+
     logger.info(
         "Saved cleaned preferred providers: %d records (dropped %d missing geo data)",
         cleaned_count,
         missing_geo_count,
     )
-    
+
     return PreferredProvidersSummary(
         total_count=total_count,
         cleaned_count=cleaned_count,
@@ -1021,11 +1057,11 @@ def process_preferred_providers(
     filename: Optional[str] = None,
 ) -> tuple[pd.DataFrame, PreferredProvidersSummary]:
     """Process preferred providers data and return DataFrame without saving.
-    
+
     Args:
         raw_input: Same input types as process_and_save_preferred_providers
         filename: Optional filename for logging
-        
+
     Returns:
         Tuple of (cleaned_dataframe, summary) containing processed data
     """
@@ -1037,7 +1073,7 @@ def process_preferred_providers(
 
     # Process the data following the notebook logic
     total_count = len(df)
-    
+
     # Remove duplicates by Person ID if available, otherwise generic deduplication
     # Check for the raw column name before renaming
     person_id_col = "Contact's Details: Person ID"
@@ -1047,14 +1083,14 @@ def process_preferred_providers(
     else:
         df = df.drop_duplicates(ignore_index=True)
         logger.info("Deduplicated preferred providers (no Person ID column): %d unique providers", len(df))
-    
+
     # Identify records missing latitude/longitude
     lat_col = "Contact's Details: Latitude"
     lon_col = "Contact's Details: Longitude"
-    
+
     warnings = []
     missing_records = None
-    
+
     if {lat_col, lon_col}.issubset(df.columns):
         missing_records = df[df[[lat_col, lon_col]].isna().any(axis=1)]
         df_cleaned = df.dropna(subset=[lat_col, lon_col])
@@ -1065,7 +1101,7 @@ def process_preferred_providers(
 
     missing_geo_count = len(missing_records) if missing_records is not None else 0
     cleaned_count = len(df_cleaned)
-    
+
     # Rename columns to match expected schema
     column_mapping = {
         "Contact Full Name": "Full Name",
@@ -1090,7 +1126,7 @@ def process_preferred_providers(
         cleaned_count,
         missing_geo_count,
     )
-    
+
     summary = PreferredProvidersSummary(
         total_count=total_count,
         cleaned_count=cleaned_count,
@@ -1099,8 +1135,15 @@ def process_preferred_providers(
         missing_records=missing_records,
         warnings=warnings,
     )
-    
+
     return df_cleaned, summary
 
 
-__all__ = ["PreparationSummary", "PreferredProvidersSummary", "process_and_save_cleaned_referrals", "process_referral_data", "process_and_save_preferred_providers", "process_preferred_providers"]
+__all__ = [
+    "PreparationSummary",
+    "PreferredProvidersSummary",
+    "process_and_save_cleaned_referrals",
+    "process_referral_data",
+    "process_and_save_preferred_providers",
+    "process_preferred_providers",
+]
