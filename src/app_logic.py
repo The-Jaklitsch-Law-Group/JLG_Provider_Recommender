@@ -26,6 +26,10 @@ __all__ = [
 ]
 
 
+# Flag to ensure preferred percentage warning is logged only once per app session
+_preferred_pct_warning_logged = False
+
+
 @st.cache_data(ttl=3600)
 def load_application_data():
     """Load and enrich provider and referral data for the application.
@@ -45,6 +49,7 @@ def load_application_data():
         Exception: If data loading fails completely (caught by calling code)
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
     provider_df = load_and_validate_provider_data()
@@ -66,20 +71,17 @@ def load_application_data():
         provider_df = clean_address_data(provider_df)
         for col in ["Street", "City", "State", "Zip", "Full Address"]:
             if col in provider_df.columns:
-                provider_df[col] = (
-                    provider_df[col].astype(str).replace(["nan", "None", "NaN"], "").fillna("")
-                )
+                provider_df[col] = provider_df[col].astype(str).replace(["nan", "None", "NaN"], "").fillna("")
         if "Full Address" not in provider_df.columns or provider_df["Full Address"].isna().any():
             provider_df = build_full_address(provider_df)
         if "Full Name" in provider_df.columns:
             provider_df = provider_df.drop_duplicates(subset=["Full Name"], keep="first")
         phone_candidates = [
-            col
-            for col in ["Work Phone Number", "Work Phone", "Phone Number", "Phone 1"]
-            if col in provider_df.columns
+            col for col in ["Work Phone Number", "Work Phone", "Phone Number", "Phone 1"] if col in provider_df.columns
         ]
         if phone_candidates:
             from src.utils.io_utils import format_phone_number
+
             phone_source = phone_candidates[0]
             provider_df["Work Phone Number"] = provider_df[phone_source].apply(format_phone_number)
             if "Work Phone" not in provider_df.columns:
@@ -140,12 +142,16 @@ def load_application_data():
 
             # Validation: Warn if suspiciously high percentage of providers are marked as preferred
             if preferred_pct > 80:
-                logger.warning(
-                    f"WARNING: {preferred_pct:.1f}% of providers are marked as preferred. "
-                    "This is unusually high and may indicate that the preferred providers file "
-                    "contains all providers instead of just the preferred ones. "
-                    "Please verify the preferred providers data source."
-                )
+                global _preferred_pct_warning_logged
+
+                if not _preferred_pct_warning_logged:
+                    logger.warning(
+                        f"WARNING: {preferred_pct:.1f}% of providers are marked as preferred. "
+                        "This is unusually high and may indicate that the preferred providers file "
+                        "contains all providers instead of just the preferred ones. "
+                        "Please verify the preferred providers data source."
+                    )
+                    _preferred_pct_warning_logged = True  # Set flag to prevent future duplicate warnings
 
             provider_df = provider_df.drop(columns=["_merge"])
 
@@ -199,9 +205,7 @@ def apply_time_filtering(provider_df, detailed_referrals_df, start_date, end_dat
     """
     working_df = provider_df.copy()
     if not detailed_referrals_df.empty:
-        time_filtered_outbound = calculate_time_based_referral_counts(
-            detailed_referrals_df, start_date, end_date
-        )
+        time_filtered_outbound = calculate_time_based_referral_counts(detailed_referrals_df, start_date, end_date)
         if not time_filtered_outbound.empty:
             working_df = working_df.drop(columns=["Referral Count"], errors="ignore").merge(
                 time_filtered_outbound[["Full Name", "Referral Count"]], on="Full Name", how="left"
@@ -210,9 +214,7 @@ def apply_time_filtering(provider_df, detailed_referrals_df, start_date, end_dat
 
     inbound_referrals_df = load_inbound_referrals()
     if not inbound_referrals_df.empty:
-        time_filtered_inbound = calculate_inbound_referral_counts(
-            inbound_referrals_df, start_date, end_date
-        )
+        time_filtered_inbound = calculate_inbound_referral_counts(inbound_referrals_df, start_date, end_date)
         if not time_filtered_inbound.empty:
             working_df = working_df.drop(columns=["Inbound Referral Count"], errors="ignore").merge(
                 time_filtered_inbound[["Full Name", "Inbound Referral Count"]], on="Full Name", how="left"

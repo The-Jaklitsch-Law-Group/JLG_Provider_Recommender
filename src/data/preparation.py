@@ -303,6 +303,72 @@ _REFERRAL_CONFIGS: Dict[str, Dict[str, Any]] = {
 }
 
 
+def process_referral_data(
+    data_bytes: bytes,
+    *,
+    filename: Optional[str] = None,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, PreparationSummary]:
+    """Process referral data from bytes without saving to disk.
+
+    Args:
+        data_bytes: Raw file data (CSV or Excel)
+        filename: Optional filename for logging
+
+    Returns:
+        Tuple of (inbound_df, outbound_df, combined_df, summary)
+    """
+    from src.data.io_utils import load_dataframe
+
+    # Load the dataframe
+    df_all = load_dataframe(data_bytes, filename=filename)
+    if df_all.empty:
+        empty_df = pd.DataFrame()
+        summary = PreparationSummary(inbound_count=0, outbound_count=0, all_count=0)
+        return empty_df, empty_df, empty_df, summary
+
+    # Normalize input
+    df_all = _normalize_input_dataframe(df_all)
+
+    # Process the data
+    results: Dict[str, pd.DataFrame] = {}
+    column_warnings: List[str] = []
+    skipped_configs: List[str] = []
+
+    for key, config in _REFERRAL_CONFIGS.items():
+        try:
+            columns_map = cast(Mapping[str, str], config["columns"])
+            filter_seq = cast(Optional[Sequence[Callable[[pd.DataFrame], pd.Series]]], config.get("filters"))
+            processed, missing_columns = _process_referral_data(df_all, columns_map, filter_seq)
+            if missing_columns:
+                message = f"{key} missing columns: {', '.join(missing_columns)}"
+                logger.warning(message)
+                column_warnings.append(message)
+        except KeyError as exc:
+            logger.error("Skipping %s due to missing data: %s", key, exc)
+            skipped_configs.append(key)
+            processed = pd.DataFrame()
+        results[key] = processed
+
+    inbound_combined = _combine_inbound(
+        results.get("primary_inbound", pd.DataFrame()), results.get("secondary_inbound", pd.DataFrame())
+    )
+    outbound = _prepare_outbound(results.get("outbound", pd.DataFrame()))
+
+    combined = pd.concat([inbound_combined, outbound], ignore_index=False).sort_index()
+    if "Project ID" in combined.columns:
+        combined["Project ID"] = combined["Project ID"].astype("Int64")
+
+    summary = PreparationSummary(
+        inbound_count=len(inbound_combined),
+        outbound_count=len(outbound),
+        all_count=len(combined),
+        warnings=column_warnings,
+        skipped_configs=skipped_configs,
+    )
+
+    return inbound_combined, outbound, combined, summary
+
+
 def _normalize_input_dataframe(df_all: pd.DataFrame) -> pd.DataFrame:
     df_all = df_all.copy()
 
@@ -400,7 +466,8 @@ def process_and_save_cleaned_referrals(
     processed_dir: Path | str,
     *,
     filename: Optional[str] = None,
-) -> PreparationSummary: ...
+) -> PreparationSummary:
+    ...
 
 
 @overload
@@ -409,7 +476,8 @@ def process_and_save_cleaned_referrals(
     processed_dir: Path | str,
     *,
     filename: Optional[str] = None,
-) -> PreparationSummary: ...
+) -> PreparationSummary:
+    ...
 
 
 def process_and_save_cleaned_referrals(

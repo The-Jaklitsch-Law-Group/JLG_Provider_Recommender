@@ -50,6 +50,9 @@ from src.utils.s3_client_optimized import S3DataClient
 
 logger = logging.getLogger(__name__)
 
+# Flag to ensure preferred providers warnings are logged only once per app session
+_preferred_providers_warning_logged = False
+
 
 class DataSource(Enum):
     """Enumeration of available data sources with clear purpose definitions."""
@@ -369,12 +372,16 @@ class DataIngestionManager:
             # Preferred providers lists are typically smaller than the full provider database
             # If we see more than 100 unique providers, log a warning
             if unique_providers > 100:
-                logger.warning(
-                    f"WARNING: Preferred providers file contains {unique_providers} unique providers. "
-                    "This is unusually high. Please verify that the correct file was uploaded to the "
-                    "preferred_providers folder in S3. The preferred providers list should contain "
-                    "only the firm's preferred provider contacts, not all providers."
-                )
+                global _preferred_providers_warning_logged
+
+                if not _preferred_providers_warning_logged:
+                    logger.warning(
+                        f"WARNING: Preferred providers file contains {unique_providers} unique providers. "
+                        "This is unusually high. Please verify that the correct file was uploaded to the "
+                        "preferred_providers folder in S3. The preferred providers list should contain "
+                        "only the firm's preferred provider contacts, not all providers."
+                    )
+                    _preferred_providers_warning_logged = True  # Set the flag to prevent future warnings
 
         return df
 
@@ -399,7 +406,7 @@ class DataIngestionManager:
         if df.empty:
             return df
 
-        # Provider data always needs aggregation processing, even from cleaned files
+        # Provider data always needs aggregation processing, even from cleaned data
         if source == DataSource.PROVIDER_DATA:
             return self._process_provider_data(df)
 
