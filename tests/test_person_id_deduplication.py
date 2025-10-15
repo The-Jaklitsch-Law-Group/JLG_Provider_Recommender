@@ -5,6 +5,7 @@ Tests verify that:
 - When Person ID is not available, fallback deduplication works
 - Deduplication is applied across all data sources (referrals and preferred providers)
 """
+
 import pandas as pd
 import pytest
 
@@ -128,26 +129,32 @@ def test_referral_deduplication_by_person_id(tmp_path, sample_referral_data_with
     # Verify inbound deduplication by Person ID
     # Should have 2 unique inbound providers (P001 and P002), not 3
     assert len(inbound) == 2, f"Should have 2 unique inbound providers after deduplication, got {len(inbound)}"
-    
+
     # Verify that only one record for Person ID P001 exists
     p001_records = inbound[inbound["Person ID"] == "P001"]
     assert len(p001_records) == 1, "Should have only one record for Person ID P001 after deduplication"
-    
+
     # Verify that Person ID is preserved
     assert "Person ID" in inbound.columns, "Person ID column should be preserved in output"
-    assert set(inbound["Person ID"].unique()) == {"P001", "P002"}, "Should have exactly two unique Person IDs in inbound"
+    assert set(inbound["Person ID"].unique()) == {
+        "P001",
+        "P002",
+    }, "Should have exactly two unique Person IDs in inbound"
 
     # Verify outbound deduplication by Person ID
     # Should have 2 unique outbound providers (P101 and P102), not 3
     assert len(outbound) == 2, f"Should have 2 unique outbound providers after deduplication, got {len(outbound)}"
-    
+
     # Verify that only one record for Person ID P101 exists
     p101_records = outbound[outbound["Person ID"] == "P101"]
     assert len(p101_records) == 1, "Should have only one record for Person ID P101 after deduplication"
-    
+
     # Verify that Person ID is preserved
     assert "Person ID" in outbound.columns, "Person ID column should be preserved in output"
-    assert set(outbound["Person ID"].unique()) == {"P101", "P102"}, "Should have exactly two unique Person IDs in outbound"
+    assert set(outbound["Person ID"].unique()) == {
+        "P101",
+        "P102",
+    }, "Should have exactly two unique Person IDs in outbound"
 
 
 def test_preferred_providers_deduplication_by_person_id(
@@ -166,18 +173,20 @@ def test_preferred_providers_deduplication_by_person_id(
     summary = process_and_save_preferred_providers(raw_path, processed_dir)
 
     # Verify deduplication occurred
-    assert summary.cleaned_count == 2, f"Should have 2 unique providers after deduplication, got {summary.cleaned_count}"
+    assert (
+        summary.cleaned_count == 2
+    ), f"Should have 2 unique providers after deduplication, got {summary.cleaned_count}"
 
     # Load the output file
     df = pd.read_parquet(processed_dir / "cleaned_preferred_providers.parquet")
 
     # Verify only 2 providers remain (PP001 deduplicated, PP002 kept)
     assert len(df) == 2, f"Should have 2 providers after deduplication, got {len(df)}"
-    
+
     # Verify that only one record for Person ID PP001 exists
     pp001_records = df[df["Person ID"] == "PP001"]
     assert len(pp001_records) == 1, "Should have only one record for Person ID PP001 after deduplication"
-    
+
     # Verify Person ID column is preserved
     assert "Person ID" in df.columns, "Person ID column should be preserved in output"
     assert set(df["Person ID"].unique()) == {"PP001", "PP002"}, "Should have exactly two unique Person IDs"
@@ -229,7 +238,7 @@ def test_referral_deduplication_fallback_without_person_id(tmp_path, disable_s3_
     # Should still work without Person ID - exact duplicates should be removed
     # Note: without Person ID, deduplication happens at row level in drop_duplicates
     assert len(inbound) >= 1, "Should have at least one provider after processing"
-    
+
     # Person ID column should not exist in output
     assert "Person ID" not in inbound.columns, "Person ID column should not be in output when not in source"
 
@@ -276,6 +285,6 @@ def test_preferred_providers_deduplication_fallback_without_person_id(tmp_path, 
 
     # Verify only 1 provider remains
     assert len(df) == 1, f"Should have 1 provider after deduplication, got {len(df)}"
-    
+
     # Person ID column should not exist in output
     assert "Person ID" not in df.columns, "Person ID column should not be in output when not in source"
