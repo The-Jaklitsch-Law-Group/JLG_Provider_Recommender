@@ -6,12 +6,24 @@ st.markdown("# How Provider Selection Works")
 
 st.markdown(
     """
-The Provider Recommender uses a sophisticated scoring algorithm to find the best medical service provider for your client.
-It analyzes **geographic proximity**, **referral distribution**, **referral relationships**, and **preferred provider status**
-to deliver data-driven recommendations that balance client convenience with provider capacity.
+The Provider Recommender finds the best medical service provider for your client by combining location, referral history, and your preferences.
 
-The system processes historical referral data from Filevine, geocodes provider locations, and applies configurable
-weighting to rank providers based on your priorities.
+At a glance:
+- Input: client address and simple preference sliders
+- Data source: secure AWS S3 bucket (single source of truth)
+- Output: ranked provider recommendations with contact details and distance
+- Primary benefit: faster, consistent, data-driven referrals that balance client convenience and provider experience
+
+No technical setup is required to run a search — enter an address, adjust sliders, and the system returns ranked matches.
+"""
+)
+
+st.markdown("## ✅ Summary (Non-technical)")
+st.markdown(
+    """
+- Quickly find nearby providers tailored to client needs
+- Prioritizes distance, referral experience, reciprocity, and preferred providers
+- Uses secure S3-hosted data that updates automatically when new files are added
 """
 )
 
@@ -26,10 +38,10 @@ with col1:
         """
 **☁️ 1. S3 Data Sourcing (Automatic)**
 - App connects to AWS S3 bucket on launch
-- Downloads latest referral data from configured S3 folders
-- Automatically selects most recent file by timestamp
-- Caches data locally in `data/processed/` as Parquet files
-- Data updates automatically when new files uploaded to S3
+- Downloads the latest referral and preferred provider data from configured S3 folders
+- Automatically selects the most recent file by timestamp
+- S3 is the **only** data source—no local Parquet or Excel files are used for ingestion
+- Data updates automatically when new files are uploaded to S3
 
 **🧹 2. Data Cleaning & Processing**
 - Split into inbound/outbound referral datasets
@@ -50,10 +62,9 @@ with col2:
     st.markdown(
         """
 **💾 4. Data Optimization**
-- Save cleaned data as Parquet files (10x faster than CSV/Excel)
-- Local Parquet files are cache files only (gitignored)
-- S3 is the single source of truth for all data
-- Files stored in `data/processed/` for fast application loading
+- All data is processed in-memory after download from S3
+- No local Parquet or Excel files are used as data sources
+- S3 remains the canonical source for all data
 
 **🔎 5. Search & Scoring**
 - User enters client address and preferences
@@ -249,7 +260,7 @@ with qa_col1:
 - Duplicate provider detection and removal
 
 **📊 Current & Accurate Data**
-- Sourced from S3 bucket (single source of truth)
+- Sourced directly from S3 bucket (single source of truth)
 - Automatic updates when new files uploaded to S3
 - Real-time workload calculations
 - Historical referral tracking
@@ -262,7 +273,7 @@ with qa_col2:
         """
 **🔄 S3-Only Architecture**
 - AWS S3 is the canonical data source
-- Local Parquet files are cache files only (gitignored)
+- No local Parquet or Excel files are used for ingestion
 - Automatic file selection (most recent by timestamp)
 - Secure credential management via Streamlit secrets
 - Connection pooling for optimal S3 performance
@@ -283,16 +294,15 @@ with qa_col2:
 """
     )
 
-with st.expander("🔧 Technical Details", expanded=False):
+with st.expander("🔧 Technical Details (for developers)", expanded=False):
     st.markdown("### ☁️ S3 Data Architecture")
-    
+
     st.markdown(
         """
         **AWS S3 as Single Source of Truth:**
-        
-        The application uses AWS S3 exclusively as the canonical data source. Local parquet files 
-        are cache files only and are not checked into version control.
-        
+
+        The application uses AWS S3 exclusively as the canonical data source. All data is downloaded from S3 on app launch and used directly for processing and recommendations. No local Parquet or Excel files are used for ingestion or as a source of truth.
+
         **S3 Bucket Structure:**
         ```
         jlg-provider-recommender-bucket/
@@ -304,7 +314,7 @@ with st.expander("🔧 Technical Details", expanded=False):
             ├── Preferred_Providers_2024-01-15.csv
             └── Preferred_Providers_2024-03-01.csv  (latest)
         ```
-        
+
         **S3 Configuration (`.streamlit/secrets.toml`):**
         ```toml
         [s3]
@@ -315,17 +325,16 @@ with st.expander("🔧 Technical Details", expanded=False):
         referrals_folder = "990046944"
         preferred_providers_folder = "990047553"
         ```
-        
+
         **Auto-Update Workflow:**
         1. App launches and checks S3 configuration
         2. Connects to S3 bucket using boto3 client with connection pooling
         3. Lists files in configured folders (referrals and preferred providers)
         4. Selects most recent file based on timestamp in filename or S3 LastModified
-        5. Downloads file to local cache (`data/raw/`)
+        5. Downloads file for processing
         6. Triggers data cleaning pipeline
-        7. Saves processed Parquet files to `data/processed/`
-        8. Data ready for application use
-        
+        7. Data ready for application use
+
         **S3 Client Optimizations:**
         - **Connection pooling**: Reuses boto3 session and client across requests
         - **Max pool connections**: 10 concurrent connections
@@ -334,15 +343,15 @@ with st.expander("🔧 Technical Details", expanded=False):
         - **Efficient file selection**: Uses S3 ListObjects pagination for large folders
         """
     )
-    
+
     st.markdown("### 🌐 API Integration Details")
-    
+
     st.markdown(
         """
         **Geocoding API (Nominatim/OpenStreetMap):**
-        
+
         The application uses the free Nominatim geocoding service with strict rate limiting:
-        
+
         - **Service**: OpenStreetMap Nominatim API
         - **Rate limit**: 1 request per second (enforced by geopy.RateLimiter)
         - **Timeout**: 10 seconds per request
@@ -350,7 +359,7 @@ with st.expander("🔧 Technical Details", expanded=False):
         - **User agent**: "provider_recommender" (required by Nominatim ToS)
         - **Cache TTL**: 1 hour (Streamlit @st.cache_data decorator)
         - **Fallback behavior**: Returns None if service unavailable
-        
+
         **Geocoding Request Flow:**
         ```python
         # Cached geocoding function with rate limiting
@@ -360,20 +369,20 @@ with st.expander("🔧 Technical Details", expanded=False):
             location = geocode_fn(address, timeout=10)
             return (location.latitude, location.longitude) if location else None
         ```
-        
+
         **Error Handling:**
         - **GeocoderTimedOut**: Retry with exponential backoff (up to 3 times)
         - **GeocoderServiceError**: Display user-friendly warning, return None
         - **GeocoderUnavailable**: Service down, graceful degradation
         - **Network errors**: Connection issues detected and reported to user
         - **Rate limit exceeded**: Automatic throttling via RateLimiter
-        
+
         **Cache Strategy:**
         - First geocode: API call (1-3 seconds depending on network)
         - Subsequent requests: Cached result (<10ms)
         - Cache invalidation: After 1 hour or on app restart
         - Cache key: Full address string (case-sensitive)
-        
+
         **Performance Metrics:**
         - Uncached geocode: 1-3 seconds
         - Cached geocode: <10ms
@@ -381,15 +390,15 @@ with st.expander("🔧 Technical Details", expanded=False):
         - Typical search page load: <1 second (cached data + cached geocode)
         """
     )
-    
+
     st.markdown("### 📊 Data Ingestion Pipeline")
-    
+
     st.markdown(
         """
         **DataIngestionManager Architecture:**
-        
-        Centralized data loading system with intelligent format prioritization and caching.
-        
+
+        Centralized data loading system with S3-only ingestion and intelligent caching.
+
         **Data Sources (Enum-based type safety):**
         ```python
         class DataSource(Enum):
@@ -399,34 +408,32 @@ with st.expander("🔧 Technical Details", expanded=False):
             PROVIDER_DATA = "provider"           # Aggregated unique providers
             PREFERRED_PROVIDERS = "preferred"    # Preferred provider contacts
         ```
-        
+
         **File Loading Priority:**
-        1. **Cleaned Parquet** (`data/processed/cleaned_*.parquet`) - Fastest (~50ms)
-        2. **Raw CSV** (`data/raw/*.csv`) - Slower (~500ms, requires cleaning)
-        
+        1. **S3 CSV** (latest file in each folder) - Always used for ingestion
+
         **Loading Strategy:**
         ```python
         manager = DataIngestionManager()
         df = manager.load_data(DataSource.OUTBOUND_REFERRALS)
-        # Automatically selects best available format
+        # Downloads latest file from S3
         # Applies source-specific transformations
         # Returns clean, validated DataFrame
         ```
-        
+
         **Post-Processing by Source:**
         - **OUTBOUND_REFERRALS**: No additional processing (already clean)
         - **PROVIDER_DATA**: Aggregates by (name, address), sums referral counts
         - **PREFERRED_PROVIDERS**: Validates phone/address formats
         - **ALL_REFERRALS**: Combines inbound + outbound with deduplication
-        
+
         **Caching Strategy:**
         - Streamlit `@st.cache_data` decorator with 1-hour TTL
-        - Cache key includes data source and file modification time
-        - Cache invalidation on file changes or manual refresh
-        - Separate caches for raw vs. processed files
+        - Cache key includes data source and S3 file modification time
+        - Cache invalidation on S3 file changes or manual refresh
         """
     )
-    
+
     st.markdown("### Scoring Formula Breakdown")
 
     st.markdown("**Full scoring equation when all data is available:**")
@@ -475,7 +482,7 @@ with st.expander("🔧 Technical Details", expanded=False):
            ↓
         5. Geocoding (Nominatim API with rate limiting & caching)
            ↓
-        6. Parquet Optimization (columnar storage, 10x faster)
+    6. Optional local caching to speed repeated loads (cache only; S3 is source of truth)
            ↓
         7. Application Loading (DataIngestionManager with cache)
            ↓
@@ -489,9 +496,9 @@ with st.expander("🔧 Technical Details", expanded=False):
     st.markdown("### Performance Optimizations")
     st.markdown(
         """
-        - **Vectorized Operations**: NumPy arrays for distance calculations (100x faster than loops)
+        - **Vectorized Operations**: NumPy arrays for distance calculations (much faster than Python loops)
         - **Streamlit Caching**: `@st.cache_data` for data loading (1-hour TTL)
-        - **Parquet Format**: Columnar storage ~10x faster than CSV/Excel
+        - **S3-Only Data Source**: All data is loaded directly from S3 (no local Parquet/Excel ingestion)
         - **Geocoding Cache**: 1-hour persistence to avoid redundant API calls
         - **Session State**: Preserves user preferences and search results
         - **S3 Connection Pooling**: Reuses boto3 clients (max 10 concurrent connections)
@@ -500,8 +507,7 @@ with st.expander("🔧 Technical Details", expanded=False):
         **Typical Performance:**
         - S3 download (first time): 2-5 seconds for ~5MB CSV
         - S3 download (cached): <100ms (local file check)
-        - Data loading (Parquet): <100ms for 10k rows
-        - Data loading (CSV with cleaning): 1-2 seconds
+        - Data loading (from S3): ~1-2 seconds for 10k rows
         - Distance calculation: <50ms for 100 providers (vectorized)
         - Geocoding (cached): <10ms
         - Geocoding (fresh): 1-3s (Nominatim with rate limiting)
@@ -512,24 +518,24 @@ with st.expander("🔧 Technical Details", expanded=False):
     st.markdown("### Data Integrity")
     st.markdown(
         """
-        **Deduplication Strategy:**
-        - **Key**: `(normalized_name, normalized_address)`
-        - **Name normalization**: Lowercase, remove punctuation, strip whitespace
-        - **Address normalization**: Standardize abbreviations, remove suite/unit numbers
+    **Deduplication Strategy:**
+    - **Key**: `(normalized_name, normalized_address)`
+    - **Name normalization**: Lowercase, remove punctuation, strip whitespace
+    - **Address normalization**: Standardize abbreviations, remove suite/unit numbers
 
-        **Validation Rules:**
-        - Latitude: -90 to 90 degrees
-        - Longitude: -180 to 180 degrees
-        - Zipcode: 5 digits or 5+4 format (XXXXX or XXXXX-XXXX)
-        - Phone: 10 or 11 digits (formatted to (XXX) XXX-XXXX)
-        - State: Full name or 2-letter abbreviation (mapped to abbreviation)
+    **Validation Rules:**
+    - Latitude: -90 to 90 degrees
+    - Longitude: -180 to 180 degrees
+    - Zipcode: 5 digits or 5+4 format (XXXXX or XXXXX-XXXX)
+    - Phone: 10 or 11 digits (formatted to (XXX) XXX-XXXX)
+    - State: Full name or 2-letter abbreviation (mapped to abbreviation)
 
-        **Missing Data Handling:**
-        - Missing coordinates: Provider excluded from distance-based scoring
-        - Missing referral counts: Treated as 0 (eligible but ranked lower)
-        - Missing addresses: Provider excluded from results
-        - Partial addresses: Geocoding attempted with available components
-        """
+    **Missing Data Handling:**
+    - Missing coordinates: Provider excluded from distance-based scoring
+    - Missing referral counts: Treated as 0 (eligible but ranked lower)
+    - Missing addresses: Provider excluded from results
+    - Partial addresses: Geocoding attempted with available components
+    """
     )
 
 st.markdown("---")
@@ -729,17 +735,8 @@ st.markdown(
                       │ boto3 client (connection pooling)
                       ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│                   Local Cache (data/raw/)                        │
-│  - Referrals_App_Full_Contacts.csv                              │
-│  - Referral_App_Preferred_Providers.csv                         │
-└─────────────────────┬────────────────────────────────────────────┘
-                      │ Data cleaning pipeline
-                      ↓
-┌─────────────────────────────────────────────────────────────────┐
-│              Processed Cache (data/processed/)                   │
-│  - cleaned_inbound_referrals.parquet                            │
-│  - cleaned_outbound_referrals.parquet                           │
-│  - cleaned_preferred_providers.parquet                          │
+│                   Data Cleaning Pipeline                         │
+│  - Cleans and processes S3 CSV data                             │
 └─────────────────────┬────────────────────────────────────────────┘
                       │ DataIngestionManager
                       ↓
@@ -752,9 +749,8 @@ st.markdown(
 ```
 
 **Key Points:**
-- **S3 → Local**: Automatic on app launch, manual refresh available
-- **Local → Processed**: Triggered when raw files change
-- **Processed → App**: Loaded on-demand with 1-hour cache
+- **S3 → App**: Automatic on app launch, manual refresh available
+- **All data is loaded directly from S3**
 - **Geocoding**: External API call with 1-hour result cache
 """
 )
@@ -796,9 +792,9 @@ with start_col2:
    - Review distance, referral counts, score
 
 5. **📊 Analyze Full Rankings**
-   - Browse complete provider list sorted by score
-   - Export results to CSV/Excel
-   - View providers on interactive map
+    - Browse complete provider list sorted by score
+    - Use available export options to download results
+    - View providers on interactive map
 
 6. **🔄 Refine if Needed**
    - Adjust weights and re-search

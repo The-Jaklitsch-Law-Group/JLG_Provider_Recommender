@@ -13,7 +13,7 @@ The JLG Provider Recommender is a cloud-native Streamlit application that analyz
 
 ### Technical Architecture
 
-**Data Flow**: AWS S3 (single source of truth) → Auto-download → Data cleaning pipeline (preparation.py) → Shared I/O utilities (io_utils.py) → Local Parquet cache → Application loading (ingestion.py)
+**Data Flow**: AWS S3 (single source of truth) → Auto-download → Data cleaning pipeline (preparation.py) → Shared I/O utilities (io_utils.py) → Local cache files (gitignored, cache-only) → Application loading (ingestion.py)
 
 **Key Technologies**:
 - **Frontend**: Streamlit (multi-page app with session state management)
@@ -25,7 +25,7 @@ The JLG Provider Recommender is a cloud-native Streamlit application that analyz
 
 **Performance Characteristics**:
 - S3 download (first run): 2-5 seconds for ~5MB CSV
-- Data loading (from S3-generated cache): <100ms for 10k rows
+- Data loading (from local cache when available): <100ms for 10k rows; otherwise loading from S3 is typically ~1-2 seconds
 - Search execution (cached): <1 second for typical datasets
 - Geocoding (cached): <10ms, (uncached): 1-3 seconds with rate limiting
 
@@ -41,7 +41,7 @@ The application prioritizes data integrity, performance optimization, and mainta
 - **Adaptive Retries** - Up to 3 retry attempts with exponential backoff for transient failures
 
 ### High-Performance Data Processing
-- **Parquet Caching** - Local cache files in columnar format (~10x faster than CSV/Excel for repeated loads)
+- **Local cache (Parquet)** - Optional local cache files in columnar Parquet format can speed repeated loads (~10x faster than CSV/Excel). These cache files are gitignored and S3 remains the canonical source of truth.
 - **Vectorized Operations** - NumPy-based distance calculations (100x faster than Python loops)
 - **Streamlit Caching** - 1-hour TTL for data loading and geocoding results
 - **Lazy Loading** - Data loaded on-demand, not at app startup
@@ -86,8 +86,8 @@ The application prioritizes data integrity, performance optimization, and mainta
 
 ## Quick Start
 
-> **🔴 BREAKING CHANGE:** As of version 2.1+, S3 configuration is **strictly required**. All local parquet file fallbacks have been removed.  
-> See [S3 Migration Guide](docs/S3_MIGRATION_GUIDE.md) for detailed setup instructions and migration path from local files.  
+> **🔴 BREAKING CHANGE:** As of version 2.1+, S3 configuration is **strictly required**. All local parquet file fallbacks have been removed.
+> See [S3 Migration Guide](docs/S3_MIGRATION_GUIDE.md) for detailed setup instructions and migration path from local files.
 > For understanding the data pipeline architecture, see [Data Pipeline Architecture](docs/DATA_PIPELINE_ARCHITECTURE.md).
 
 ### System Requirements
@@ -134,8 +134,8 @@ pip install -r requirements.txt
 - `numpy>=1.24.0` - Vectorized numerical calculations
 - `boto3>=1.28.0` - AWS S3 client library
 - `geopy>=2.3.0` - Geocoding with Nominatim support
-- `pyarrow>=12.0.0` - Parquet file format support
-- `openpyxl>=3.1.0` - Excel file reading (for raw data imports)
+- `pyarrow>=12.0.0` - Parquet file format support (used for optional local caches and test fixtures)
+- `openpyxl>=3.1.0` - Excel file reading (for preparing raw data files for upload to S3)
 
 4. **Install development dependencies** (for testing and linting):
 ```bash
@@ -185,7 +185,7 @@ streamlit run app.py
 1. App starts on `http://localhost:8501`
 2. Automatically checks S3 configuration on launch
 3. Downloads latest data files from S3 (if configured)
-4. Processes and caches data as Parquet files in `data/processed/`
+4. Processes data and may write optional cache files to `data/processed/` (cache-only; S3 is the source of truth)
 5. Opens in default web browser
 
 **Command-line options**:
@@ -215,7 +215,7 @@ streamlit run app.py --server.enableCORS true --server.enableXsrfProtection true
 1. Ensure S3 credentials are configured in `.streamlit/secrets.toml`
 2. Upload referral data to S3 bucket (CSV or Excel format)
 3. Run `streamlit run app.py`
-4. App auto-downloads and processes data (may take 5-10 seconds)
+4. App auto-downloads and processes data (may take 5-10 seconds). Optional local cache files may be written for faster subsequent loads.
 5. Navigate to **🔎 Search** page to start using the app
 
 ### Running Tests
@@ -361,10 +361,10 @@ JLG_Provider_Recommender/
                       ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │              Processed Cache (data/processed/)                   │
-│  - cleaned_inbound_referrals.parquet (gitignored)               │
-│  - cleaned_outbound_referrals.parquet (gitignored)              │
-│  - cleaned_all_referrals.parquet (gitignored)                   │
-│  - cleaned_preferred_providers.parquet (gitignored)             │
+│  - cleaned_inbound_referrals.parquet (gitignored, cache-only)   │
+│  - cleaned_outbound_referrals.parquet (gitignored, cache-only)  │
+│  - cleaned_all_referrals.parquet (gitignored, cache-only)       │
+│  - cleaned_preferred_providers.parquet (gitignored, cache-only) │
 └─────────────────────┬────────────────────────────────────────────┘
                       │ DataIngestionManager (src/data/ingestion.py)
                       ↓
@@ -510,7 +510,7 @@ Final_Score = α × Distance_norm + β × Outbound_norm + γ × Inbound_norm + �
    ```python
    # Calculate haversine distances for all providers
    distances = calculate_haversine_distance(user_lat, user_lon, provider_lats, provider_lons)
-   
+
    # Invert so closer = higher value
    max_dist = distances.max()
    min_dist = distances.min()
@@ -561,17 +561,17 @@ total = α + β + γ + δ
 def calculate_haversine_distance(lat1, lon1, lat2, lon2):
     """Vectorized haversine distance calculation in miles."""
     R = 3958.8  # Earth radius in miles
-    
+
     # Convert to radians
     lat1_rad, lon1_rad = np.radians(lat1), np.radians(lon1)
     lat2_rad, lon2_rad = np.radians(lat2), np.radians(lon2)
-    
+
     # Haversine formula
     dlat = lat2_rad - lat1_rad
     dlon = lon2_rad - lon1_rad
     a = np.sin(dlat/2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon/2)**2
     c = 2 * np.arcsin(np.sqrt(a))
-    
+
     return R * c  # Distance in miles
 ```
 
@@ -590,7 +590,7 @@ def recommend_provider(
 ) -> Tuple[pd.DataFrame, Optional[pd.Series]]:
     """
     Score and rank providers based on multiple factors.
-    
+
     Returns:
         Tuple of (scored_dataframe, top_provider) sorted by score descending
     """
@@ -814,7 +814,7 @@ class DataSource(Enum):
    # Using AWS CLI
    aws s3 cp Referrals_App_Full_Contacts_2024-03-15.csv \
        s3://jlg-provider-recommender-bucket/990046944/
-   
+
    aws s3 cp Preferred_Providers_2024-03-15.csv \
        s3://jlg-provider-recommender-bucket/990047553/
    ```
@@ -1052,15 +1052,15 @@ logging.basicConfig(level=logging.DEBUG)
 
 **Solutions**:
 1. **Network issues**: Check internet connection, verify firewall rules
-2. **Rate limiting**: 
+2. **Rate limiting**:
    - Reduce concurrent geocoding operations
    - Increase `min_delay_seconds` in `geocoding.py` (currently 1.0)
    - Batch geocode during off-hours
-3. **Invalid addresses**: 
+3. **Invalid addresses**:
    - Verify address format: `street, city, state, zip`
    - Check for special characters or encoding issues
    - Use Data Dashboard to identify problematic addresses
-4. **Service downtime**: 
+4. **Service downtime**:
    - Check Nominatim status: https://status.openstreetmap.org/
    - Wait and retry later
    - Consider Google Maps fallback (requires API key)
@@ -1102,7 +1102,7 @@ du -sh data/processed/*
    ```bash
    # Check if local cache files exist (auto-generated from S3)
    ls -lh data/processed/cleaned_*.parquet
-   
+
    # If missing or stale, refresh via Update Data page (pulls from S3 and regenerates cache)
    ```
 
@@ -1110,7 +1110,7 @@ du -sh data/processed/*
    ```bash
    # Verify local cache files exist
    ls -lh data/processed/cleaned_*.parquet
-   
+
    # If missing, they'll be regenerated from S3 (slower first load)
    # Navigate to Update Data page and refresh to regenerate cache
    ```
@@ -1438,7 +1438,7 @@ option_settings:
     STREAMLIT_SERVER_PORT: 8501
     STREAMLIT_SERVER_HEADLESS: true
     STREAMLIT_SERVER_ENABLE_CORS: true
-    
+
 commands:
   01_install_streamlit:
     command: "pip install streamlit"
@@ -1576,31 +1576,31 @@ jobs:
     strategy:
       matrix:
         python-version: ['3.10', '3.11', '3.12']
-    
+
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
-    
+
     - name: Install dependencies
       run: |
         pip install -r requirements.txt
         pip install -r requirements-dev.txt
-    
+
     - name: Run tests
       run: pytest tests/ -v --cov=src --cov-report=xml
-    
+
     - name: Upload coverage
       uses: codecov/codecov-action@v3
       with:
         file: ./coverage.xml
-    
+
     - name: Lint with flake8
       run: flake8 src/ tests/ --max-line-length=120
-    
+
     - name: Check formatting
       run: |
         black --check src/ tests/ --line-length=120
@@ -1610,10 +1610,10 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
-    
+
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Deploy to Streamlit Cloud
       run: |
         # Streamlit Cloud auto-deploys on push to main

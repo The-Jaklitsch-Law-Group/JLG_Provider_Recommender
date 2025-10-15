@@ -1,6 +1,9 @@
 # Copilot instructions — JLG Provider Recommender
 
+
 This concise guide helps an AI coding agent become productive quickly in this repo. Keep edits small, prefer the canonical helpers, and include tests for behavioral changes.
+
+For a high-level architectural overview and rationale, see `README.md` (project root). For test patterns and additional examples, see `tests/README.md`.
 
 Big picture
 
