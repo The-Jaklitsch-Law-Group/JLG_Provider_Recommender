@@ -405,7 +405,15 @@ class DataIngestionManager:
         df.columns = df.columns.str.strip()
 
         # Process following the notebook logic
-        df = df.drop_duplicates(ignore_index=True)
+        # Deduplicate by Person ID if available, otherwise use generic deduplication
+        # Check for the raw column name before renaming
+        person_id_col = "Contact's Details: Person ID"
+        if person_id_col in df.columns:
+            df = df.drop_duplicates(subset=person_id_col, keep="first", ignore_index=True)
+            logger.info("Deduplicated preferred providers by Person ID: %d unique providers", len(df))
+        else:
+            df = df.drop_duplicates(ignore_index=True)
+            logger.info("Deduplicated preferred providers (no Person ID column): %d unique providers", len(df))
 
         # Clean geo data
         lat_col = "Contact's Details: Latitude"
@@ -423,6 +431,7 @@ class DataIngestionManager:
             lon_col: "Longitude",
             "Contact's Details: Specialty": "Specialty",
             "Contact's Details: Last Verified Date": "Last Verified Date",
+            "Contact's Details: Person ID": "Person ID",
         }
 
         for old_col, new_col in column_mapping.items():

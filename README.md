@@ -69,7 +69,9 @@ The application prioritizes data integrity, performance optimization, and mainta
 - **Documentation** - Comprehensive algorithm explanation and usage guide
 
 ### Data Quality & Validation
-- **Deduplication** - Providers identified by `(normalized_name, normalized_address)` tuple
+- **Person ID Deduplication** - Primary deduplication using unique Person ID when available (see [Person ID Deduplication](docs/PERSON_ID_DEDUPLICATION.md))
+- **Fallback Deduplication** - Generic row-level deduplication when Person ID is not present
+- **Provider Identity** - Canonical identity uses `(normalized_name, normalized_address)` tuple
 - **Address Normalization** - Standardized abbreviations, stripped suite numbers
 - **Phone Formatting** - Consistent (XXX) XXX-XXXX format
 - **Coordinate Validation** - Range checks and invalid data filtering
