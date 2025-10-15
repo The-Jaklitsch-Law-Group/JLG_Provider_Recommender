@@ -201,6 +201,15 @@ def _clean_referral_frame(df: pd.DataFrame) -> pd.DataFrame:
     if "Longitude" in df.columns:
         df["Longitude"] = df["Longitude"].map(_clean_geocode)
 
+    # Deduplicate by Person ID if available and has actual values
+    if "Person ID" in df.columns and df["Person ID"].notna().any():
+        df = df.drop_duplicates(subset="Person ID", keep="first")
+        logger.info("Deduplicated by Person ID: %d unique providers", len(df))
+    
+    # Drop Person ID column if it's all NA (column was added but source didn't have it)
+    if "Person ID" in df.columns and df["Person ID"].isna().all():
+        df = df.drop(columns=["Person ID"])
+
     if "Date of Intake" in df.columns:
         df.sort_values(by=["Date of Intake", "Full Name"], inplace=True, na_position="last")
         try:
@@ -249,6 +258,7 @@ _REFERRAL_CONFIGS: Dict[str, Dict[str, Any]] = {
             "Referred From's Details: Latitude": "Latitude",
             "Referred From's Details: Longitude": "Longitude",
             "Referred From's Details: Last Verified Date": "Last Verified Date",
+            "Referred From's Details: Person ID": "Person ID",
         },
         "filters": [
             lambda df: df["Referral Source"] == "Referral - Doctor's Office",
@@ -269,6 +279,7 @@ _REFERRAL_CONFIGS: Dict[str, Dict[str, Any]] = {
             "Secondary Referred From's Details: Latitude": "Latitude",
             "Secondary Referred From's Details: Longitude": "Longitude",
             "Secondary Referred From's Details: Last Verified Date": "Last Verified Date",
+            "Secondary Referred From's Details: Person ID": "Person ID",
         },
         "filters": [
             lambda df: df["Referral Source"] == "Referral - Doctor's Office",
@@ -288,6 +299,7 @@ _REFERRAL_CONFIGS: Dict[str, Dict[str, Any]] = {
             "Dr/Facility Referred To's Details: Latitude": "Latitude",
             "Dr/Facility Referred To's Details: Longitude": "Longitude",
             "Dr/Facility Referred To's Details: Last Verified Date": "Last Verified Date",
+            "Dr/Facility Referred To's Details: Person ID": "Person ID",
         },
         "filters": [
             lambda df: df["Full Name"].notna(),
@@ -1067,8 +1079,15 @@ def process_and_save_preferred_providers(
     # Process the data following the notebook logic
     total_count = len(df)
     
-    # Remove duplicates
-    df = df.drop_duplicates(ignore_index=True)
+    # Remove duplicates by Person ID if available, otherwise generic deduplication
+    # Check for the raw column name before renaming
+    person_id_col = "Contact's Details: Person ID"
+    if person_id_col in df.columns:
+        df = df.drop_duplicates(subset=person_id_col, keep="first", ignore_index=True)
+        logger.info("Deduplicated preferred providers by Person ID: %d unique providers", len(df))
+    else:
+        df = df.drop_duplicates(ignore_index=True)
+        logger.info("Deduplicated preferred providers (no Person ID column): %d unique providers", len(df))
     
     # Identify records missing latitude/longitude
     lat_col = "Contact's Details: Latitude"
@@ -1087,6 +1106,22 @@ def process_and_save_preferred_providers(
 
     missing_geo_count = len(missing_records) if missing_records is not None else 0
     cleaned_count = len(df_cleaned)
+    
+    # Rename columns to match expected schema before saving
+    column_mapping = {
+        "Contact Full Name": "Full Name",
+        "Contact's Work Phone": "Work Phone",
+        "Contact's Work Address": "Work Address",
+        lat_col: "Latitude",
+        lon_col: "Longitude",
+        "Contact's Details: Specialty": "Specialty",
+        "Contact's Details: Last Verified Date": "Last Verified Date",
+        "Contact's Details: Person ID": "Person ID",
+    }
+
+    for old_col, new_col in column_mapping.items():
+        if old_col in df_cleaned.columns:
+            df_cleaned[new_col] = df_cleaned[old_col]
     
     # Save cleaned data to parquet
     output_path = processed_path / "cleaned_preferred_providers.parquet"
@@ -1137,8 +1172,15 @@ def process_preferred_providers(
     # Process the data following the notebook logic
     total_count = len(df)
     
-    # Remove duplicates
-    df = df.drop_duplicates(ignore_index=True)
+    # Remove duplicates by Person ID if available, otherwise generic deduplication
+    # Check for the raw column name before renaming
+    person_id_col = "Contact's Details: Person ID"
+    if person_id_col in df.columns:
+        df = df.drop_duplicates(subset=person_id_col, keep="first", ignore_index=True)
+        logger.info("Deduplicated preferred providers by Person ID: %d unique providers", len(df))
+    else:
+        df = df.drop_duplicates(ignore_index=True)
+        logger.info("Deduplicated preferred providers (no Person ID column): %d unique providers", len(df))
     
     # Identify records missing latitude/longitude
     lat_col = "Contact's Details: Latitude"
@@ -1166,6 +1208,7 @@ def process_preferred_providers(
         lat_col: "Latitude",
         lon_col: "Longitude",
         "Contact's Details: Last Verified Date": "Last Verified Date",
+        "Contact's Details: Person ID": "Person ID",
     }
 
     for old_col, new_col in column_mapping.items():
