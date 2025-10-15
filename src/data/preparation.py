@@ -14,6 +14,11 @@ import os
 import time
 from pathlib import PurePath
 
+# Import shared I/O utilities
+from src.data.io_utils import looks_like_excel_bytes as _looks_like_excel_bytes, load_dataframe
+
+logger = logging.getLogger(__name__)
+
 
 def _safe_to_parquet(df: pd.DataFrame, dest: Path, *, compression: str = "snappy", attempts: int = 5, backoff: float = 0.2) -> None:
     """Write a DataFrame to Parquet atomically with retries.
@@ -50,34 +55,6 @@ def _safe_to_parquet(df: pd.DataFrame, dest: Path, *, compression: str = "snappy
             continue
     # If we get here, attempts exhausted
     raise last_exc  # type: ignore
-
-
-def _looks_like_excel_bytes(buffer: BytesIO) -> bool:
-    """Quick heuristic: check first bytes to see if data looks like an Excel file.
-
-    - XLSX files are ZIP archives and start with PK signature (b'PK\x03\x04')
-    - Older XLS BIFF files begin with bytes 0xD0 0xCF 0x11 0xE0
-    """
-    try:
-        pos = buffer.tell()
-    except Exception:
-        pos = None
-    try:
-        buffer.seek(0)
-        head = buffer.read(4)
-        buffer.seek(0)
-    except Exception:
-        return False
-    if not head:
-        return False
-    if head.startswith(b"PK"):
-        return True
-    # BIFF header (xls)
-    if head[:4] == b"\xD0\xCF\x11\xE0":
-        return True
-    return False
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -936,117 +913,6 @@ def process_referral_data(
         return inbound_combined, outbound, combined, summary
 
 
-def _load_data(raw_input: Any, filename: Optional[str] = None) -> pd.DataFrame:
-    """Load data from various input types (Excel, CSV, or DataFrame).
-    
-    Args:
-        raw_input: Can be Path/str to file, BytesIO/bytes buffer, or pd.DataFrame
-        filename: Optional filename for logging and format detection
-    
-    Returns:
-        pd.DataFrame with normalized column names (whitespace stripped)
-    """
-    if isinstance(raw_input, pd.DataFrame):
-        logger.info("Processing DataFrame with %d rows (source: %s)", len(raw_input), filename or "unknown")
-        df = raw_input.copy()
-        # Normalize column names (strip whitespace)
-        df.columns = df.columns.str.strip()
-        return df
-    elif isinstance(raw_input, (Path, str)):
-        raw_path = Path(raw_input)
-        if not raw_path.exists():
-            raise FileNotFoundError(f"File not found: {raw_path}")
-        logger.info("Loading data from %s", raw_path)
-        suffix = raw_path.suffix.lower()
-        
-        # Determine engine for Excel files
-        engine = None
-        if suffix == '.xlsx':
-            engine = 'openpyxl'
-        elif suffix == '.xls':
-            engine = 'xlrd'
-        
-        if suffix == '.csv':
-            df = pd.read_csv(raw_path)
-        else:
-            # Try Excel first, but fallback to CSV if that fails (some S3 exports are CSV)
-            try:
-                if engine:
-                    df = pd.read_excel(raw_path, engine=engine)
-                else:
-                    try:
-                        df = pd.read_excel(raw_path, engine='openpyxl')
-                    except Exception:
-                        df = pd.read_excel(raw_path, engine='xlrd')
-            except Exception:
-                df = pd.read_csv(raw_path)
-        # Normalize column names (strip whitespace)
-        df.columns = df.columns.str.strip()
-        return df
-    else:
-        # Handle buffer-like objects
-        logger.info("Loading data from memory (source: %s)", filename or "uploaded file")
-        if isinstance(raw_input, BytesIO):
-            excel_buffer = raw_input
-        elif isinstance(raw_input, bytes):
-            excel_buffer = BytesIO(raw_input)
-        elif isinstance(raw_input, (memoryview, bytearray)):
-            excel_buffer = BytesIO(bytes(raw_input))
-        else:
-            raise TypeError(f"Unsupported input type: {type(raw_input)}")
-
-        # Determine engine based on filename extension for Excel files
-        excel_buffer.seek(0)
-        engine = None
-        is_csv_file = filename and isinstance(filename, str) and filename.lower().endswith('.csv')
-        
-        if filename and isinstance(filename, str):
-            fname_lower = filename.lower()
-            if fname_lower.endswith('.xlsx'):
-                engine = 'openpyxl'
-            elif fname_lower.endswith('.xls'):
-                engine = 'xlrd'
-        
-        # If no engine determined from filename, try to detect from bytes
-        if not engine and not is_csv_file:
-            if _looks_like_excel_bytes(excel_buffer):
-                # Default to openpyxl for modern Excel files
-                engine = 'openpyxl'
-            excel_buffer.seek(0)
-
-        # Prefer CSV when filename suggests it, otherwise try Excel then fallback to CSV
-        if is_csv_file:
-            try:
-                df = pd.read_csv(excel_buffer)
-            except Exception:
-                excel_buffer.seek(0)
-                if engine:
-                    df = pd.read_excel(excel_buffer, engine=engine)
-                else:
-                    try:
-                        df = pd.read_excel(excel_buffer, engine='openpyxl')
-                    except Exception:
-                        excel_buffer.seek(0)
-                        df = pd.read_excel(excel_buffer, engine='xlrd')
-        else:
-            try:
-                if engine:
-                    df = pd.read_excel(excel_buffer, engine=engine)
-                else:
-                    try:
-                        df = pd.read_excel(excel_buffer, engine='openpyxl')
-                    except Exception:
-                        excel_buffer.seek(0)
-                        df = pd.read_excel(excel_buffer, engine='xlrd')
-            except Exception:
-                excel_buffer.seek(0)
-                df = pd.read_csv(excel_buffer)
-
-        # Normalize column names (strip whitespace)
-        df.columns = df.columns.str.strip()
-        return df
-
-
 def process_and_save_preferred_providers(
     raw_input: Union[Path, str, BytesIO, bytes, BinaryIO, pd.DataFrame, Any],
     processed_dir: Path | str,
@@ -1070,8 +936,8 @@ def process_and_save_preferred_providers(
     processed_path = Path(processed_dir).resolve()
     processed_path.mkdir(parents=True, exist_ok=True)
 
-    # Use the helper function to load the data
-    df = _load_data(raw_input, filename)
+    # Use the shared helper function to load the data
+    df = load_dataframe(raw_input, filename=filename)
 
     # Normalize column names (strip whitespace)
     df.columns = df.columns.str.strip()
@@ -1163,8 +1029,8 @@ def process_preferred_providers(
     Returns:
         Tuple of (cleaned_dataframe, summary) containing processed data
     """
-    # Use the helper function to load the data
-    df = _load_data(raw_input, filename)
+    # Use the shared helper function to load the data
+    df = load_dataframe(raw_input, filename=filename)
 
     # Normalize column names (strip whitespace)
     df.columns = df.columns.str.strip()
