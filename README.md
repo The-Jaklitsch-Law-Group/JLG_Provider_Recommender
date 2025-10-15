@@ -13,7 +13,7 @@ The JLG Provider Recommender is a cloud-native Streamlit application that analyz
 
 ### Technical Architecture
 
-**Data Flow**: AWS S3 (single source of truth) → Auto-download → Data cleaning pipeline → Local Parquet cache → Application loading
+**Data Flow**: AWS S3 (single source of truth) → Auto-download → Data cleaning pipeline (preparation.py) → Shared I/O utilities (io_utils.py) → Local Parquet cache → Application loading (ingestion.py)
 
 **Key Technologies**:
 - **Frontend**: Streamlit (multi-page app with session state management)
@@ -21,7 +21,7 @@ The JLG Provider Recommender is a cloud-native Streamlit application that analyz
 - **Cloud Storage**: AWS S3 with boto3 client (connection pooling, adaptive retries)
 - **Geocoding**: Nominatim/OpenStreetMap API (rate-limited at 1 req/sec)
 - **Caching**: Streamlit `@st.cache_data` decorators (1-hour TTL for data, geocoding)
-- **Testing**: Pytest (79+ tests with mocking for external services)
+- **Testing**: Pytest (137+ tests with mocking for external services)
 
 **Performance Characteristics**:
 - S3 download (first run): 2-5 seconds for ~5MB CSV
@@ -78,8 +78,8 @@ The application prioritizes data integrity, performance optimization, and mainta
 - **Missing Data Detection** - Identifies and reports providers without geocodes
 
 ### Comprehensive Testing
-- **79+ Automated Tests** - Full pytest suite with >80% code coverage
-- **Unit Tests** - Scoring, validation, distance calculation, data cleaning
+- **137+ Automated Tests** - Full pytest suite with >80% code coverage
+- **Unit Tests** - Scoring, validation, distance calculation, data cleaning, I/O utilities
 - **Integration Tests** - S3 client, geocoding fallback, data preparation pipeline
 - **Mocked External Services** - S3 and geocoding APIs mocked for reliable CI/CD
 - **Performance Tests** - Validates vectorization and caching optimizations
@@ -87,7 +87,8 @@ The application prioritizes data integrity, performance optimization, and mainta
 ## Quick Start
 
 > **🔴 BREAKING CHANGE:** As of version 2.1+, S3 configuration is **strictly required**. All local parquet file fallbacks have been removed.  
-> See [S3 Migration Guide](docs/S3_MIGRATION_GUIDE.md) for detailed setup instructions and migration path from local files.
+> See [S3 Migration Guide](docs/S3_MIGRATION_GUIDE.md) for detailed setup instructions and migration path from local files.  
+> For understanding the data pipeline architecture, see [Data Pipeline Architecture](docs/DATA_PIPELINE_ARCHITECTURE.md).
 
 ### System Requirements
 
@@ -219,7 +220,7 @@ streamlit run app.py --server.enableCORS true --server.enableXsrfProtection true
 
 ### Running Tests
 
-The project includes a comprehensive test suite with 79+ tests covering all core functionality.
+The project includes a comprehensive test suite with 137+ tests covering all core functionality.
 
 **Run all tests**:
 ```bash
@@ -236,6 +237,9 @@ pytest tests/test_s3_client.py -v
 
 # Data cleaning tests
 pytest tests/test_cleaning.py -v
+
+# I/O utilities tests
+pytest tests/test_io_utils.py -v
 
 # Distance calculation tests
 pytest tests/test_distance_calculation.py -v
