@@ -100,6 +100,30 @@ class PreferredProvidersSummary:
 _PHONE_DIGITS = 10
 _EXCEL_ORIGIN = "1899-12-30"
 
+# Optional columns that don't require warnings when missing
+# Person ID is used for deduplication when present, but data is valid without it
+_OPTIONAL_COLUMNS = {
+    "Referred From's Details: Person ID",
+    "Secondary Referred From's Details: Person ID",
+    "Dr/Facility Referred To's Details: Person ID",
+    "Contact's Details: Person ID",
+}
+
+
+def _filter_missing_columns_for_warning(missing_columns: List[str]) -> List[str]:
+    """Filter out optional columns from missing column warnings.
+    
+    Some columns like Person ID are optional - they're used for deduplication
+    when present, but their absence doesn't indicate a data quality issue.
+    
+    Args:
+        missing_columns: List of column names that are missing
+        
+    Returns:
+        Filtered list containing only columns that should trigger warnings
+    """
+    return [col for col in missing_columns if col not in _OPTIONAL_COLUMNS]
+
 
 def _clean_phone_number(value: Any) -> Any:
     if pd.isna(value):
@@ -303,70 +327,11 @@ _REFERRAL_CONFIGS: Dict[str, Dict[str, Any]] = {
 }
 
 
-def process_referral_data(
-    data_bytes: bytes,
-    *,
-    filename: Optional[str] = None,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, PreparationSummary]:
-    """Process referral data from bytes without saving to disk.
-
-    Args:
-        data_bytes: Raw file data (CSV or Excel)
-        filename: Optional filename for logging
-
-    Returns:
-        Tuple of (inbound_df, outbound_df, combined_df, summary)
-    """
-    from src.data.io_utils import load_dataframe
-
-    # Load the dataframe
-    df_all = load_dataframe(data_bytes, filename=filename)
-    if df_all.empty:
-        empty_df = pd.DataFrame()
-        summary = PreparationSummary(inbound_count=0, outbound_count=0, all_count=0)
-        return empty_df, empty_df, empty_df, summary
-
-    # Normalize input
-    df_all = _normalize_input_dataframe(df_all)
-
-    # Process the data
-    results: Dict[str, pd.DataFrame] = {}
-    column_warnings: List[str] = []
-    skipped_configs: List[str] = []
-
-    for key, config in _REFERRAL_CONFIGS.items():
-        try:
-            columns_map = cast(Mapping[str, str], config["columns"])
-            filter_seq = cast(Optional[Sequence[Callable[[pd.DataFrame], pd.Series]]], config.get("filters"))
-            processed, missing_columns = _process_referral_data(df_all, columns_map, filter_seq)
-            if missing_columns:
-                message = f"{key} missing columns: {', '.join(missing_columns)}"
-                logger.warning(message)
-                column_warnings.append(message)
-        except KeyError as exc:
-            logger.error("Skipping %s due to missing data: %s", key, exc)
-            skipped_configs.append(key)
-            processed = pd.DataFrame()
-        results[key] = processed
-
-    inbound_combined = _combine_inbound(
-        results.get("primary_inbound", pd.DataFrame()), results.get("secondary_inbound", pd.DataFrame())
-    )
-    outbound = _prepare_outbound(results.get("outbound", pd.DataFrame()))
-
-    combined = pd.concat([inbound_combined, outbound], ignore_index=False).sort_index()
-    if "Project ID" in combined.columns:
-        combined["Project ID"] = combined["Project ID"].astype("Int64")
-
-    summary = PreparationSummary(
-        inbound_count=len(inbound_combined),
-        outbound_count=len(outbound),
-        all_count=len(combined),
-        warnings=column_warnings,
-        skipped_configs=skipped_configs,
-    )
-
-    return inbound_combined, outbound, combined, summary
+# NOTE: This function definition was removed as it was a duplicate of the more
+# complete implementation below (starting at line 785). The duplicate caused
+# confusion and the first definition was being overridden by the second anyway.
+# The second implementation handles multiple input types (Path, str, BytesIO,
+# bytes, DataFrame) while this one only handled bytes.
 
 
 def _normalize_input_dataframe(df_all: pd.DataFrame) -> pd.DataFrame:
@@ -663,9 +628,18 @@ def process_and_save_cleaned_referrals(
             filter_seq = cast(Optional[Sequence[Callable[[pd.DataFrame], pd.Series]]], config.get("filters"))
             processed, missing_columns = _process_referral_data(df_all, columns_map, filter_seq)
             if missing_columns:
-                message = f"{key} missing columns: {', '.join(missing_columns)}"
-                logger.warning(message)
-                column_warnings.append(message)
+                # Filter out optional columns (like Person ID) that don't require warnings
+                required_missing = _filter_missing_columns_for_warning(missing_columns)
+                if required_missing:
+                    message = f"{key} missing columns: {', '.join(required_missing)}"
+                    logger.warning(message)
+                    column_warnings.append(message)
+                # Log optional missing columns at debug level for troubleshooting
+                optional_missing = [col for col in missing_columns if col in _OPTIONAL_COLUMNS]
+                if optional_missing:
+                    logger.debug(
+                        f"{key} missing optional columns (non-critical): {', '.join(optional_missing)}"
+                    )
         except KeyError as exc:
             logger.error("Skipping %s due to missing data: %s", key, exc)
             skipped_configs.append(key)
@@ -955,9 +929,18 @@ def process_referral_data(
                 filter_seq = cast(Optional[Sequence[Callable[[pd.DataFrame], pd.Series]]], config.get("filters"))
                 processed, missing_columns = _process_referral_data(df_all, columns_map, filter_seq)
                 if missing_columns:
-                    message = f"{key} missing columns: {', '.join(missing_columns)}"
-                    logger.warning(message)
-                    column_warnings.append(message)
+                    # Filter out optional columns (like Person ID) that don't require warnings
+                    required_missing = _filter_missing_columns_for_warning(missing_columns)
+                    if required_missing:
+                        message = f"{key} missing columns: {', '.join(required_missing)}"
+                        logger.warning(message)
+                        column_warnings.append(message)
+                    # Log optional missing columns at debug level for troubleshooting
+                    optional_missing = [col for col in missing_columns if col in _OPTIONAL_COLUMNS]
+                    if optional_missing:
+                        logger.debug(
+                            f"{key} missing optional columns (non-critical): {', '.join(optional_missing)}"
+                        )
             except KeyError as exc:
                 logger.error("Skipping %s due to missing data: %s", key, exc)
                 skipped_configs.append(key)
