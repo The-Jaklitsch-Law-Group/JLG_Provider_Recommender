@@ -3,7 +3,7 @@ import streamlit as st
 
 from src.app_logic import apply_time_filtering, load_application_data, run_recommendation, validate_provider_data
 from src.utils.io_utils import format_phone_number, get_word_bytes, sanitize_filename
-from src.utils.responsive import resp_columns, responsive_sidebar_toggle
+from src.utils.responsive import resp_columns
 from src.utils.freshness import format_last_verified_display
 
 
@@ -95,9 +95,6 @@ if best is None or scored_df is None or (isinstance(scored_df, pd.DataFrame) and
     st.warning("⚠️ No providers matched your search criteria.")
     st.info("💡 Try adjusting your filters or expanding the search radius.")
     st.stop()
-
-# Add responsive toggle early so pages can be forced into mobile/stacked layout
-responsive_sidebar_toggle()
 
 # Top recommendation in a prominent card
 st.subheader("✨ Best Match")

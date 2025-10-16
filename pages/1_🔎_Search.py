@@ -5,7 +5,7 @@ import streamlit as st
 from app import show_auto_update_status
 from src.app_logic import get_unique_specialties, load_application_data
 from src.utils.addressing import validate_address_input
-from src.utils.responsive import resp_columns, responsive_sidebar_toggle
+from src.utils.responsive import resp_columns
 
 try:
     from src.utils.geocoding import geocode_address_with_cache
@@ -122,13 +122,34 @@ st.divider()
 
 # Address input section with improved layout
 st.subheader("📍 Client Address")
-# small dev toggle to force stacked/mobile layout for testing
-responsive_sidebar_toggle()
+
+# Toggle for using firm's address as default
+use_firm_address = st.checkbox(
+    "Use firm's address as default",
+    value=st.session_state.get("use_firm_address", False),
+    help="Check this box to pre-fill the form with the firm's address (14350 Old Marlboro Pike, Upper Marlboro, MD 20772)"
+)
+
+# Store the checkbox state in session
+st.session_state["use_firm_address"] = use_firm_address
+
+# Set defaults based on checkbox state
+if use_firm_address:
+    default_street = "14350 Old Marlboro Pike"
+    default_city = "Upper Marlboro"
+    default_state = "MD"
+    default_zipcode = "20772"
+else:
+    default_street = ""
+    default_city = ""
+    default_state = None
+    default_zipcode = ""
+
 col1, col2 = resp_columns([1, 1])
 
-# Cache session state lookups
-prev_street = st.session_state.get("street", "14350 Old Marlboro Pike") or ""
-prev_city = st.session_state.get("city", "Upper Marlboro") or ""
+# Cache session state lookups - use firm defaults if checkbox is checked, otherwise use previous values or empty
+prev_street = st.session_state.get("street", default_street) or default_street
+prev_city = st.session_state.get("city", default_city) or default_city
 
 with col1:
     street = str(st.text_input("Street Address", prev_street, help="Enter the client's street address"))
@@ -139,8 +160,8 @@ with col2:
 col3, col4 = resp_columns([1, 1])
 
 # Cache session state lookups
-prev_state = st.session_state.get("state", None)
-prev_zipcode = st.session_state.get("zipcode", "20772") or ""
+prev_state = st.session_state.get("state", default_state)
+prev_zipcode = st.session_state.get("zipcode", default_zipcode) or default_zipcode
 
 with col3:
     # Calculate default index once
