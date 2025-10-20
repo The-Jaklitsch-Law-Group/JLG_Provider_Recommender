@@ -1,39 +1,15 @@
 """
-Optimized Data Ingestion Module for JLG Provider Recommender
+Data Ingestion Module - Centralized data loading with S3 integration.
 
-This module provides a streamlined, high-performance data ingestion system that:
-- Downloads data directly from S3 for optimal freshness (CSV and Excel formats supported)
-- Provides centralized data loading with consistent error handling
-- Implements smart caching strategies with Streamlit's cache system
-- Minimizes redundant processing through S3 metadata-based cache invalidation
-- Offers unified data validation and quality checks
-- Supports the complete data workflow from S3 download to processed DataFrames
+This module handles data downloads from S3, format detection (CSV/Excel/Parquet),
+and caching with Streamlit's cache system. Data flows from S3 to processed DataFrames
+with automatic cache invalidation based on S3 metadata.
 
-Supported Data Formats:
-    - CSV (.csv) - Primary format for S3 data exports
-    - Excel (.xlsx, .xls) - Legacy format with automatic fallback support
-
-Data Flow:
-    S3 Bucket (CSV/Excel) → Direct Download → Format Detection →
-    Processing → Streamlit Cache → Application Usage
-
-Performance Strategy:
-    1. Download latest data from S3 on first access (CSV or Excel)
-    2. Automatically detect and parse file format (CSV preferred, Excel fallback)
-    3. Cache processed DataFrames with S3 metadata for invalidation
-    4. Use enum-based data source management for type safety
-    5. Process data on-demand without intermediate file storage
-
-Key Improvements in v3.0:
-    - Direct S3 integration without local Parquet file dependencies
-    - CSV and Excel format support with intelligent detection
-    - S3 metadata-based cache invalidation for data freshness
-    - Simplified architecture with reduced file I/O
-    - Enhanced error handling and logging throughout
-    - Added data integrity validation methods
-    - Improved documentation and type hints
-    - Better separation of download vs. processing logic
-    - More robust S3 integration with fallback handling
+Key Features:
+- Direct S3 downloads with automatic format detection
+- Streamlit cache integration with metadata-based invalidation
+- Support for CSV, Excel, and Parquet formats
+- Centralized error handling and validation
 """
 
 import logging
