@@ -7,7 +7,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from io import BytesIO
-from pathlib import Path, PurePath
+from pathlib import Path
 from typing import (
     Any,
     BinaryIO,
@@ -112,13 +112,13 @@ _OPTIONAL_COLUMNS = {
 
 def _filter_missing_columns_for_warning(missing_columns: List[str]) -> List[str]:
     """Filter out optional columns from missing column warnings.
-    
+
     Some columns like Person ID are optional - they're used for deduplication
     when present, but their absence doesn't indicate a data quality issue.
-    
+
     Args:
         missing_columns: List of column names that are missing
-        
+
     Returns:
         Filtered list containing only columns that should trigger warnings
     """
@@ -776,7 +776,7 @@ def process_referral_data(
     import tempfile
 
     # Use a temporary directory that we won't actually write to
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with tempfile.TemporaryDirectory():
         # Process the data but capture DataFrames before they're saved
         if isinstance(raw_input, pd.DataFrame):
             logger.info("Processing DataFrame with %d rows (source: %s)", len(raw_input), filename or "unknown")

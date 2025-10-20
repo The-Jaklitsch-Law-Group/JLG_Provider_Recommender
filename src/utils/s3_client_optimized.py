@@ -9,7 +9,6 @@ This module provides performance-optimized utilities for accessing S3 with:
 """
 
 import logging
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from io import BytesIO
@@ -147,7 +146,7 @@ class OptimizedS3DataClient:
         if isinstance(self.config, dict):
             bucket = self.config.get("bucket_name")
             if bucket and folder.startswith(f"{bucket}/"):
-                folder = folder[len(bucket) + 1 :]
+                folder = folder[len(bucket) + 1:]
 
         return folder.lstrip("/")
 

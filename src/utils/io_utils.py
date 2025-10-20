@@ -11,16 +11,16 @@ def format_phone_number(phone):
     """
     Convert phone number to formatted string "(XXX) XXX-XXXX".
     Handles various input types including float, int, and string.
-    
+
     Args:
         phone: Phone number as float, int, or string
-        
+
     Returns:
         Formatted phone string or original value if formatting fails
     """
     if pd.isna(phone) or phone is None:
         return None
-    
+
     # Handle different input types
     if isinstance(phone, float):
         phone = int(phone)
@@ -30,13 +30,13 @@ def format_phone_number(phone):
             phone = int(float(phone))
         except (ValueError, TypeError):
             pass  # Keep as string if conversion fails
-    
+
     # Convert to string and remove any non-digit characters
     phone_str = str(phone).replace('-', '').replace('(', '').replace(')', '').replace(' ', '')
-    
+
     # Extract only digits
     digits = ''.join(filter(str.isdigit, phone_str))
-    
+
     # Check if we have exactly 10 digits
     if len(digits) == 10:
         return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"

@@ -6,15 +6,18 @@ st.markdown("# How Provider Selection Works")
 
 st.markdown(
     """
-The Provider Recommender finds the best medical service provider for your client by combining location, referral history, and your preferences.
+The Provider Recommender finds the best medical service provider for your client by combining
+location, referral history, and your preferences.
 
 At a glance:
 - Input: client address and simple preference sliders
 - Data source: secure AWS S3 bucket (single source of truth)
 - Output: ranked provider recommendations with contact details and distance
-- Primary benefit: faster, consistent, data-driven referrals that balance client convenience and provider experience
+- Primary benefit: faster, consistent, data-driven referrals that balance client convenience
+  and provider experience
 
-No technical setup is required to run a search — enter an address, adjust sliders, and the system returns ranked matches.
+No technical setup is required to run a search — enter an address, adjust sliders, and the
+system returns ranked matches.
 """
 )
 
@@ -301,7 +304,9 @@ with st.expander("🔧 Technical Details (for developers)", expanded=False):
         """
         **AWS S3 as Single Source of Truth:**
 
-        The application uses AWS S3 exclusively as the canonical data source. All data is downloaded from S3 on app launch and used directly for processing and recommendations. No local Parquet or Excel files are used for ingestion or as a source of truth.
+        The application uses AWS S3 exclusively as the canonical data source. All data is downloaded
+        from S3 on app launch and used directly for processing and recommendations. No local Parquet
+        or Excel files are used for ingestion or as a source of truth.
 
         **S3 Bucket Structure:**
         ```
@@ -438,7 +443,8 @@ with st.expander("🔧 Technical Details (for developers)", expanded=False):
 
     st.markdown("**Full scoring equation when all data is available:**")
     st.latex(
-        r"\text{Score} = \alpha \times D_{norm} + \beta \times O_{norm} + \gamma \times I_{norm} + \delta \times P_{norm}"
+        r"\text{Score} = \alpha \times D_{norm} + \beta \times O_{norm} + "
+        r"\gamma \times I_{norm} + \delta \times P_{norm}"
     )
 
     st.markdown("**When only outbound referral data exists:**")
@@ -817,5 +823,6 @@ st.markdown(
 )
 
 st.success(
-    "💡 **Pro Tip**: Start with the **Data Dashboard** to understand current provider capacity and referral patterns before searching!"
+    "💡 **Pro Tip**: Start with the **Data Dashboard** to understand current provider capacity "
+    "and referral patterns before searching!"
 )
