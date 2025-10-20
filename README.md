@@ -31,6 +31,26 @@ The JLG Provider Recommender is a cloud-native Streamlit application that analyz
 
 The application prioritizes data integrity, performance optimization, and maintainability through centralized data ingestion, comprehensive validation, and extensive test coverage.
 
+### Technical Specs (At-a-glance)
+
+This section summarizes the core technical specifications required to set up, operate, and maintain the app.
+
+- Platform: Python 3.10+ (3.10 - 3.12 tested)
+- Web: Streamlit (multi-page app)
+- Data: AWS S3 (canonical source), local Parquet caches under data/processed/ (cache-only)
+- Geocoding: Nominatim (primary), optional Google Maps fallback (API key)
+- Caching: Streamlit `@st.cache_data` (1-hour TTL) for data and geocoding
+- Concurrency/Network: boto3 client with connection pooling (max_pool_connections=10) and adaptive retries (3 attempts)
+- Runtime memory: 2GB minimum (4GB recommended for larger datasets)
+- Security: S3 credentials via `.streamlit/secrets.toml` or platform secrets; follow least-privilege IAM principals
+- Performance targets:
+   - S3 download first-run: 2-5s for ~5MB CSV
+   - Local cache load: <100ms for typical datasets (10k rows)
+   - Per-search execution: <1s (cached)
+   - Geocoding (cached): <10ms, (uncached): 1-3s
+
+Refer to the 'Advanced Technical Details' section further down for code-level references and operational procedures.
+
 ## Features
 
 ### Cloud-Native Data Management
@@ -398,6 +418,18 @@ JLG_Provider_Recommender/
    - **Deduplication**: Uses `(normalized_name, normalized_address)` as unique key
    - **Geocoding**: Fills missing coordinates via Nominatim API (rate-limited)
    - **Validation**: Range checks for coordinates, phone numbers, zip codes
+
+### Advanced Technical Details
+
+For developers and operators who need full implementation details (S3 ingestion mechanics, caching strategy, geocoding rate limits, scoring formulas, and code snippets), please review the following resources in this repo:
+
+- README sections above (Technical Architecture and Features)
+- `src/data/ingestion.py` and `src/utils/s3_client_optimized.py` (S3 ingestion and client behavior)
+- `src/utils/geocoding.py` (geocoding, rate limiting, caching)
+- `src/utils/scoring.py` and `src/utils/providers.py` (scoring algorithm and provider aggregation)
+- `docs/` folder for operational guides and migration notes (S3_MIGRATION_GUIDE.md, DATA_PIPELINE_ARCHITECTURE.md)
+
+The Streamlit "How It Works" page has been simplified for end users; this section centralizes advanced content for technical review and operational setup.
 
 4. **Parquet Cache Generation** (`src/data/preparation.py`):
    - Converts cleaned DataFrames to columnar Parquet format for caching
@@ -891,6 +923,24 @@ st.cache_data.clear()
 - Check "Data Source Information" section
 - Verify last modified dates for all data sources
 - Review record counts and missing geocode stats
+
+### Operation & Maintenance (Quick Checklist)
+
+- Daily:
+   - Check application health (logs or Streamlit Cloud dashboard)
+   - Verify S3 sync completed if scheduled (or run manual pull)
+- Weekly:
+   - Update referral exports to S3 and regenerate caches
+   - Review Data Dashboard for missing geocodes and address issues
+   - Clear caches if stale data is observed
+- Monthly:
+   - Run dependency updates and security checks
+   - Review backup routine and storage costs
+- On-demand:
+   - Use Update Data page to manually upload or pull latest data
+   - Run `pytest tests/` after code changes before deployment
+
+Follow the 'Maintenance Schedule' (further below) for specific tasks and cadence.
 
 **Backup Strategy** (recommended for production):
 ```bash

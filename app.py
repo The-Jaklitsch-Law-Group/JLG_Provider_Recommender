@@ -155,6 +155,7 @@ _current_file = Path(__file__).name
 _nav_items = [
     ("pages/1_🔎_Search.py", "Search", "🔎"),
     ("pages/2_📄_Results.py", "Results", "📄"),
+    ("pages/5_👟_Quick_Start_Guide.py", "Quick Start Guide", "👟"),
     ("pages/10_🛠️_How_It_Works.py", "How It Works", "🛠️"),
     ("pages/20_📊_Data_Dashboard.py", "Data Dashboard", "📊"),
     ("pages/30_🔄_Update_Data.py", "Update Data", "🔄"),

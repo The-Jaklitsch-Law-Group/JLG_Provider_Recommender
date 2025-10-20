@@ -18,7 +18,7 @@ st.sidebar.caption("**Your Search Criteria:**")
 if "max_radius_miles" in st.session_state:
     st.sidebar.write(f"📍 Radius: {st.session_state['max_radius_miles']} miles")
 if "min_referrals" in st.session_state:
-    st.sidebar.write(f"📊 Min. Experience: {st.session_state['min_referrals']} cases")
+    st.sidebar.write(f"📊 Min. #sCases: {st.session_state['min_referrals']} cases")
 if "selected_specialties" in st.session_state and st.session_state["selected_specialties"]:
     specialties_str = ", ".join(st.session_state["selected_specialties"])
     st.sidebar.write(f"🏥 Specialties: {specialties_str}")
