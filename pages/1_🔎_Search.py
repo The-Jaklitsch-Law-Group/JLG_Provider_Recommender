@@ -127,7 +127,8 @@ st.subheader("📍 Client Address")
 use_firm_address = st.checkbox(
     "Use firm's address as default",
     value=st.session_state.get("use_firm_address", False),
-    help="Check this box to pre-fill the form with the firm's address (14350 Old Marlboro Pike, Upper Marlboro, MD 20772)"
+    help=("Check this box to pre-fill the form with the firm's address "
+          "(14350 Old Marlboro Pike, Upper Marlboro, MD 20772)")
 )
 
 # Store the checkbox state in session

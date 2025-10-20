@@ -1,5 +1,4 @@
 import traceback
-from pathlib import Path
 
 import streamlit as st
 
@@ -7,10 +6,7 @@ from src.data import process_referral_data, process_preferred_providers, refresh
 from src.data.ingestion import DataIngestionManager, DataSource
 from src.utils.s3_client_optimized import (
     S3DataClient,
-    get_latest_s3_file,
-    get_latest_s3_files_optimized,
     get_s3_files_optimized,
-    list_s3_files,
 )
 
 # The optimized client is now the default
@@ -33,6 +29,7 @@ Data is downloaded from S3, processed, and cached for optimal performance.
 
 st.markdown("#### 📊 Current Data Overview")
 
+
 @st.cache_data
 def get_data_summary():
     dim = DataIngestionManager()
@@ -42,6 +39,7 @@ def get_data_summary():
         return len(referrals_df), len(providers_df)
     except Exception:
         return None, None
+
 
 referrals_count, providers_count = get_data_summary()
 
@@ -160,7 +158,8 @@ if s3_enabled:
     st.markdown("#### 📥 S3 Data Management")
     performance_note = "⚡ Optimized performance mode" if OPTIMIZED_S3_AVAILABLE else "Standard mode"
     st.markdown(f"Download and process the latest files from your S3 bucket. *{performance_note}*")
-    st.markdown("Data is downloaded from S3, processed, and cached for fast access.")    # Get file information for both types using optimized client
+    st.markdown("Data is downloaded from S3, processed, and cached for fast access.")
+    # Get file information for both types using optimized client
     try:
         # Use optimized batch file listing for better performance
         files_data = get_s3_files_optimized(
@@ -216,11 +215,11 @@ if s3_enabled:
                     with st.spinner("🔄 Refreshing data from S3..."):
                         # Clear cache to force fresh downloads
                         refresh_data_cache()
-                        
+
                         # Use DataIngestionManager to load fresh data
                         dim = DataIngestionManager()
                         processed_files = []
-                        
+
                         referrals_df = None
                         inbound_df = None
                         outbound_df = None
@@ -243,7 +242,8 @@ if s3_enabled:
                         st.success(f"✅ Successfully updated: {', '.join(processed_files)}")
 
                         # Compact metrics display
-                        if referrals_df is not None and providers_df is not None and not referrals_df.empty and not providers_df.empty:
+                        if (referrals_df is not None and providers_df is not None and
+                                not referrals_df.empty and not providers_df.empty):
                             metrics_col1, metrics_col2 = st.columns(2)
                             with metrics_col1:
                                 inbound_count = len(inbound_df) if inbound_df is not None else 0
